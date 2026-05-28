@@ -34,7 +34,12 @@
 3. User can index a single git repository path and see it persisted after restart
 4. No network calls occur during core operations
 
-**Plans:** TBD via `/gsd-plan-phase 1`
+**Plans:** 3 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Workspace scaffold, crate verify gate, DATA-02 CI script
+- [ ] 01-02-PLAN.md — Paths, lazy bootstrap, SQLite migrations, `workpot paths`
+- [ ] 01-03-PLAN.md — Catalog service, `repo add|list|remove`, persistence tests
 
 ---
 
@@ -148,7 +153,7 @@
 
 | Phase | Status | Plans Complete |
 |-------|--------|----------------|
-| 1 | Not started | 0/0 |
+| 1 | Not started | 0/3 |
 | 2 | Not started | 0/0 |
 | 3 | Not started | 0/0 |
 | 4 | Not started | 0/0 |
