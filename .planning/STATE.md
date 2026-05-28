@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Phase 1 complete
-last_updated: "2026-05-28T23:30:00.000Z"
+status: Phase 2 context gathered
+last_updated: "2026-05-29T12:00:00.000Z"
 progress:
   total_phases: 7
   completed_phases: 1
@@ -20,14 +20,14 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 2 — Repo discovery
+**Current focus:** Phase 2 — Repo discovery (context ready for plan-phase)
 
 ## Phase Status
 
 | Phase | Name | Status |
 |-------|------|--------|
 | 1 | Core & persistence | Complete (2026-05-28) |
-| 2 | Repo discovery | Not started |
+| 2 | Repo discovery | Context gathered |
 | 3 | Git state | Not started |
 | 4 | Tray finder MVP | Not started |
 | 5 | Tags & prioritization | Not started |
@@ -36,6 +36,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 ## Session Notes
 
+- Phase 2 context via `/gsd-discuss-phase 2` (2026-05-29): discovery, excludes, index merge, roots CLI, caps, `git_common_dir` grouping
 - Phase 1 executed via `/gsd-execute-phase 1` (inline; gsd-sdk unavailable)
 - Delivered: Cargo workspace, persistence bootstrap, `workpot paths`, `workpot repo add|list|remove`
 - All 5 integration tests pass; DATA-02 script + CI committed
