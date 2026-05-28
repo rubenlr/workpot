@@ -1,12 +1,23 @@
 use std::fs;
 use std::path::PathBuf;
 use workpot_core::AppContext;
+use workpot_core::WorkpotError;
 
 fn git_fixture() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
     let repo = dir.path().join("sample-repo");
     fs::create_dir_all(&repo).expect("repo dir");
-    fs::create_dir_all(repo.join(".git")).expect(".git dir");
+    let git_dir = repo.join(".git");
+    fs::create_dir_all(git_dir.join("objects")).expect("objects");
+    fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    (dir, repo)
+}
+
+fn bare_git_fixture() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("bare-repo");
+    fs::create_dir_all(repo.join("objects")).expect("objects");
+    fs::write(repo.join("HEAD"), "ref: refs/heads/main\n").expect("HEAD");
     (dir, repo)
 }
 
@@ -43,7 +54,46 @@ fn register_rejects_non_git() {
     let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
 
     let err = ctx.register_manual(&not_git).unwrap_err();
-    assert!(matches!(err, workpot_core::WorkpotError::NotGitRepo(_)));
+    assert!(matches!(err, WorkpotError::NotGitRepo(_)));
+}
+
+#[test]
+fn register_rejects_empty_git_dir() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let fake_repo = dir.path().join("fake-repo");
+    fs::create_dir_all(&fake_repo).expect("repo dir");
+    fs::create_dir_all(fake_repo.join(".git")).expect("empty .git");
+
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+
+    let err = ctx.register_manual(&fake_repo).unwrap_err();
+    assert!(matches!(err, WorkpotError::NotGitRepo(_)));
+}
+
+#[test]
+fn register_rejects_missing_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let missing = dir.path().join("does-not-exist");
+
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+
+    let err = ctx.register_manual(&missing).unwrap_err();
+    assert!(matches!(err, WorkpotError::InvalidPath(msg) if msg.contains("path does not exist")));
+}
+
+#[test]
+fn register_accepts_bare_repo() {
+    let (dir, repo_path) = bare_git_fixture();
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+
+    let record = ctx.register_manual(&repo_path).expect("register bare");
+    assert_eq!(record.path, repo_path.canonicalize().expect("canonicalize"));
 }
 
 #[test]
@@ -55,8 +105,20 @@ fn register_rejects_duplicate() {
 
     ctx.register_manual(&repo_path).expect("first register");
     let err = ctx.register_manual(&repo_path).unwrap_err();
-    assert!(matches!(
-        err,
-        workpot_core::WorkpotError::AlreadyRegistered(_)
-    ));
+    assert!(matches!(err, WorkpotError::AlreadyRegistered(_)));
+}
+
+#[test]
+fn remove_repo_deletes_and_not_found() {
+    let (dir, repo_path) = git_fixture();
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+
+    ctx.register_manual(&repo_path).expect("register");
+    ctx.remove_repo(&repo_path).expect("remove");
+    assert!(ctx.list_repos().expect("list").is_empty());
+
+    let err = ctx.remove_repo(&repo_path).unwrap_err();
+    assert!(matches!(err, WorkpotError::NotFound(_)));
 }

@@ -20,7 +20,7 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum RepoCommands {
-    /// Register a git repository path.
+    /// Register a git worktree or bare repository path.
     Add { path: PathBuf },
     /// List registered repositories.
     List,

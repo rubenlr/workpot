@@ -913,7 +913,6 @@ dependencies = [
 name = "workpot-core"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "directories",
  "rusqlite",
  "rusqlite_migration",

@@ -8,6 +8,7 @@ pub fn open_connection(path: &Path) -> Result<Connection> {
         std::fs::create_dir_all(parent)?;
     }
     let mut conn = Connection::open(path)?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
     conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))?;
     migrations::apply_migrations(&mut conn)?;
     Ok(conn)

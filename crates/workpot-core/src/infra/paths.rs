@@ -3,9 +3,12 @@ use directories::BaseDirs;
 use std::path::PathBuf;
 
 pub fn config_file() -> Result<PathBuf> {
-    BaseDirs::new()
-        .map(|b| b.config_dir().join("workpot").join("config.toml"))
-        .ok_or(WorkpotError::PathsUnavailable)
+    let base = BaseDirs::new().ok_or(WorkpotError::PathsUnavailable)?;
+    #[cfg(target_os = "macos")]
+    let config_root = base.home_dir().join(".config");
+    #[cfg(not(target_os = "macos"))]
+    let config_root = base.config_dir().to_path_buf();
+    Ok(config_root.join("workpot").join("config.toml"))
 }
 
 pub fn database_file() -> Result<PathBuf> {

@@ -5,6 +5,12 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn register_manual(conn: &Connection, path: &Path) -> Result<RepoRecord> {
+    if !path.exists() {
+        return Err(WorkpotError::InvalidPath(format!(
+            "path does not exist: {}",
+            path.display()
+        )));
+    }
     if !path.is_dir() {
         return Err(WorkpotError::InvalidPath(format!(
             "not a directory: {}",
@@ -12,8 +18,7 @@ pub fn register_manual(conn: &Connection, path: &Path) -> Result<RepoRecord> {
         )));
     }
 
-    let git_marker = path.join(".git");
-    if !git_marker.is_dir() && !git_marker.is_file() {
+    if !is_git_worktree(path) && !is_bare_repo(path) {
         return Err(WorkpotError::NotGitRepo(path.to_path_buf()));
     }
 
@@ -56,7 +61,7 @@ pub fn register_manual(conn: &Connection, path: &Path) -> Result<RepoRecord> {
 
 pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
     let mut stmt = conn.prepare(
-        "SELECT path, name, registered_at, source FROM repos ORDER BY registered_at",
+        "SELECT path, name, registered_at, source FROM repos WHERE excluded = 0 ORDER BY registered_at, path",
     )?;
 
     let rows = stmt.query_map([], |row| {
@@ -83,4 +88,21 @@ pub fn remove_repo(conn: &Connection, path: &Path) -> Result<()> {
         return Err(WorkpotError::NotFound(path_key));
     }
     Ok(())
+}
+
+fn is_git_worktree(path: &Path) -> bool {
+    let marker = path.join(".git");
+    if marker.is_dir() {
+        return marker.join("HEAD").is_file();
+    }
+    if marker.is_file() {
+        return std::fs::read_to_string(&marker)
+            .map(|s| s.starts_with("gitdir:"))
+            .unwrap_or(false);
+    }
+    false
+}
+
+fn is_bare_repo(path: &Path) -> bool {
+    path.join("HEAD").is_file() && path.join("objects").is_dir()
 }
