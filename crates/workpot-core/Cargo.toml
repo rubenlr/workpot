@@ -1,0 +1,18 @@
+[package]
+name = "workpot-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1"
+directories = "6.0.0"
+rusqlite = { version = "0.39.0", features = ["bundled"] }
+rusqlite_migration = "2.5.0"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"

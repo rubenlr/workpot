@@ -37,9 +37,9 @@
 **Plans:** 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Workspace scaffold, crate verify gate, DATA-02 CI script
-- [ ] 01-02-PLAN.md — Paths, lazy bootstrap, SQLite migrations, `workpot paths`
-- [ ] 01-03-PLAN.md — Catalog service, `repo add|list|remove`, persistence tests
+- [x] 01-01-PLAN.md — Workspace scaffold, crate verify gate, DATA-02 CI script (2026-05-28)
+- [x] 01-02-PLAN.md — Paths, lazy bootstrap, SQLite migrations, `workpot paths` (2026-05-28)
+- [x] 01-03-PLAN.md — Catalog service, `repo add|list|remove`, persistence tests (2026-05-28)
 
 ---
 
