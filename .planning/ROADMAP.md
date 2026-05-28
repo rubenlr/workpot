@@ -153,7 +153,7 @@ Plans:
 
 | Phase | Status | Plans Complete |
 |-------|--------|----------------|
-| 1 | Not started | 0/3 |
+| 1 | Planned | 0/3 |
 | 2 | Not started | 0/0 |
 | 3 | Not started | 0/0 |
 | 4 | Not started | 0/0 |

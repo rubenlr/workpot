@@ -460,15 +460,11 @@ conn.execute(
 | A2 | `canonicalize` is acceptable for repo PK | Catalog | Symlinked worktrees may need Phase 2 identity rules |
 | A3 | `.git` file/dir presence is enough for “git repo” in Phase 1 | CLI validation | Bare repos / unusual layouts may need git2 later |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Test-only path injection API**
-   - What we know: D-03 forbids env overrides in production.
-   - What's unclear: Whether `AppContext::open_with_paths` in `#[cfg(test)]` is desired.
-   - Recommendation: Add `open_with_paths` for tests only (not CLI flags) — planner discretion.
+1. **Test-only path injection API** — **RESOLVED:** Add `AppContext::open_with_paths(config_path, db_path)` for integration tests only (`#[cfg(test)]` or `pub(crate)` test helper). No CLI flags and no env overrides in production (D-03).
 
-2. **Default `name` derivation**
-   - Recommendation: Last path segment; allow future `repo rename` in ORG phase.
+2. **Default `name` derivation** — **RESOLVED:** Use last path segment of canonical repo path for `repos.name`; defer display rename to ORG phase.
 
 ## Environment Availability
 
