@@ -1,9 +1,15 @@
 ---
-project: Workpot
-current_phase: 1
-current_phase_name: Core & persistence
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
 status: initialized
-last_updated: 2026-05-28
+last_updated: "2026-05-28T20:33:51.805Z"
+progress:
+  total_phases: 7
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
