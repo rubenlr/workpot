@@ -32,6 +32,15 @@ pub enum WorkpotError {
 
     #[error("git unavailable for path: {0}")]
     GitUnavailable(PathBuf),
+
+    #[error("config limits exceeded: {0}")]
+    LimitsExceeded(String),
+
+    #[error("watch root not found: {0}")]
+    WatchRootNotFound(String),
+
+    #[error("watch root already exists: {0}")]
+    WatchRootAlreadyExists(String),
 }
 
 pub type Result<T> = std::result::Result<T, WorkpotError>;

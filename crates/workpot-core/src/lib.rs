@@ -112,5 +112,23 @@ fn load_config(path: &Path) -> Result<Config> {
         return Ok(Config::default());
     }
     let contents = fs::read_to_string(path)?;
-    toml::from_str(&contents).map_err(|e| WorkpotError::Config(e.to_string()))
+    let config: Config = toml::from_str(&contents).map_err(|e| WorkpotError::Config(e.to_string()))?;
+    config
+        .validate()
+        .map_err(WorkpotError::LimitsExceeded)?;
+    Ok(config)
+}
+
+/// Persist config to disk (D-19).
+pub fn save_config(config_path: &Path, config: &Config) -> Result<()> {
+    config
+        .validate()
+        .map_err(WorkpotError::LimitsExceeded)?;
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let contents = toml::to_string_pretty(config)
+        .map_err(|e| WorkpotError::Config(e.to_string()))?;
+    fs::write(config_path, contents)?;
+    Ok(())
 }
