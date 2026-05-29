@@ -22,10 +22,16 @@ pub fn add_root(ctx: &mut AppContext, path: &Path) -> Result<()> {
     }
 
     ctx.config_mut().watch_roots.push(canonical.clone());
-    save_config(ctx.config_path(), ctx.config())?;
-
-    index::run_full(ctx.connection(), ctx.config())?;
-    Ok(())
+    match index::run_full(ctx.connection(), ctx.config()) {
+        Ok(_) => {
+            save_config(ctx.config_path(), ctx.config())?;
+            Ok(())
+        }
+        Err(e) => {
+            ctx.config_mut().watch_roots.pop();
+            Err(e)
+        }
+    }
 }
 
 pub fn list_roots(ctx: &AppContext) -> Vec<PathBuf> {
@@ -79,9 +85,9 @@ fn prune_scan_repos_under_root(conn: &Connection, root: &Path) -> Result<u32> {
 }
 
 fn repo_under_root(repo_path: &Path, root_canon: &Path) -> Result<bool> {
-    let repo_canon = repo_path
-        .canonicalize()
-        .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", repo_path.display())))?;
+    let Ok(repo_canon) = repo_path.canonicalize() else {
+        return Ok(false);
+    };
     Ok(repo_canon.starts_with(root_canon))
 }
 
