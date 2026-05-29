@@ -42,7 +42,7 @@ pub enum WorkpotError {
     #[error("watch root already exists: {0}")]
     WatchRootAlreadyExists(String),
 
-    #[error("index would exceed max_repos ({max}): projected {projected}")]
+    #[error("index cap exceeded: projected {projected} repos (max {max})")]
     IndexCapExceeded { projected: u32, max: u32 },
 }
 
