@@ -1,6 +1,6 @@
 use globset::GlobSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
@@ -167,6 +167,14 @@ fn discovery_skips_symlink() {
         !candidates.iter().any(|p| p == &real_canon),
         "symlinked repo must not be discovered when follow_links is false"
     );
+}
+
+#[test]
+fn scan_root_returns_empty_for_missing_path() {
+    let missing = PathBuf::from("/tmp/workpot-discovery-missing-root-nope");
+    let candidates =
+        discovery::scan_root(&missing, &empty_excludes()).expect("scan missing root");
+    assert!(candidates.is_empty(), "missing watch root must yield no candidates");
 }
 
 #[test]

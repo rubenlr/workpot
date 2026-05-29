@@ -170,3 +170,101 @@ fn roots_remove_prunes() {
         "sibling repo outside removed root prefix must remain"
     );
 }
+
+#[test]
+fn roots_add_rejects_duplicate_watch_root() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(&config_path, empty_config_marker()).expect("write config");
+
+    let watch_parent = dir.path().join("roots");
+    fs::create_dir_all(&watch_parent).expect("watch parent");
+    git_worktree(&watch_parent, "nested-repo");
+
+    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    ctx.roots_add(&watch_parent).expect("first add");
+    assert!(matches!(
+        ctx.roots_add(&watch_parent),
+        Err(WorkpotError::WatchRootAlreadyExists(_))
+    ));
+}
+
+#[test]
+fn roots_remove_not_found() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(&config_path, empty_config_marker()).expect("write config");
+
+    let missing = dir.path().join("no-such-watch-root");
+    fs::create_dir_all(&missing).expect("dir for canonicalize");
+
+    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    assert!(matches!(
+        ctx.roots_remove(&missing, false),
+        Err(WorkpotError::WatchRootNotFound(_))
+    ));
+}
+
+#[test]
+fn reload_config_picks_up_disk_edits() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(&config_path, empty_config_marker()).expect("write config");
+
+    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+    assert!(ctx.config().watch_roots.is_empty());
+
+    let new_root = dir.path().join("from-disk");
+    fs::create_dir_all(&new_root).expect("new root dir");
+    let new_root_str = new_root.to_str().expect("utf8 path");
+    fs::write(
+        &config_path,
+        format!(
+            "watch_roots = [\"{new_root_str}\"]\nexcludes = [\"/tmp/workpot-reload-exclude/**\"]\n"
+        ),
+    )
+    .expect("rewrite config");
+
+    ctx.reload_config().expect("reload");
+    assert_eq!(ctx.config().watch_roots.len(), 1);
+    assert_eq!(
+        ctx.config().watch_roots[0]
+            .canonicalize()
+            .expect("canonicalize"),
+        new_root.canonicalize().expect("canonicalize new root")
+    );
+    assert!(
+        ctx.config()
+            .excludes
+            .iter()
+            .any(|e| e.contains("workpot-reload-exclude")),
+        "reload must load excludes from disk"
+    );
+}
+
+#[test]
+fn roots_add_rejects_when_at_max_watch_roots() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(
+        &config_path,
+        "watch_roots = []\nexcludes = []\n\n[limits]\nmax_watch_roots = 1\nmax_repos = 1000\n",
+    )
+    .expect("write config");
+
+    let root_a = dir.path().join("root-a");
+    let root_b = dir.path().join("root-b");
+    fs::create_dir_all(&root_a).expect("root a");
+    fs::create_dir_all(&root_b).expect("root b");
+
+    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    ctx.roots_add(&root_a).expect("first root");
+    assert!(matches!(
+        ctx.roots_add(&root_b),
+        Err(WorkpotError::LimitsExceeded(_))
+    ));
+}

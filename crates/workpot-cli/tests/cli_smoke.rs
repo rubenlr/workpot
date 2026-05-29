@@ -124,6 +124,31 @@ fn roots_add_index_list_roundtrip() {
 }
 
 #[test]
+fn index_rescan_without_roots_add() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let watch = home.path().join("watch");
+    fs::create_dir_all(&watch).expect("watch dir");
+    git_fixture(&watch);
+
+    let config_dir = home.path().join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    let watch_str = watch.to_str().expect("utf8");
+    fs::write(
+        config_dir.join("config.toml"),
+        format!("watch_roots = [\"{watch_str}\"]\nexcludes = []\n"),
+    )
+    .expect("config");
+
+    workpot_cmd(home.path()).arg("paths").assert().success();
+
+    workpot_cmd(home.path())
+        .arg("index")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("index:"));
+}
+
+#[test]
 fn index_cap_exceeded_exits_one() {
     let home = tempfile::tempdir().expect("tempdir");
     let watch = home.path().join("watch");
