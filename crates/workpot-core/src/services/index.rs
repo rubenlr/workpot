@@ -28,9 +28,23 @@ fn now_secs() -> i64 {
 
 /// Full watch-root rescan with transactional merge, caps, and audit history (D-07, D-14–D-18).
 pub fn run_full(conn: &Connection, config: &Config) -> Result<IndexSummary> {
+    let started_at = now_secs();
+    match run_full_inner(conn, config, started_at) {
+        Ok(summary) => Ok(summary),
+        Err(WorkpotError::IndexCapExceeded { projected, max }) => Err(WorkpotError::IndexCapExceeded {
+            projected,
+            max,
+        }),
+        Err(e) => {
+            let _ = record_error_run(conn, started_at, &e);
+            Err(e)
+        }
+    }
+}
+
+fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result<IndexSummary> {
     let exclude_set = discovery::build_exclude_set(config)?;
     let max_repos = config.limits.max_repos;
-    let started_at = now_secs();
 
     let watch_roots = canonical_watch_roots(config);
     let mut changelog: Vec<ChangeEntry> = Vec::new();
@@ -277,6 +291,17 @@ fn projected_repo_count(
         paths.insert(path.display().to_string());
     }
     Ok(paths.len() as i64)
+}
+
+fn record_error_run(conn: &Connection, started_at: i64, err: &WorkpotError) -> Result<()> {
+    let finished_at = now_secs();
+    let message = err.to_string();
+    conn.execute(
+        "INSERT INTO index_runs (started_at, finished_at, status, added_count, removed_count, skipped_count, message)
+         VALUES (?1, ?2, 'error', 0, 0, 0, ?3)",
+        params![started_at, finished_at, message],
+    )?;
+    Ok(())
 }
 
 fn record_cap_exceeded_run(
