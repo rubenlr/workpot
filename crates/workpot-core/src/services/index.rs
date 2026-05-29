@@ -198,7 +198,13 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
             }
         }
     }
-    git_tx.commit()?;
+    if let Err(e) = git_tx.commit() {
+        log::warn!("git refresh commit failed after successful index merge: {e}");
+        summary.git_errors = summary
+            .git_errors
+            .saturating_add(summary.git_refreshed);
+        summary.git_refreshed = 0;
+    }
 
     Ok(summary)
 }
