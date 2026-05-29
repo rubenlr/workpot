@@ -88,6 +88,7 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
     }
 
     let mut removes = collect_stale_scan_paths(conn, &watch_roots, &seen_paths)?;
+    removes.extend(collect_orphan_scan_paths(conn, &watch_roots)?);
     removes.extend(collect_missing_paths(conn)?);
     validate_manual_outside_roots(conn, &watch_roots, &mut removes)?;
     removes.sort();
@@ -279,6 +280,29 @@ fn collect_stale_scan_paths(
         }
     }
     Ok(stale)
+}
+
+/// Scan repos not under any configured watch root (orphans after config edits or partial failures).
+fn collect_orphan_scan_paths(
+    conn: &Connection,
+    watch_roots: &[PathBuf],
+) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT path FROM repos WHERE source = ?1 AND excluded = 0",
+    )?;
+    let paths: Vec<String> = stmt
+        .query_map(params![SOURCE_SCAN], |row| row.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+
+    Ok(paths
+        .into_iter()
+        .filter(|path_key| {
+            let path = Path::new(path_key);
+            !watch_roots
+                .iter()
+                .any(|root| path_under_root(path, root))
+        })
+        .collect())
 }
 
 fn collect_missing_paths(conn: &Connection) -> Result<Vec<String>> {
