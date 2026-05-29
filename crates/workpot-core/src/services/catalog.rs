@@ -288,6 +288,10 @@ pub(crate) fn is_bare_repo(path: &Path) -> bool {
 }
 
 /// Insert or update a scan-discovered repo. Returns `true` when the path was newly added.
+///
+/// Does not enforce [`Limits::max_repos`](crate::domain::config::Limits::max_repos); callers must cap
+/// before bulk upsert (typically [`crate::services::index::run_full`], which returns
+/// [`crate::WorkpotError::IndexCapExceeded`] when the projected count would exceed the limit).
 pub fn upsert_scan(conn: &Connection, path: &Path, git_common_dir: &str) -> Result<bool> {
     let canonical = path
         .canonicalize()
