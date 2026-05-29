@@ -53,6 +53,7 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
     let max_repos = config.limits.max_repos;
 
     let watch_roots = canonical_watch_roots(config);
+    let configured_roots = &config.watch_roots;
     let mut changelog: Vec<ChangeEntry> = Vec::new();
     let mut pre_skipped = 0u32;
 
@@ -87,10 +88,10 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
         }
     }
 
-    let mut removes = collect_stale_scan_paths(conn, &watch_roots, &seen_paths)?;
-    removes.extend(collect_orphan_scan_paths(conn, &watch_roots)?);
+    let mut removes = collect_stale_scan_paths(conn, configured_roots, &watch_roots, &seen_paths)?;
+    removes.extend(collect_orphan_scan_paths(conn, configured_roots)?);
     removes.extend(collect_missing_paths(conn)?);
-    validate_manual_outside_roots(conn, &watch_roots, &mut removes)?;
+    validate_manual_outside_roots(conn, configured_roots, &mut removes)?;
     removes.sort();
     removes.dedup();
 
@@ -259,7 +260,8 @@ fn backfill_empty_git_common_dir(
 
 fn collect_stale_scan_paths(
     conn: &Connection,
-    watch_roots: &[PathBuf],
+    configured_roots: &[PathBuf],
+    scan_roots: &[PathBuf],
     seen: &HashSet<String>,
 ) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(
@@ -272,7 +274,17 @@ fn collect_stale_scan_paths(
     let mut stale = Vec::new();
     for path_key in paths {
         let path = Path::new(&path_key);
-        if !watch_roots.iter().any(|root| paths::path_under_root(path, root)) {
+        if !configured_roots
+            .iter()
+            .any(|root| paths::path_under_root(path, root))
+        {
+            continue;
+        }
+        // Root still configured but not scannable this run — preserve indexed repos.
+        if !scan_roots
+            .iter()
+            .any(|root| paths::path_under_root(path, root))
+        {
             continue;
         }
         if !seen.contains(&path_key) {
@@ -285,7 +297,7 @@ fn collect_stale_scan_paths(
 /// Scan repos not under any configured watch root (orphans after config edits or partial failures).
 fn collect_orphan_scan_paths(
     conn: &Connection,
-    watch_roots: &[PathBuf],
+    configured_roots: &[PathBuf],
 ) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(
         "SELECT path FROM repos WHERE source = ?1 AND excluded = 0",
@@ -298,7 +310,7 @@ fn collect_orphan_scan_paths(
         .into_iter()
         .filter(|path_key| {
             let path = Path::new(path_key);
-            !watch_roots
+            !configured_roots
                 .iter()
                 .any(|root| paths::path_under_root(path, root))
         })
@@ -319,7 +331,7 @@ fn collect_missing_paths(conn: &Connection) -> Result<Vec<String>> {
 
 fn validate_manual_outside_roots(
     conn: &Connection,
-    watch_roots: &[PathBuf],
+    configured_roots: &[PathBuf],
     removes: &mut Vec<String>,
 ) -> Result<()> {
     let mut stmt = conn.prepare(
@@ -331,7 +343,10 @@ fn validate_manual_outside_roots(
 
     for path_key in paths {
         let path = Path::new(&path_key);
-        if watch_roots.iter().any(|root| paths::path_under_root(path, root)) {
+        if configured_roots
+            .iter()
+            .any(|root| paths::path_under_root(path, root))
+        {
             continue;
         }
         if !path.exists()
@@ -420,5 +435,63 @@ fn finish_index_run(
         ],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::infra::store;
+
+    fn conn_with_scan_path(path_key: &str) -> rusqlite::Connection {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("workpot.db");
+        let conn = store::open_connection(&db_path).expect("open db");
+        conn.execute(
+            "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+             VALUES (?1, 'demo', 0, ?2, '', 0)",
+            params![path_key, SOURCE_SCAN],
+        )
+        .expect("insert scan row");
+        std::mem::forget(dir);
+        conn
+    }
+
+    #[test]
+    fn collect_orphan_scan_paths_honors_configured_roots_without_canonicalization() {
+        let configured = PathBuf::from("/tmp/workpot-nonexistent-root-demo");
+        let repo_key = format!("{}/myrepo", configured.display());
+        let conn = conn_with_scan_path(&repo_key);
+
+        let orphans = collect_orphan_scan_paths(&conn, std::slice::from_ref(&configured))
+            .expect("collect orphans");
+        assert!(
+            orphans.is_empty(),
+            "repos under a configured root must not be purged when the root is absent from the canonical set"
+        );
+
+        let orphans_without_configured =
+            collect_orphan_scan_paths(&conn, &[]).expect("collect orphans without configured roots");
+        assert_eq!(orphans_without_configured, vec![repo_key]);
+    }
+
+    #[test]
+    fn collect_stale_scan_paths_skips_repos_when_configured_root_not_scanned() {
+        let configured = PathBuf::from("/tmp/workpot-nonexistent-root-demo");
+        let repo_key = format!("{}/myrepo", configured.display());
+        let conn = conn_with_scan_path(&repo_key);
+        let seen = HashSet::new();
+
+        let stale = collect_stale_scan_paths(
+            &conn,
+            std::slice::from_ref(&configured),
+            &[],
+            &seen,
+        )
+        .expect("collect stale");
+        assert!(
+            stale.is_empty(),
+            "repos under an unscannable configured root must not be marked stale"
+        );
+    }
 }
 
