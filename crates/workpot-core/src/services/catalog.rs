@@ -122,6 +122,12 @@ fn resolve_repo_location(conn: &Connection, path: &Path) -> Result<(PathBuf, Str
     Ok((repo_path, path_key))
 }
 
+fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 /// SQLite `repos.path` key for remove/lookup (canonical when the directory exists).
 fn resolve_repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
     match path.canonicalize() {
@@ -141,9 +147,9 @@ fn resolve_repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 // Suffix match only (`%/{basename}`), not substring — avoids `/tmp/foo-extra`
                 // matching a lookup for `foo`.
-                let suffix_pattern = format!("%/{name}");
+                let suffix_pattern = format!("/{}", escape_like(name));
                 let mut stmt = conn.prepare(
-                    "SELECT path FROM repos WHERE path = ?1 OR path LIKE ?2",
+                    "SELECT path FROM repos WHERE path = ?1 OR path LIKE '%' || ?2 ESCAPE '\\'",
                 )?;
                 let candidates: Vec<String> = stmt
                     .query_map(params![name, suffix_pattern], |row| row.get(0))?
