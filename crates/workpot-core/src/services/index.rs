@@ -174,7 +174,7 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
     let git_tx = conn.unchecked_transaction()?;
     let refresh_time = now_secs();
     for r in &git_results {
-        git_tx.execute(
+        let updated = git_tx.execute(
             "UPDATE repos SET branch=?1, is_dirty=?2, ahead=?3, behind=?4,
                               git_refreshed_at=?5, git_state_error=?6
              WHERE path=?7",
@@ -188,6 +188,13 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
                 r.path,
             ],
         )?;
+        if updated == 0 {
+            log::warn!("git refresh: no repo row matched path {}", r.path);
+            if r.state.error.is_none() {
+                summary.git_refreshed = summary.git_refreshed.saturating_sub(1);
+                summary.git_errors += 1;
+            }
+        }
     }
     git_tx.commit()?;
 
