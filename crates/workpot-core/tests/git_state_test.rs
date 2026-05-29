@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use workpot_core::domain::BRANCH_UNBORN;
 use workpot_core::services::git_state::refresh_git_state;
 
 /// Initialize a git repo using git2 (D-02: no Command::new("git") in core tests).
