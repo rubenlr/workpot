@@ -1,7 +1,8 @@
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use workpot_core::AppContext;
+use std::process::ExitCode;
+use workpot_core::{AppContext, WorkpotError};
 
 #[derive(Parser)]
 #[command(name = "workpot", about = "Local git repo workspace launcher", version)]
@@ -18,6 +19,8 @@ enum Commands {
     Index,
     #[command(subcommand)]
     Repo(RepoCommands),
+    #[command(subcommand)]
+    Roots(RootsCommands),
 }
 
 #[derive(Subcommand)]
@@ -30,7 +33,30 @@ enum RepoCommands {
     Remove { path: PathBuf },
 }
 
-fn main() -> anyhow::Result<()> {
+#[derive(Subcommand)]
+enum RootsCommands {
+    /// Add a watch root and scan it immediately.
+    Add { path: PathBuf },
+    /// List configured watch roots.
+    List,
+    /// Remove a watch root and prune indexed repos under it by default.
+    Remove {
+        path: PathBuf,
+        /// Keep indexed repos that were discovered under this root.
+        #[arg(long)]
+        skip_prune: bool,
+    },
+}
+
+fn main() -> ExitCode {
+    if let Err(e) = run() {
+        eprintln!("{e:#}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
+}
+
+fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Paths => {
@@ -65,6 +91,34 @@ fn main() -> anyhow::Result<()> {
                 println!("removed: {}", path.display());
             }
         },
+        Commands::Roots(sub) => {
+            let mut ctx = AppContext::open().context("failed to open workpot")?;
+            match sub {
+                RootsCommands::Add { path } => {
+                    ctx.roots_add(&path).map_err(map_roots_error)?;
+                    println!("watch root added: {}", path.display());
+                }
+                RootsCommands::List => {
+                    for root in ctx.roots_list() {
+                        println!("{}", root.display());
+                    }
+                }
+                RootsCommands::Remove { path, skip_prune } => {
+                    ctx.roots_remove(&path, skip_prune)
+                        .map_err(map_roots_error)?;
+                    println!("watch root removed: {}", path.display());
+                }
+            }
+        }
     }
     Ok(())
+}
+
+fn map_roots_error(err: WorkpotError) -> anyhow::Error {
+    match err {
+        WorkpotError::LimitsExceeded(msg) | WorkpotError::WatchRootNotFound(msg) => {
+            anyhow::anyhow!(msg)
+        }
+        other => other.into(),
+    }
 }
