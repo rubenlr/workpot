@@ -2,7 +2,7 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Phase 03 shipped — PR pending
+status: Phase 03 shipped — PR #2 open
 last_updated: "2026-05-29T22:56:42.846Z"
 progress:
   total_phases: 7
