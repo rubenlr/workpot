@@ -197,7 +197,7 @@ fn canonical_watch_roots(config: &Config) -> Vec<PathBuf> {
         .filter_map(|root| match root.canonicalize() {
             Ok(p) => Some(p),
             Err(e) => {
-                eprintln!("warning: skip watch root {}: {e}", root.display());
+                log::warn!("skip watch root {}: {e}", root.display());
                 None
             }
         })
@@ -233,10 +233,7 @@ fn backfill_empty_git_common_dir(
                 )?;
             }
             Err(_) => {
-                eprintln!(
-                    "warning: skip backfill {}: git unavailable",
-                    path.display()
-                );
+                log::warn!("skip backfill {}: git unavailable", path.display());
                 skipped += 1;
                 changelog.push(ChangeEntry {
                     path: path_key,
@@ -254,10 +251,10 @@ fn collect_stale_scan_paths(
     seen: &HashSet<String>,
 ) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(
-        "SELECT path FROM repos WHERE source = 'scan' AND excluded = 0",
+        "SELECT path FROM repos WHERE source = ?1 AND excluded = 0",
     )?;
     let paths: Vec<String> = stmt
-        .query_map([], |row| row.get(0))?
+        .query_map(params![SOURCE_SCAN], |row| row.get(0))?
         .collect::<std::result::Result<_, _>>()?;
 
     let mut stale = Vec::new();
@@ -291,10 +288,10 @@ fn validate_manual_outside_roots(
     removes: &mut Vec<String>,
 ) -> Result<()> {
     let mut stmt = conn.prepare(
-        "SELECT path FROM repos WHERE source = 'manual' AND excluded = 0",
+        "SELECT path FROM repos WHERE source = ?1 AND excluded = 0",
     )?;
     let paths: Vec<String> = stmt
-        .query_map([], |row| row.get(0))?
+        .query_map(params![SOURCE_MANUAL], |row| row.get(0))?
         .collect::<std::result::Result<_, _>>()?;
 
     for path_key in paths {
@@ -369,7 +366,6 @@ fn insert_index_run(tx: &Transaction<'_>, started_at: i64) -> Result<i64> {
 fn finish_index_run(
     tx: &Transaction<'_>,
     run_id: i64,
-    started_at: i64,
     status: &str,
     summary: &IndexSummary,
     message: Option<&str>,
@@ -388,7 +384,6 @@ fn finish_index_run(
             run_id,
         ],
     )?;
-    let _ = started_at;
     Ok(())
 }
 
