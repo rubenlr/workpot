@@ -45,19 +45,32 @@ pub fn list_roots(ctx: &AppContext) -> Vec<PathBuf> {
 
 pub fn remove_root(ctx: &mut AppContext, path: &Path, skip_prune: bool) -> Result<()> {
     let canonical = canonicalize_watch_root(path)?;
-    let roots = &mut ctx.config_mut().watch_roots;
-    let pos = roots
+    let config_path = ctx.config_path().to_path_buf();
+    let pos = ctx
+        .config()
+        .watch_roots
         .iter()
         .position(|r| roots_equal(r, &canonical))
         .ok_or_else(|| WorkpotError::WatchRootNotFound(canonical.display().to_string()))?;
-    roots.remove(pos);
-
-    save_config(ctx.config_path(), ctx.config())?;
+    let removed = ctx.config_mut().watch_roots.remove(pos);
 
     if !skip_prune {
-        prune_scan_repos_under_root(ctx.connection(), &canonical)?;
+        match prune_scan_repos_under_root(ctx.connection(), &canonical) {
+            Ok(_) => {}
+            Err(e) => {
+                ctx.config_mut().watch_roots.insert(pos, removed);
+                return Err(e);
+            }
+        }
     }
-    Ok(())
+
+    match save_config(&config_path, ctx.config()) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            ctx.config_mut().watch_roots.insert(pos, removed);
+            Err(e)
+        }
+    }
 }
 
 /// Reload config from disk (D-19).
