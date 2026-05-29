@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: "Phase 03 verified — ready for tray MVP"
-last_updated: "2026-05-30T12:00:00Z"
+status: Phase 03 shipped — PR pending
+last_updated: "2026-05-29T22:56:42.846Z"
 progress:
   total_phases: 7
   completed_phases: 3
@@ -36,6 +36,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 ## Session Notes
 
+- Phase 3 shipped (2026-05-30): PR https://github.com/rubenlr/workpot/pull/2 — branch `feature/03-git-state` → `master`
 - Phase 3 UAT `/gsd-verify-work 3 --fix --all` (2026-05-30): 10/10 automated checks; CR-01/02 + WR-01/02/03 fixes from code review
 - Phase 3 executed 03-01..03-03 (2026-05-29): git2 substrate, refresh_all, index second pass + CLI columns
 - Phase 2 context via `/gsd-discuss-phase 2` (2026-05-29): discovery, excludes, index merge, roots CLI, caps, `git_common_dir` grouping
