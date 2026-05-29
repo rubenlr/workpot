@@ -9,7 +9,7 @@ use crate::domain::{Config, RepoRecord};
 use crate::error::Result;
 use crate::infra::paths;
 use crate::infra::store;
-use crate::services::{catalog, index, roots};
+use crate::services::{catalog, excludes, index, roots};
 use rusqlite::Connection;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -81,8 +81,16 @@ impl AppContext {
         catalog::list_repos(&self.conn)
     }
 
-    pub fn remove_repo(&self, path: &Path) -> Result<()> {
-        catalog::remove_repo(&self.conn, path)
+    pub fn remove_repo(&mut self, path: &Path) -> Result<()> {
+        catalog::remove_repo_with_exclude(&self.conn, &self.config_path, &mut self.config, path)
+    }
+
+    pub fn excludes_list(&self) -> Vec<String> {
+        excludes::list_excludes(&self.config)
+    }
+
+    pub fn excludes_remove(&mut self, glob: &str) -> Result<()> {
+        excludes::remove_exclude(&self.config_path, &mut self.config, glob)
     }
 
     pub fn run_index(&self) -> Result<index::IndexSummary> {

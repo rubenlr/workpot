@@ -21,6 +21,8 @@ enum Commands {
     Repo(RepoCommands),
     #[command(subcommand)]
     Roots(RootsCommands),
+    #[command(subcommand)]
+    Excludes(ExcludesCommands),
 }
 
 #[derive(Subcommand)]
@@ -31,6 +33,14 @@ enum RepoCommands {
     List,
     /// Remove a registered repository.
     Remove { path: PathBuf },
+}
+
+#[derive(Subcommand)]
+enum ExcludesCommands {
+    /// List configured exclude globs.
+    List,
+    /// Remove an exclude glob from config.
+    Remove { glob: String },
 }
 
 #[derive(Subcommand)]
@@ -86,9 +96,24 @@ fn run() -> anyhow::Result<()> {
                 }
             }
             RepoCommands::Remove { path } => {
-                let ctx = AppContext::open().context("failed to open workpot")?;
+                let mut ctx = AppContext::open().context("failed to open workpot")?;
                 ctx.remove_repo(&path).context("repo remove failed")?;
                 println!("removed: {}", path.display());
+            }
+        },
+        Commands::Excludes(sub) => {
+            let mut ctx = AppContext::open().context("failed to open workpot")?;
+            match sub {
+                ExcludesCommands::List => {
+                    for glob in ctx.excludes_list() {
+                        println!("{glob}");
+                    }
+                }
+                ExcludesCommands::Remove { glob } => {
+                    ctx.excludes_remove(&glob)
+                        .context("excludes remove failed")?;
+                    println!("removed exclude: {glob}");
+                }
             }
         },
         Commands::Roots(sub) => {

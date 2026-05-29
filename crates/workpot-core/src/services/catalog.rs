@@ -1,5 +1,6 @@
-use crate::domain::RepoRecord;
+use crate::domain::{Config, RepoRecord};
 use crate::error::{Result, WorkpotError};
+use crate::save_config;
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -88,6 +89,44 @@ pub fn remove_repo(conn: &Connection, path: &Path) -> Result<()> {
     let deleted = conn.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
     if deleted == 0 {
         return Err(WorkpotError::NotFound(path_key));
+    }
+    Ok(())
+}
+
+/// Delete row and append `{parent}/{name}/**` to config excludes (D-10).
+pub fn remove_repo_with_exclude(
+    conn: &Connection,
+    config_path: &Path,
+    config: &mut Config,
+    path: &Path,
+) -> Result<()> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?;
+    let path_key = canonical.display().to_string();
+
+    let deleted = conn.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
+    if deleted == 0 {
+        return Err(WorkpotError::NotFound(path_key));
+    }
+
+    let parent = canonical.parent().ok_or_else(|| {
+        WorkpotError::InvalidPath(format!("repo path has no parent: {}", canonical.display()))
+    })?;
+    let name = canonical.file_name().ok_or_else(|| {
+        WorkpotError::InvalidPath(format!("repo path has no directory name: {}", canonical.display()))
+    })?;
+    let base = format!("{}/{}", parent.display(), name.to_string_lossy());
+    let tree = format!("{base}/**");
+    let mut changed = false;
+    for glob in [base, tree] {
+        if !config.excludes.iter().any(|g| g == &glob) {
+            config.excludes.push(glob);
+            changed = true;
+        }
+    }
+    if changed {
+        save_config(config_path, config)?;
     }
     Ok(())
 }
