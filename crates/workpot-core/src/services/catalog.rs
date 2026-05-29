@@ -92,7 +92,7 @@ pub fn remove_repo(conn: &Connection, path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn is_git_worktree(path: &Path) -> bool {
+pub(crate) fn is_git_worktree(path: &Path) -> bool {
     let marker = path.join(".git");
     if marker.is_dir() {
         return marker.join("HEAD").is_file();
@@ -105,6 +105,54 @@ fn is_git_worktree(path: &Path) -> bool {
     false
 }
 
-fn is_bare_repo(path: &Path) -> bool {
+pub(crate) fn is_bare_repo(path: &Path) -> bool {
     path.join("HEAD").is_file() && path.join("objects").is_dir()
+}
+
+/// Insert or update a scan-discovered repo. Returns `true` when the path was newly added.
+pub fn upsert_scan(conn: &Connection, path: &Path, git_common_dir: &str) -> Result<bool> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?;
+
+    let path_key = canonical.display().to_string();
+    let existed = conn
+        .query_row(
+            "SELECT 1 FROM repos WHERE path = ?1",
+            params![path_key],
+            |_| Ok(()),
+        )
+        .is_ok();
+
+    let name = canonical
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let registered_at = if existed {
+        conn.query_row(
+            "SELECT registered_at FROM repos WHERE path = ?1",
+            params![path_key],
+            |row| row.get(0),
+        )
+        .unwrap_or(0)
+    } else {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0)
+    };
+
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, ?2, ?3, 'scan', ?4, 0)
+         ON CONFLICT(path) DO UPDATE SET
+           name = excluded.name,
+           git_common_dir = excluded.git_common_dir,
+           source = CASE WHEN repos.source = 'manual' THEN 'manual' ELSE 'scan' END",
+        params![path_key, name, registered_at, git_common_dir],
+    )?;
+
+    Ok(!existed)
 }

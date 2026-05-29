@@ -40,3 +40,14 @@ fn discovery_skips_nested_git() {
     let nested_canonical = nested_git.canonicalize().expect("canonicalize nested");
     assert!(!candidates.iter().any(|p| p == &nested_canonical));
 }
+
+#[test]
+fn discovery_skips_plain_dir() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let plain = root.path().join("plain_dir");
+    fs::create_dir_all(&plain).expect("plain dir");
+
+    let candidates = discovery::scan_root(root.path(), &empty_excludes()).expect("scan_root");
+    let plain_canonical = plain.canonicalize().expect("canonicalize plain");
+    assert!(!candidates.iter().any(|p| p == &plain_canonical));
+}
