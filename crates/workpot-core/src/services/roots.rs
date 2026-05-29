@@ -34,6 +34,7 @@ pub fn add_root(ctx: &mut AppContext, path: &Path) -> Result<()> {
         },
         Err(e) => {
             ctx.config_mut().watch_roots.pop();
+            prune_scan_repos_under_root(ctx.connection(), &canonical)?;
             Err(e)
         }
     }
