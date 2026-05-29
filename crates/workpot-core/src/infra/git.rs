@@ -68,10 +68,15 @@ pub fn list_worktree_paths(repo_path: &Path) -> Result<Vec<PathBuf>> {
             } else {
                 repo_path.join(path)
             };
-            linked.push(
-                std::fs::canonicalize(&resolved)
-                    .unwrap_or(resolved),
-            );
+            match std::fs::canonicalize(&resolved) {
+                Ok(canon) => linked.push(canon),
+                Err(e) => {
+                    eprintln!(
+                        "warning: skip worktree {}: {e}",
+                        resolved.display()
+                    );
+                }
+            }
         }
     }
 
