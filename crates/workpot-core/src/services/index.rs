@@ -1,7 +1,7 @@
 use crate::domain::Config;
 use crate::error::{Result, WorkpotError};
 use crate::infra::git::resolve_git_common_dir;
-use crate::services::{catalog, discovery};
+use crate::services::{catalog, discovery, git_state};
 use rusqlite::{params, Connection, Transaction};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -12,6 +12,8 @@ pub struct IndexSummary {
     pub added: u32,
     pub removed: u32,
     pub skipped: u32,
+    pub git_refreshed: u32,
+    pub git_errors: u32,
 }
 
 struct ChangeEntry {
@@ -148,6 +150,46 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
         None,
     )?;
     tx.commit()?;
+
+    // Second pass: git state refresh (separate transaction per Pitfall 6)
+    let all_paths: Vec<PathBuf> = {
+        let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
+        stmt.query_map([], |row| row.get::<_, String>(0))?
+            .filter_map(|r| r.ok())
+            .map(PathBuf::from)
+            .collect()
+    };
+
+    // rayon parallel refresh must complete before opening any DB transaction
+    let git_results = git_state::refresh_all(all_paths);
+
+    for r in &git_results {
+        if r.state.error.is_some() {
+            summary.git_errors += 1;
+        } else {
+            summary.git_refreshed += 1;
+        }
+    }
+
+    let git_tx = conn.unchecked_transaction()?;
+    let refresh_time = now_secs();
+    for r in &git_results {
+        git_tx.execute(
+            "UPDATE repos SET branch=?1, is_dirty=?2, ahead=?3, behind=?4,
+                              git_refreshed_at=?5, git_state_error=?6
+             WHERE path=?7",
+            rusqlite::params![
+                r.state.branch,
+                r.state.is_dirty.map(|b| b as i64),
+                r.state.ahead,
+                r.state.behind,
+                refresh_time,
+                r.state.error,
+                r.path,
+            ],
+        )?;
+    }
+    git_tx.commit()?;
 
     Ok(summary)
 }
