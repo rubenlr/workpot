@@ -1,6 +1,7 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use workpot_core::domain::Config;
 use workpot_core::{AppContext, WorkpotError};
 
 fn git_worktree(parent: &Path, name: &str) -> std::path::PathBuf {
@@ -67,6 +68,48 @@ fn roots_add_triggers_scan() {
     assert!(
         repos.iter().any(|r| r.path == nested_canon),
         "expected indexed repo under new watch root"
+    );
+}
+
+#[test]
+fn config_validate_rejects_excess_watch_roots() {
+    let mut config = Config::default();
+    config.limits.max_watch_roots = 2;
+    config.watch_roots = vec![
+        PathBuf::from("/tmp/workpot-root-a"),
+        PathBuf::from("/tmp/workpot-root-b"),
+        PathBuf::from("/tmp/workpot-root-c"),
+    ];
+    let err = config.validate().expect_err("validate should fail");
+    assert!(err.contains("watch_roots count"));
+}
+
+#[test]
+fn roots_remove_skip_prune_keeps_repos() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(&config_path, empty_config_marker()).expect("write config");
+
+    let watch_root = dir.path().join("watch");
+    fs::create_dir_all(&watch_root).expect("watch root");
+    let under = git_worktree(&watch_root, "repo-under");
+
+    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    ctx.roots_add(&watch_root).expect("add watch");
+    let under_canon = under.canonicalize().expect("canonicalize under");
+
+    ctx.roots_remove(&watch_root, true)
+        .expect("remove watch root without prune");
+
+    let repos = ctx.list_repos().expect("list after skip-prune remove");
+    assert!(
+        repos.iter().any(|r| r.path == under_canon),
+        "skip-prune must keep indexed repos under removed root"
+    );
+    assert!(
+        ctx.roots_list().is_empty(),
+        "watch root should be removed from config"
     );
 }
 

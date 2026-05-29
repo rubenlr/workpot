@@ -2,8 +2,12 @@ use globset::GlobSet;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
+use workpot_core::domain::Config;
 use workpot_core::infra::git::resolve_git_common_dir;
 use workpot_core::services::discovery;
+use workpot_core::WorkpotError;
 
 fn empty_excludes() -> GlobSet {
     globset::GlobSetBuilder::new()
@@ -109,6 +113,60 @@ fn discovery_includes_bare_and_worktree() {
     let bare_gcd = resolve_git_common_dir(&bare_canon).expect("bare gcd");
     let linked_gcd = resolve_git_common_dir(&linked_canon).expect("linked gcd");
     assert_eq!(bare_gcd, linked_gcd);
+}
+
+#[test]
+fn built_in_defaults_include_node_modules() {
+    let defaults = discovery::built_in_defaults();
+    assert!(
+        defaults.iter().any(|g| g.contains("node_modules")),
+        "built-in excludes must cover node_modules"
+    );
+}
+
+#[test]
+fn built_in_exclude_blocks_node_modules() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let modules = root.path().join("node_modules").join("nested");
+    fs::create_dir_all(&modules).expect("modules dir");
+    let _hidden = git_worktree(&modules, "hidden-repo");
+    let _visible = git_worktree(root.path(), "visible-repo");
+
+    let exclude_set = discovery::build_exclude_set(&Config::default()).expect("exclude set");
+    let candidates = discovery::scan_root(root.path(), &exclude_set).expect("scan_root");
+
+    let modules_canon = modules.canonicalize().expect("canonicalize modules");
+    assert!(
+        !candidates.iter().any(|p| p.starts_with(&modules_canon)),
+        "built-in node_modules exclude must block discovery"
+    );
+}
+
+#[test]
+fn build_exclude_set_rejects_invalid_glob() {
+    let mut config = Config::default();
+    config.excludes.push("[invalid".to_string());
+    let err = discovery::build_exclude_set(&config).unwrap_err();
+    assert!(matches!(err, WorkpotError::Config(_)));
+}
+
+#[cfg(unix)]
+#[test]
+fn discovery_skips_symlink() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let outside = tempfile::tempdir().expect("outside");
+    let real_repo = git_worktree(outside.path(), "real");
+    let link_parent = root.path().join("links");
+    fs::create_dir_all(&link_parent).expect("links dir");
+    let link = link_parent.join("to-repo");
+    symlink(&real_repo, &link).expect("symlink");
+
+    let candidates = discovery::scan_root(root.path(), &empty_excludes()).expect("scan_root");
+    let real_canon = real_repo.canonicalize().expect("canonicalize real");
+    assert!(
+        !candidates.iter().any(|p| p == &real_canon),
+        "symlinked repo must not be discovered when follow_links is false"
+    );
 }
 
 #[test]

@@ -127,6 +127,51 @@ fn index_cap_exceeded_exits_one() {
 }
 
 #[test]
+fn excludes_list_shows_configured_glob() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config_dir = home.path().join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    let glob = "/tmp/workpot-cli-exclude-test/**";
+    fs::write(
+        config_dir.join("config.toml"),
+        format!("watch_roots = []\nexcludes = [\"{glob}\"]\n"),
+    )
+    .expect("config");
+
+    workpot_cmd(home.path())
+        .args(["excludes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(glob));
+}
+
+#[test]
+fn excludes_remove_updates_config() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config_dir = home.path().join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    let config_path = config_dir.join("config.toml");
+    let glob = "/tmp/workpot-cli-exclude-remove/**";
+    fs::write(
+        &config_path,
+        format!("watch_roots = []\nexcludes = [\"{glob}\"]\n"),
+    )
+    .expect("config");
+
+    workpot_cmd(home.path())
+        .args(["excludes", "remove", glob])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed exclude"));
+
+    let contents = fs::read_to_string(&config_path).expect("read config");
+    assert!(
+        !contents.contains(glob),
+        "exclude glob should be removed from config.toml"
+    );
+}
+
+#[test]
 fn repo_add_rejects_non_git() {
     let home = tempfile::tempdir().expect("tempdir");
     let plain = home.path().join("plain-dir");
