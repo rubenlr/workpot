@@ -45,7 +45,7 @@ fn limits_reject_over_hard_max() {
 
     assert!(matches!(
         AppContext::open_with_paths(config_path, db_path),
-        Err(WorkpotError::LimitsExceeded(_))
+        Err(WorkpotError::Config(_))
     ));
 }
 

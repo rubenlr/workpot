@@ -1,40 +1,52 @@
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 use workpot_core::AppContext;
 use workpot_core::WorkpotError;
+
+fn git_init(repo: &std::path::Path) {
+    let status = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(repo)
+        .status()
+        .expect("git init");
+    assert!(status.success(), "git init failed for {}", repo.display());
+}
 
 fn git_fixture() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
     let repo = dir.path().join("sample-repo");
     fs::create_dir_all(&repo).expect("repo dir");
-    let git_dir = repo.join(".git");
-    fs::create_dir_all(git_dir.join("objects")).expect("objects");
-    fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    git_init(&repo);
     (dir, repo)
 }
 
 fn bare_git_fixture() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
     let repo = dir.path().join("bare-repo");
-    fs::create_dir_all(repo.join("objects")).expect("objects");
-    fs::write(repo.join("HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    fs::create_dir_all(&repo).expect("bare dir");
+    let status = Command::new("git")
+        .args(["init", "-q", "--bare"])
+        .current_dir(&repo)
+        .status()
+        .expect("git init --bare");
+    assert!(status.success(), "git init --bare failed");
     (dir, repo)
 }
 
 fn gitdir_file_worktree_fixture() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
-    let git_dir = dir.path().join("actual.git");
-    fs::create_dir_all(git_dir.join("objects")).expect("objects");
-    fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("HEAD");
-
-    let repo = dir.path().join("linked-worktree");
-    fs::create_dir_all(&repo).expect("worktree dir");
-    fs::write(
-        repo.join(".git"),
-        format!("gitdir: {}\n", git_dir.display()),
-    )
-    .expect(".git file");
-    (dir, repo)
+    let main = dir.path().join("main");
+    fs::create_dir_all(&main).expect("main dir");
+    git_init(&main);
+    let linked = dir.path().join("linked-worktree");
+    let status = Command::new("git")
+        .args(["worktree", "add", "-q", linked.to_str().expect("utf-8 path")])
+        .current_dir(&main)
+        .status()
+        .expect("git worktree add");
+    assert!(status.success(), "git worktree add failed");
+    (dir, linked)
 }
 
 #[test]
@@ -154,8 +166,6 @@ fn register_rejects_invalid_gitdir_target() {
     let err = ctx.register_manual(&repo).unwrap_err();
     assert!(matches!(err, WorkpotError::NotGitRepo(_)));
 }
-
-#[test]
 
 #[test]
 fn list_repos_skips_excluded_rows() {
