@@ -1,6 +1,9 @@
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use workpot_core::domain::{SOURCE_MANUAL, SOURCE_SCAN};
+use workpot_core::infra::{git, store};
+use workpot_core::services::catalog;
 use workpot_core::AppContext;
 use workpot_core::WorkpotError;
 
@@ -406,6 +409,95 @@ fn remove_repo_by_basename_with_like_metacharacters_in_name() {
         .query_row("SELECT COUNT(*) FROM repos", [], |row| row.get(0))
         .expect("count repos");
     assert_eq!(count, 0, "row for foo%bar must be removed, not a LIKE false match");
+}
+
+#[test]
+fn upsert_scan_returns_true_on_insert_false_on_update() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("scan-repo");
+    fs::create_dir_all(&repo).expect("repo dir");
+    git_init(&repo);
+    let conn = store::open_connection(&dir.path().join("workpot.db")).expect("open db");
+    let canon = repo.canonicalize().expect("canonicalize");
+    let gcd = git::resolve_git_common_dir(&canon)
+        .expect("gcd")
+        .display()
+        .to_string();
+
+    assert!(
+        catalog::upsert_scan(&conn, &canon, &gcd).expect("insert"),
+        "first upsert must report newly added"
+    );
+    assert!(
+        !catalog::upsert_scan(&conn, &canon, &gcd).expect("update"),
+        "second upsert must report existing path"
+    );
+}
+
+#[test]
+fn upsert_scan_preserves_manual_source_on_conflict() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("manual-repo");
+    fs::create_dir_all(&repo).expect("repo dir");
+    git_init(&repo);
+    let conn = store::open_connection(&dir.path().join("workpot.db")).expect("open db");
+    let canon = repo.canonicalize().expect("canonicalize");
+    let path_key = canon.display().to_string();
+    let gcd = git::resolve_git_common_dir(&canon)
+        .expect("gcd")
+        .display()
+        .to_string();
+
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'manual-repo', 42, ?2, 'old-gcd', 0)",
+        rusqlite::params![path_key, SOURCE_MANUAL],
+    )
+    .expect("seed manual row");
+
+    catalog::upsert_scan(&conn, &canon, &gcd).expect("upsert over manual");
+
+    let source: String = conn
+        .query_row(
+            "SELECT source FROM repos WHERE path = ?1",
+            rusqlite::params![path_key],
+            |row| row.get(0),
+        )
+        .expect("source");
+    assert_eq!(source, SOURCE_MANUAL);
+}
+
+#[test]
+fn upsert_scan_updates_git_common_dir_for_scan_rows() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("scan-repo");
+    fs::create_dir_all(&repo).expect("repo dir");
+    git_init(&repo);
+    let conn = store::open_connection(&dir.path().join("workpot.db")).expect("open db");
+    let canon = repo.canonicalize().expect("canonicalize");
+    let path_key = canon.display().to_string();
+    let gcd = git::resolve_git_common_dir(&canon)
+        .expect("gcd")
+        .display()
+        .to_string();
+
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'scan-repo', 0, ?2, 'stale-gcd', 0)",
+        rusqlite::params![path_key, SOURCE_SCAN],
+    )
+    .expect("seed scan row");
+
+    catalog::upsert_scan(&conn, &canon, &gcd).expect("upsert");
+
+    let stored: String = conn
+        .query_row(
+            "SELECT git_common_dir FROM repos WHERE path = ?1",
+            rusqlite::params![path_key],
+            |row| row.get(0),
+        )
+        .expect("gcd");
+    assert_eq!(stored, gcd);
 }
 
 #[test]

@@ -481,6 +481,32 @@ mod tests {
     }
 
     #[test]
+    fn canonical_watch_roots_omits_nonexistent_paths() {
+        let mut config = Config::default();
+        config
+            .watch_roots
+            .push(PathBuf::from("/tmp/workpot-missing-watch-root-nope-xyz"));
+        let temp = std::env::temp_dir();
+        config.watch_roots.push(temp.clone());
+
+        let roots = canonical_watch_roots(&config);
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0], temp.canonicalize().expect("temp canon"));
+    }
+
+    #[test]
+    fn projected_repo_count_applies_removes_and_upserts() {
+        let existing = "/tmp/workpot-projected-count-existing";
+        let conn = conn_with_scan_path(existing);
+        let replacement = PathBuf::from("/tmp/workpot-projected-count-replacement");
+
+        let count =
+            projected_repo_count(&conn, &[existing.to_string()], &[(replacement, String::new())])
+                .expect("projected count");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
     fn collect_stale_scan_paths_skips_repos_when_configured_root_not_scanned() {
         let configured = PathBuf::from("/tmp/workpot-nonexistent-root-demo");
         let repo_key = format!("{}/myrepo", configured.display());

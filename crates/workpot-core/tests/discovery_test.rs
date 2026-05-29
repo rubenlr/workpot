@@ -143,6 +143,27 @@ fn built_in_exclude_blocks_node_modules() {
 }
 
 #[test]
+fn build_exclude_set_merges_user_glob_with_builtins() {
+    let mut config = Config::default();
+    config
+        .excludes
+        .push("**/workpot-custom-exclude-dir/**".to_string());
+    let exclude_set = discovery::build_exclude_set(&config).expect("exclude set");
+
+    let custom = PathBuf::from("/tmp/workpot-custom-exclude-dir/nested/repo");
+    assert!(
+        exclude_set.is_match(&custom),
+        "user exclude glob must be honored alongside built-ins"
+    );
+    assert!(
+        discovery::built_in_defaults()
+            .iter()
+            .any(|g| g.contains("node_modules")),
+        "built-in defaults remain available"
+    );
+}
+
+#[test]
 fn build_exclude_set_rejects_invalid_glob() {
     let mut config = Config::default();
     config.excludes.push("[invalid".to_string());
