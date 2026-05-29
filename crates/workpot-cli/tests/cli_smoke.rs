@@ -18,7 +18,13 @@ fn git_fixture(parent: &std::path::Path) -> PathBuf {
 
 fn workpot_cmd(home: &std::path::Path) -> Command {
     let mut cmd = Command::cargo_bin("workpot").expect("workpot binary");
+    // Isolate all platform dirs under `home`. CI often sets XDG_* globally; without
+    // this, `directories::config_dir()` ignores the temp HOME and tests read/write
+    // different config files (Linux failures on excludes + index cap).
     cmd.env("HOME", home);
+    cmd.env("XDG_CONFIG_HOME", home.join(".config"));
+    cmd.env("XDG_DATA_HOME", home.join(".local/share"));
+    cmd.env_remove("XDG_STATE_HOME");
     cmd
 }
 
