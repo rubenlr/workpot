@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 use workpot_core::domain::Config;
 use workpot_core::save_config;
-use workpot_core::services::{discovery, excludes, index};
+use workpot_core::services::{discovery, excludes};
 use workpot_core::AppContext;
 
 fn git_worktree(parent: &Path, name: &str) -> std::path::PathBuf {
@@ -134,7 +134,7 @@ fn remove_then_index_skips() {
     );
 
     ctx.remove_repo(&repo).expect("remove with exclude");
-    index::run_full(ctx.connection(), ctx.config()).expect("rescan");
+    ctx.run_index().expect("rescan");
 
     assert!(
         !ctx.list_repos()

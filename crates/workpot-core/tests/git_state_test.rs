@@ -46,28 +46,6 @@ fn make_commit(repo: &git2::Repository, message: &str) -> git2::Oid {
         .expect("commit")
 }
 
-/// Stage a file modification and commit.
-#[allow(dead_code)]
-fn modify_and_commit(repo: &git2::Repository, message: &str) -> git2::Oid {
-    let workdir = repo.workdir().expect("workdir (not bare)");
-    std::fs::write(workdir.join("file.txt"), b"modified content\n").expect("write");
-
-    let mut index = repo.index().expect("index");
-    index
-        .add_path(std::path::Path::new("file.txt"))
-        .expect("add_path");
-    index.write().expect("index write");
-    let tree_oid = index.write_tree().expect("write_tree");
-    let tree = repo.find_tree(tree_oid).expect("find tree");
-
-    let sig = git2::Signature::now("Test User", "test@example.com").expect("signature");
-
-    let head_oid = repo.head().expect("head").target().expect("target");
-    let parent = repo.find_commit(head_oid).expect("parent commit");
-
-    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&parent])
-        .expect("commit")
-}
 
 // ─── GIT-01: branch name tests ────────────────────────────────────────────────
 
