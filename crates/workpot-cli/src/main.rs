@@ -59,11 +59,21 @@ enum RootsCommands {
 }
 
 fn main() -> ExitCode {
-    if let Err(e) = run() {
-        eprintln!("{e:#}");
-        return ExitCode::FAILURE;
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) if matches!(
+            e.downcast_ref::<WorkpotError>(),
+            Some(WorkpotError::IndexCapExceeded { .. })
+        ) =>
+        {
+            eprintln!("{e:#}");
+            ExitCode::from(1)
+        }
+        Err(e) => {
+            eprintln!("{e:#}");
+            ExitCode::FAILURE
+        }
     }
-    ExitCode::SUCCESS
 }
 
 fn run() -> anyhow::Result<()> {
@@ -76,11 +86,19 @@ fn run() -> anyhow::Result<()> {
         }
         Commands::Index => {
             let ctx = AppContext::open().context("failed to open workpot")?;
-            let summary = ctx.run_index().context("index failed")?;
-            println!(
-                "index: +{} -{} skipped {}",
-                summary.added, summary.removed, summary.skipped
-            );
+            match ctx.run_index() {
+                Ok(summary) => {
+                    println!(
+                        "index: +{} -{} skipped {}",
+                        summary.added, summary.removed, summary.skipped
+                    );
+                }
+                Err(WorkpotError::IndexCapExceeded { projected, max }) => {
+                    eprintln!("index cap exceeded: projected {projected} repos (max {max})");
+                    return Err(WorkpotError::IndexCapExceeded { projected, max }.into());
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
         Commands::Repo(sub) => match sub {
             RepoCommands::Add { path } => {

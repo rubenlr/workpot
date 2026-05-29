@@ -2,13 +2,17 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command as StdCommand;
 
 fn git_fixture(parent: &std::path::Path) -> PathBuf {
     let repo = parent.join("sample-repo");
     fs::create_dir_all(&repo).expect("repo dir");
-    let git_dir = repo.join(".git");
-    fs::create_dir_all(git_dir.join("objects")).expect("objects");
-    fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    let status = StdCommand::new("git")
+        .args(["init", "-q"])
+        .current_dir(&repo)
+        .status()
+        .expect("git init");
+    assert!(status.success(), "git init failed");
     repo
 }
 
@@ -59,6 +63,67 @@ fn repo_add_list_remove_roundtrip() {
         .assert()
         .success()
         .stdout(predicate::str::is_empty());
+}
+
+#[test]
+fn roots_add_index_list_roundtrip() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let watch = home.path().join("watch");
+    fs::create_dir_all(&watch).expect("watch dir");
+    let repo_path = git_fixture(&watch);
+    let canonical = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["roots", "add", watch.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .arg("index")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("index:"));
+
+    workpot_cmd(home.path())
+        .args(["repo", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(canonical.to_str().expect("utf8 path")));
+}
+
+#[test]
+fn index_cap_exceeded_exits_one() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let watch = home.path().join("watch");
+    fs::create_dir_all(&watch).expect("watch");
+    let one = watch.join("one");
+    let two = watch.join("two");
+    fs::create_dir_all(&one).expect("one");
+    fs::create_dir_all(&two).expect("two");
+    git_fixture(&one);
+    git_fixture(&two);
+
+    let config_dir = home.path().join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    let watch_str = watch.to_str().expect("utf8");
+    fs::write(
+        config_dir.join("config.toml"),
+        format!(
+            "watch_roots = [\"{watch_str}\"]\nexcludes = []\n\n[limits]\nmax_repos = 1\nmax_watch_roots = 100\n"
+        ),
+    )
+    .expect("config");
+
+    workpot_cmd(home.path())
+        .arg("paths")
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .arg("index")
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("cap exceeded"));
 }
 
 #[test]
