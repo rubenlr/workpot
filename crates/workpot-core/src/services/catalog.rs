@@ -111,25 +111,59 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
 }
 
 /// Resolve repo location and SQLite path key, falling back when the directory is gone.
-fn resolve_repo_location(path: &Path) -> Result<(PathBuf, String)> {
+fn resolve_repo_location(conn: &Connection, path: &Path) -> Result<(PathBuf, String)> {
+    let path_key = resolve_repo_path_key(conn, path)?;
+    let repo_path = if path.exists() {
+        path.canonicalize()
+            .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?
+    } else {
+        PathBuf::from(&path_key)
+    };
+    Ok((repo_path, path_key))
+}
+
+/// SQLite `repos.path` key for remove/lookup (canonical when the directory exists).
+fn resolve_repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
     match path.canonicalize() {
-        Ok(c) => {
-            let key = c.display().to_string();
-            Ok((c, key))
-        }
+        Ok(c) => Ok(c.display().to_string()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            Ok((path.to_path_buf(), path.display().to_string()))
+            let display_key = path.display().to_string();
+            if conn
+                .query_row(
+                    "SELECT 1 FROM repos WHERE path = ?1",
+                    params![display_key],
+                    |_| Ok(()),
+                )
+                .is_ok()
+            {
+                return Ok(display_key);
+            }
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                let suffix = format!("/{name}");
+                let mut stmt = conn.prepare(
+                    "SELECT path FROM repos WHERE path = ?1 OR path LIKE '%' || ?2",
+                )?;
+                let matches: Vec<String> = stmt
+                    .query_map(params![name, suffix], |row| row.get(0))?
+                    .collect::<std::result::Result<_, _>>()?;
+                match matches.len() {
+                    0 => {}
+                    1 => return Ok(matches[0].clone()),
+                    _ => {
+                        return Err(WorkpotError::InvalidPath(format!(
+                            "ambiguous repo name '{name}'; use the absolute path from `workpot repo list`"
+                        )));
+                    }
+                }
+            }
+            Ok(display_key)
         }
         Err(e) => Err(WorkpotError::InvalidPath(format!("{}: {e}", path.display()))),
     }
 }
 
-fn repo_path_key(path: &Path) -> Result<String> {
-    resolve_repo_location(path).map(|(_, key)| key)
-}
-
 pub fn remove_repo(conn: &Connection, path: &Path) -> Result<()> {
-    let path_key = repo_path_key(path)?;
+    let path_key = resolve_repo_path_key(conn, path)?;
 
     let deleted = conn.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
     if deleted == 0 {
@@ -145,7 +179,7 @@ pub fn remove_repo_with_exclude(
     config: &mut Config,
     path: &Path,
 ) -> Result<()> {
-    let (repo_path, _path_key) = resolve_repo_location(path)?;
+    let (repo_path, _path_key) = resolve_repo_location(conn, path)?;
 
     let parent = repo_path.parent().ok_or_else(|| {
         WorkpotError::InvalidPath(format!("repo path has no parent: {}", repo_path.display()))
