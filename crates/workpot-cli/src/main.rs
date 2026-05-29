@@ -52,7 +52,7 @@ enum RootsCommands {
     /// Remove a watch root and prune indexed repos under it by default.
     Remove {
         path: PathBuf,
-        /// Keep indexed repos that were discovered under this root.
+        /// Keep indexed repos under this root (orphan scan rows until `workpot index` or `repo remove`).
         #[arg(long)]
         skip_prune: bool,
     },
@@ -86,19 +86,11 @@ fn run() -> anyhow::Result<()> {
         }
         Commands::Index => {
             let ctx = AppContext::open().context("failed to open workpot")?;
-            match ctx.run_index() {
-                Ok(summary) => {
-                    println!(
-                        "index: +{} -{} skipped {}",
-                        summary.added, summary.removed, summary.skipped
-                    );
-                }
-                Err(WorkpotError::IndexCapExceeded { projected, max }) => {
-                    eprintln!("index cap exceeded: projected {projected} repos (max {max})");
-                    return Err(WorkpotError::IndexCapExceeded { projected, max }.into());
-                }
-                Err(e) => return Err(e.into()),
-            }
+            let summary = ctx.run_index()?;
+            println!(
+                "index: +{} -{} skipped {}",
+                summary.added, summary.removed, summary.skipped
+            );
         }
         Commands::Repo(sub) => match sub {
             RepoCommands::Add { path } => {
