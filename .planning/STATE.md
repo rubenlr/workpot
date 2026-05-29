@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Phase 02 shipped — PR #1
-last_updated: "2026-05-29T16:28:23.871Z"
+status: "Phase 02 shipped — PR #1"
+last_updated: "2026-05-29T19:29:25.750Z"
 progress:
   total_phases: 7
-  completed_plans: 8
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 8
-  percent: 14
+  completed_plans: 8
+  percent: 29
 ---
 
 # Project State
