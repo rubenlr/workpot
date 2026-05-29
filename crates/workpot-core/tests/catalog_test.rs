@@ -296,6 +296,39 @@ fn remove_repo_by_basename_does_not_match_similar_directory_name() {
 }
 
 #[test]
+fn remove_repo_by_basename_with_like_metacharacters_in_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("foo%bar");
+    fs::create_dir_all(&repo).expect("repo dir");
+    git_init(&repo);
+
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let repo_name = repo
+        .file_name()
+        .expect("repo dir name")
+        .to_string_lossy()
+        .into_owned();
+    let relative_remove = dir.path().join(&repo_name);
+
+    {
+        let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone())
+            .expect("open");
+        ctx.register_manual(&repo).expect("register");
+        fs::remove_dir_all(&repo).expect("delete repo dir");
+        ctx.remove_repo(&relative_remove)
+            .expect("remove after delete via basename with % in name");
+        assert!(ctx.list_repos().expect("list").is_empty());
+    }
+
+    let conn = rusqlite::Connection::open(&db_path).expect("open db");
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM repos", [], |row| row.get(0))
+        .expect("count repos");
+    assert_eq!(count, 0, "row for foo%bar must be removed, not a LIKE false match");
+}
+
+#[test]
 fn remove_repo_deletes_and_not_found() {
     let (dir, repo_path) = git_fixture();
     let config_path = dir.path().join("config.toml");
