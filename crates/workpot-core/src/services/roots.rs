@@ -54,20 +54,20 @@ pub fn remove_root(ctx: &mut AppContext, path: &Path, skip_prune: bool) -> Resul
         .ok_or_else(|| WorkpotError::WatchRootNotFound(canonical.display().to_string()))?;
     let removed = ctx.config_mut().watch_roots.remove(pos);
 
-    if !skip_prune {
-        match prune_scan_repos_under_root(ctx.connection(), &canonical) {
-            Ok(_) => {}
-            Err(e) => {
-                ctx.config_mut().watch_roots.insert(pos, removed);
-                return Err(e);
-            }
-        }
+    if let Err(e) = save_config(&config_path, ctx.config()) {
+        ctx.config_mut().watch_roots.insert(pos, removed);
+        return Err(e);
     }
 
-    match save_config(&config_path, ctx.config()) {
-        Ok(()) => Ok(()),
+    if skip_prune {
+        return Ok(());
+    }
+
+    match prune_scan_repos_under_root(ctx.connection(), &canonical) {
+        Ok(_) => Ok(()),
         Err(e) => {
             ctx.config_mut().watch_roots.insert(pos, removed);
+            save_config(&config_path, ctx.config())?;
             Err(e)
         }
     }
