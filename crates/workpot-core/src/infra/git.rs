@@ -170,7 +170,13 @@ fn detect_dirty(repo: &Repository) -> std::result::Result<bool, git2::Error> {
 fn detect_ahead_behind(
     repo: &Repository,
 ) -> std::result::Result<(Option<i64>, Option<i64>), git2::Error> {
-    let head = repo.head()?;
+    let head = match repo.head() {
+        Ok(h) => h,
+        Err(ref e) if e.code() == ErrorCode::UnbornBranch => {
+            return Ok((None, None));
+        }
+        Err(e) => return Err(e),
+    };
     if !head.is_branch() {
         return Ok((None, None)); // detached HEAD has no upstream
     }
