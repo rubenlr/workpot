@@ -1,45 +1,29 @@
-# Manual Sonar on an open PR only. Actions → Sonar → Run workflow → enter PR number.
-# Branch protection still requires the sonarcloud check (.github/rulesets/workpot.json).
+# Manual Sonar on open PRs only. Required for merge (context: sonarcloud).
+#
+# On each PR push the job fails fast. From the PR Checks tab, open this
+# workflow run and choose "Re-run all jobs" to start the Sonar scan.
 name: Sonar
 
 on:
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: Open pull request number to analyze
-        required: true
-        type: number
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
 
 jobs:
   sonarcloud:
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve pull request
-        id: pr
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const pr = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: ${{ inputs.pr_number }},
-            });
-            if (pr.data.state !== 'open') {
-              core.setFailed(`PR #${{ inputs.pr_number }} is not open`);
-              return;
-            }
-            core.setOutput('head_sha', pr.data.head.sha);
-            core.setOutput('head_ref', pr.data.head.ref);
-            core.setOutput('base_ref', pr.data.base.ref);
-            core.setOutput('number', String(pr.data.number));
+      - name: Manual run required
+        if: fromJSON(github.run_attempt) == 1
+        run: |
+          echo "::notice title=Manual Sonar required::Re-run this workflow from the PR Checks tab to start the Sonar scan."
+          exit 1
 
       - uses: actions/checkout@v4
         with:
-          ref: ${{ steps.pr.outputs.head_sha }}
           fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@master
@@ -68,6 +52,6 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.pullrequest.key=${{ steps.pr.outputs.number }}
-            -Dsonar.pullrequest.branch=${{ steps.pr.outputs.head_ref }}
-            -Dsonar.pullrequest.base=${{ steps.pr.outputs.base_ref }}
+            -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
+            -Dsonar.pullrequest.branch=${{ github.event.pull_request.head.ref }}
+            -Dsonar.pullrequest.base=${{ github.event.pull_request.base.ref }}
