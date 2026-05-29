@@ -29,6 +29,32 @@ fn workpot_cmd(home: &std::path::Path) -> Command {
 }
 
 #[test]
+fn first_run_seeds_watch_roots_for_existing_code_and_dev() {
+    let home = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(home.path().join("code")).expect("code dir");
+    fs::create_dir_all(home.path().join("dev")).expect("dev dir");
+
+    workpot_cmd(home.path()).arg("paths").assert().success();
+
+    let config_path = home
+        .path()
+        .join(".config")
+        .join("workpot")
+        .join("config.toml");
+    let contents = fs::read_to_string(&config_path).expect("config exists after paths");
+    let code = home.path().join("code");
+    let dev = home.path().join("dev");
+    assert!(
+        contents.contains(code.to_str().expect("utf8 path")),
+        "expected ~/code in watch_roots, got:\n{contents}"
+    );
+    assert!(
+        contents.contains(dev.to_str().expect("utf8 path")),
+        "expected ~/dev in watch_roots, got:\n{contents}"
+    );
+}
+
+#[test]
 fn paths_prints_config_and_database() {
     let home = tempfile::tempdir().expect("tempdir");
 

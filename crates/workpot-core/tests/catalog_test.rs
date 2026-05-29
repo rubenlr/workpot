@@ -101,6 +101,23 @@ fn register_rejects_empty_git_dir() {
 }
 
 #[test]
+fn register_rejects_file_not_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file_path = dir.path().join("not-a-dir.txt");
+    fs::write(&file_path, "plain file").expect("file");
+
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+
+    let err = ctx.register_manual(&file_path).unwrap_err();
+    assert!(matches!(
+        err,
+        WorkpotError::InvalidPath(ref msg) if msg.contains("not a directory")
+    ));
+}
+
+#[test]
 fn register_rejects_missing_path() {
     let dir = tempfile::tempdir().expect("tempdir");
     let missing = dir.path().join("does-not-exist");

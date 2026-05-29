@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 use std::fs;
-use workpot_core::{default_config, AppContext};
+use workpot_core::{default_config, AppContext, WorkpotError};
 
 #[test]
 fn config_creates_defaults() {
@@ -99,4 +99,32 @@ fn migrations_apply() {
         )
         .expect("index_runs table query");
     assert_eq!(index_runs_exists, 1);
+}
+
+#[test]
+fn open_enables_wal_journal_mode() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+
+    let _ctx = AppContext::open_with_paths(config_path, db_path.clone()).expect("open");
+
+    let conn = Connection::open(&db_path).expect("open db");
+    let mode: String = conn
+        .pragma_query_value(None, "journal_mode", |row| row.get(0))
+        .expect("journal_mode");
+    assert_eq!(mode.to_lowercase(), "wal");
+}
+
+#[test]
+fn load_config_rejects_malformed_toml() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(&config_path, "watch_roots = [[[\n").expect("bad toml");
+
+    assert!(matches!(
+        AppContext::open_with_paths(config_path, db_path),
+        Err(WorkpotError::Config(_))
+    ));
 }
