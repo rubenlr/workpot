@@ -264,6 +264,66 @@ fn ahead_behind() {
 }
 
 #[test]
+fn refresh_all_absorbs_per_repo_failure() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (repo, good_path) = init_git_repo(dir.path(), "good");
+    make_commit(&repo, "initial");
+
+    let missing = dir.path().join("does-not-exist");
+    let results = workpot_core::services::git_state::refresh_all(vec![good_path, missing]);
+
+    assert_eq!(results.len(), 2);
+    let good = results
+        .iter()
+        .find(|r| r.path.contains("good"))
+        .expect("good repo result");
+    assert!(good.state.error.is_none(), "good repo: {:?}", good.state.error);
+    assert!(good.state.branch.is_some());
+
+    let bad = results
+        .iter()
+        .find(|r| r.path.contains("does-not-exist"))
+        .expect("missing path result");
+    assert!(
+        bad.state.error.is_some(),
+        "missing path must record error (D-16)"
+    );
+}
+
+#[test]
+fn refresh_and_persist_writes_columns() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("workpot.db");
+    let conn = workpot_core::infra::store::open_connection(&db_path).expect("open db");
+
+    let (repo, repo_path) = init_git_repo(dir.path(), "persist-me");
+    make_commit(&repo, "initial");
+    let path_key = repo_path.canonicalize().expect("canonical").display().to_string();
+
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'persist-me', 0, 'scan', '', 0)",
+        rusqlite::params![path_key],
+    )
+    .expect("insert repo row");
+
+    let state = workpot_core::services::git_state::refresh_and_persist(&conn, &repo_path)
+        .expect("refresh_and_persist");
+    assert!(state.branch.is_some());
+    assert_eq!(state.is_dirty, Some(false));
+
+    let (branch, refreshed_at): (Option<String>, Option<i64>) = conn
+        .query_row(
+            "SELECT branch, git_refreshed_at FROM repos WHERE path = ?1",
+            rusqlite::params![path_key],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read back git columns");
+    assert!(branch.is_some(), "branch persisted");
+    assert!(refreshed_at.is_some(), "git_refreshed_at persisted");
+}
+
+#[test]
 fn no_upstream() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (repo, repo_path) = init_git_repo(dir.path(), "no-upstream");

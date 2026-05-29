@@ -224,6 +224,32 @@ fn index_writes_history() {
 }
 
 #[test]
+fn index_second_pass_persists_git_state() {
+    let (_dir, conn, config) = open_index_fixture(None);
+    let watch_root = config.watch_roots[0].clone();
+    let repo_path = git_worktree(&watch_root, "git-state-repo");
+    let path_key = repo_path.canonicalize().expect("canonical").display().to_string();
+
+    let summary = index::run_full(&conn, &config).expect("run_full");
+    assert!(
+        summary.git_refreshed >= 1,
+        "expected at least one successful git refresh, got {:?}",
+        summary
+    );
+
+    let (branch, refreshed_at, git_err): (Option<String>, Option<i64>, Option<String>) = conn
+        .query_row(
+            "SELECT branch, git_refreshed_at, git_state_error FROM repos WHERE path = ?1",
+            rusqlite::params![path_key],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("repo git columns");
+    assert!(branch.is_some(), "branch set after index git pass");
+    assert!(refreshed_at.is_some(), "git_refreshed_at set after index");
+    assert!(git_err.is_none(), "healthy repo has no git_state_error");
+}
+
+#[test]
 fn index_git_failure_writes_skipped() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();

@@ -1,8 +1,12 @@
+mod git_display;
+
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use workpot_core::{AppContext, WorkpotError};
+
+use git_display::format_git_state;
 
 #[derive(Parser)]
 #[command(name = "workpot", about = "Local git repo workspace launcher", version)]
@@ -159,39 +163,6 @@ fn run() -> anyhow::Result<()> {
         }
     }
     Ok(())
-}
-
-fn format_age(git_refreshed_at: i64) -> String {
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
-    if git_refreshed_at <= 0 {
-        return "unknown".to_string();
-    }
-    let refreshed = UNIX_EPOCH + Duration::from_secs(git_refreshed_at as u64);
-    let elapsed = SystemTime::now()
-        .duration_since(refreshed)
-        .unwrap_or_default();
-    humantime::format_duration(Duration::from_secs(elapsed.as_secs())).to_string()
-}
-
-fn format_git_state(repo: &workpot_core::RepoRecord) -> String {
-    let Some(refreshed_at) = repo.git_refreshed_at else {
-        return "?".to_string(); // D-06: never refreshed
-    };
-    if let Some(ref err) = repo.git_state_error {
-        return format!("ERROR: {err}"); // D-09
-    }
-    let branch = repo.branch.as_deref().unwrap_or("?");
-    let dirty = match repo.is_dirty {
-        None => "N/A",         // bare repo (D-13)
-        Some(true) => "dirty",
-        Some(false) => "clean",
-    };
-    let ahead_behind = match (repo.ahead, repo.behind) {
-        (Some(a), Some(b)) => format!(" \u{2191}{a}\u{2193}{b}"),
-        _ => String::new(), // D-04: omit when no upstream
-    };
-    let age = format_age(refreshed_at); // D-07
-    format!("{branch}  {dirty}{ahead_behind}  {age}")
 }
 
 fn map_roots_error(err: WorkpotError) -> anyhow::Error {
