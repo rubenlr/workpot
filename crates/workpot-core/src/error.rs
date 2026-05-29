@@ -41,6 +41,9 @@ pub enum WorkpotError {
 
     #[error("watch root already exists: {0}")]
     WatchRootAlreadyExists(String),
+
+    #[error("index would exceed max_repos ({max}): projected {projected}")]
+    IndexCapExceeded { projected: u32, max: u32 },
 }
 
 pub type Result<T> = std::result::Result<T, WorkpotError>;
