@@ -1,6 +1,6 @@
 ---
 phase: 01-core-persistence
-reviewed: 2026-05-30T12:00:00Z
+reviewed: 2026-05-30T18:00:00Z
 depth: standard
 files_reviewed: 23
 files_reviewed_list:
@@ -29,124 +29,83 @@ files_reviewed_list:
   - scripts/check-no-network-deps.sh
 findings:
   critical: 0
-  warning: 5
+  warning: 1
   info: 2
-  total: 7
+  total: 3
 status: issues_found
 ---
 
 # Phase 1: Code Review Report
 
-**Reviewed:** 2026-05-30T12:00:00Z  
+**Reviewed:** 2026-05-30T18:00:00Z  
 **Depth:** standard  
 **Files Reviewed:** 23  
 **Status:** issues_found
 
 ## Summary
 
-Re-review of Phase 1 core-persistence files after the 2026-05-29 fix pass. **All 10 prior findings (CR-01, WR-01–WR-05, IN-01–IN-04) remain fixed** in the current tree: macOS D-01/D-02 paths, git fixture validation, busy timeout, bare-repo support, `anyhow` removed from core, excluded-row filtering, stable sort, and remove-repo integration test.
+Third pass on Phase 1 core-persistence scope (current `feature/03-git-state` tree). All seven findings from the 2026-05-30 earlier review are **fixed** in code: gitdir `HEAD` validation, remove-after-delete (canonical path), atomic config writes, macOS D-12 offline + ban script in CI, config-before-DELETE ordering in `remove_repo_with_exclude`, and `max_repos` on manual register (Phase 2 landed in the same `catalog.rs`).
 
-The codebase has since absorbed Phase 2+ surface area inside the same files (`remove_repo_with_exclude`, `git_common_dir` resolution, extra migrations). Seven **new** issues were found — none critical, but several affect catalog correctness or D-12 CI contract.
+Security and DATA-02 posture remain sound: parameterized SQL, path canonicalization on register, no shell execution, banned network crates checked on macOS CI, 5s SQLite busy timeout, WAL mode.
 
-Security posture remains appropriate: parameterized SQL, path canonicalization, no shell execution, no banned network crates in core/CLI trees.
+Three minor items remain — one warning (stale row when removing with a non-canonical path after the directory is gone), two informational.
 
-## Prior Fix Verification
+## Prior Finding Verification (2026-05-30 batch)
 
 | ID | Status | Evidence |
 |----|--------|----------|
-| CR-01 | ✅ Fixed | `paths.rs:7-11` uses `~/.config` on macOS; `paths_test.rs` asserts D-01/D-02 |
-| WR-01 | ✅ Fixed | `is_git_worktree()` requires `.git/HEAD` for directory markers |
-| WR-02 | ✅ Fixed | `store.rs:11` sets 5s `busy_timeout` |
-| WR-03 | ✅ Fixed | `catalog.rs:10-14` distinct "path does not exist" error |
-| WR-04 | ✅ Fixed | `is_bare_repo()` + CLI help mentions bare repos |
-| WR-05 | ✅ Fixed | `anyhow` absent from `workpot-core/Cargo.toml` |
-| IN-01 | ✅ Fixed | `list_repos` filters `WHERE excluded = 0` |
-| IN-02 | ✅ Fixed | `config.rs:34-37` documents Phase 2 consumption |
-| IN-03 | ✅ Fixed | `ORDER BY registered_at, path` |
-| IN-04 | ✅ Fixed | `remove_repo_deletes_and_not_found` test present |
+| WR-01 | ✅ Fixed | `catalog.rs:179-194` resolves gitdir target and requires `HEAD` |
+| WR-02 | ✅ Fixed | `resolve_repo_location` NotFound fallback; `remove_repo_succeeds_when_directory_deleted` |
+| WR-03 | ✅ Fixed | `lib.rs:183-196` `write_atomic` for config create/save |
+| WR-04 | ✅ Fixed | `ci.yml:52-60` macOS `cargo fetch`, ban script, `--offline` test |
+| WR-05 | ✅ Fixed | `remove_repo_with_exclude` calls `save_config` before `remove_repo` |
+| IN-01 | ✅ N/A | `remove_repo` used by `remove_repo_with_exclude` — not dead |
+| IN-02 | ✅ Fixed | `register_manual` uses `resolve_git_common_dir(...)?` (hard error, not silent empty) |
 
 ## Narrative Findings (AI reviewer)
 
 ## Warnings
 
-### WR-01: Gitdir-file worktrees accept any `gitdir:` prefix without validating target
+### WR-01: `repo remove` after directory delete fails unless path matches stored canonical key
 
-**File:** `crates/workpot-core/src/services/catalog.rs:158-161`  
-**Issue:** When `.git` is a file, registration succeeds if the file contents start with `gitdir:` — the linked directory is never opened or checked for `HEAD`. A `.git` file pointing at a non-existent or non-repo path registers successfully. The prior WR-01 fix hardened directory-style `.git` but left gitfile worktrees weak.  
-**Fix:** Resolve and validate the gitdir target:
+**File:** `crates/workpot-core/src/services/catalog.rs:109-120`  
+**Issue:** Registration stores `path.canonicalize()` as the SQLite key. When the directory is deleted, `resolve_repo_location` falls back to `path.display().to_string()` on `NotFound`. If the user passes a relative path (`./my-repo`) or a symlink path that differed at register time, the DELETE matches zero rows and returns `NotFound` even though the row still exists under the absolute canonical key. The integration test only covers remove with the canonical path after delete.  
+**Fix:** On `NotFound` from `canonicalize`, look up by basename under known parents or scan `SELECT path FROM repos WHERE path LIKE '%' || ?1` with normalized `file_name`, or document that remove-after-delete requires the same absolute path. Minimal fix:
 
 ```rust
-if marker.is_file() {
-    let content = std::fs::read_to_string(&marker).ok()?;
-    let rest = content.strip_prefix("gitdir:")?.trim();
-    let gitdir = PathBuf::from(rest);
-    let gitdir = if gitdir.is_absolute() {
-        gitdir
-    } else {
-        path.join(gitdir)
-    };
-    return gitdir.join("HEAD").is_file();
+Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+    let name = path.file_name().and_then(|n| n.to_str());
+    if let Some(name) = name {
+        if let Ok(key) = conn.query_row(
+            "SELECT path FROM repos WHERE path LIKE '%' || ?1",
+            params![name],
+            |row| row.get::<_, String>(0),
+        ) {
+            return Ok((path.to_path_buf(), key));
+        }
+    }
+    Ok((path.to_path_buf(), path.display().to_string()))
 }
 ```
 
-### WR-02: `repo remove` fails when the directory no longer exists
-
-**File:** `crates/workpot-core/src/services/catalog.rs:122-125` (also `102-105`)  
-**Issue:** Both `remove_repo` and `remove_repo_with_exclude` call `path.canonicalize()` before DELETE. If the user deleted the repo directory, `canonicalize` fails with `InvalidPath` and the SQLite row remains — `repo list` shows a stale entry with no CLI path to remove it.  
-**Fix:** Fall back to deleting by the user-supplied path string when canonicalize fails with `NotFound`, or add a `--force` flag that deletes by normalized path key without requiring the directory to exist:
-
-```rust
-let path_key = match path.canonicalize() {
-    Ok(c) => c.display().to_string(),
-    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-        // try stored key as-is or via parent+file_name normalization
-        path.display().to_string()
-    }
-    Err(e) => return Err(WorkpotError::InvalidPath(format!("{}: {e}", path.display()))),
-};
-```
-
-### WR-03: Non-atomic config writes risk corruption on crash
-
-**File:** `crates/workpot-core/src/lib.rs:156`, `crates/workpot-core/src/lib.rs:182`  
-**Issue:** `ensure_default_config` and `save_config` use `fs::write` directly. A crash or kill mid-write can leave `config.toml` truncated/invalid; the next `AppContext::open()` fails with `Config` error and blocks all CLI commands until manual repair.  
-**Fix:** Write to a temp file in the same directory, `fsync`, then `rename` atomically (same pattern ai-memory uses for wiki writes).
-
-### WR-04: D-12 offline enforcement not on macOS CI matrix
-
-**File:** `.github/workflows/ci.yml:39-52`, `.github/workflows/ci.yml:69-76`  
-**Issue:** Locked decision D-12 requires macOS CI to run `cargo test --offline` plus dependency policy. The `test (macos-latest)` job runs `cargo test --workspace --all-targets` without `--offline` and without `check-no-network-deps.sh`. Offline + ban checks run only on `ubuntu-latest` in the `coverage` job. A macOS-only dependency regression could slip through the matrix job that actually targets the v1 platform.  
-**Fix:** Add to the `macos-latest` test job (after `cargo fetch`):
-
-```yaml
-- run: bash scripts/check-no-network-deps.sh
-- run: cargo test --offline --workspace --all-targets
-```
-
-Or merge offline/ban checks into the macOS matrix step per D-12.
-
-### WR-05: `remove_repo_with_exclude` commits DELETE before config save
-
-**File:** `crates/workpot-core/src/services/catalog.rs:127-149`  
-**Issue:** The DB row is deleted via autocommit `execute`, then `save_config` writes excludes. If `save_config` fails (disk full, permissions, validation), the repo is gone but exclude globs are not persisted — a subsequent `workpot index` can rediscover the path. In-memory `config.excludes` is mutated even when the file write fails.  
-**Fix:** Persist config first, or wrap both in a SQLite transaction plus atomic config write; on config failure, do not DELETE (or roll back).
+(Prefer a single-row match guard to avoid ambiguous basenames.)
 
 ## Info
 
-### IN-01: `catalog::remove_repo` is dead code
+### IN-01: Orphan `config.toml.tmp` on crash mid-write
 
-**File:** `crates/workpot-core/src/services/catalog.rs:102-113`  
-**Issue:** `AppContext::remove_repo` delegates to `remove_repo_with_exclude`; nothing calls the plain `remove_repo` function. Dead surface adds maintenance noise.  
-**Fix:** Remove `remove_repo` or make `remove_repo_with_exclude` call it for the DELETE half after exclude logic is extracted.
+**File:** `crates/workpot-core/src/lib.rs:188-195`  
+**Issue:** `write_atomic` writes `config.toml.tmp` then renames. Kill/crash after `fs::write` but before `rename` leaves a stale tmp next to config; harmless but can confuse support.  
+**Fix:** On `AppContext::open`, ignore/remove stale `*.tmp` in the config directory, or use `tempfile` in the same directory with explicit cleanup.
 
-### IN-02: `register_manual` silently stores empty `git_common_dir` when git2 open fails
+### IN-02: First-run `default_config` seeds `~/code` and `~/dev` watch roots
 
-**File:** `crates/workpot-core/src/services/catalog.rs:43-45`  
-**Issue:** `resolve_git_common_dir` errors are swallowed with `unwrap_or_default()`. Filesystem-valid but git2-unopenable paths (minimal test fixtures, corrupt repos) register with `git_common_dir = ""`, weakening Phase 2 dedup/merge keyed on common dir.  
-**Fix:** Log a warning at minimum; optionally surface a soft warning in CLI output, or fail registration when git2 cannot resolve common dir for non-bare repos.
+**File:** `crates/workpot-core/src/lib.rs:26-34`  
+**Issue:** Empty first config is not empty — users with those directories get implicit watch roots before they run `roots add`. Surprising for privacy-focused “local only” users who expected zero discovery until configured.  
+**Fix:** Product call: document in README/CLI `paths` output, or gate seeding behind an explicit opt-in key in config.
 
 ---
 
-_Reviewed: 2026-05-30T12:00:00Z_  
+_Reviewed: 2026-05-30T18:00:00Z_  
 _Reviewer: Claude (gsd-code-reviewer)_  
 _Depth: standard_
