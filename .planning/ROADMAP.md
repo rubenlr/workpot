@@ -22,6 +22,7 @@
 ---
 
 ### Phase 1: Core & persistence
+
 **Goal:** Establish `workpot-core`, SQLite schema, and local config so all surfaces share one data layer.
 
 **Mode:** mvp
@@ -29,6 +30,7 @@
 **Requirements:** DATA-01, DATA-02
 
 **Success Criteria:**
+
 1. `workpot` CLI binary runs and reads/writes config under standard macOS app data paths
 2. SQLite database is created with migrations on first launch
 3. User can index a single git repository path and see it persisted after restart
@@ -37,6 +39,7 @@
 **Plans:** 3 plans
 
 Plans:
+
 - [x] 01-01-PLAN.md — Workspace scaffold, crate verify gate, DATA-02 CI script (2026-05-28)
 - [x] 01-02-PLAN.md — Paths, lazy bootstrap, SQLite migrations, `workpot paths` (2026-05-28)
 - [x] 01-03-PLAN.md — Catalog service, `repo add|list|remove`, persistence tests (2026-05-28)
@@ -44,6 +47,7 @@ Plans:
 ---
 
 ### Phase 2: Repo discovery
+
 **Goal:** Automatically find git repos under watch roots with manual add/exclude control.
 
 **Mode:** mvp
@@ -51,6 +55,7 @@ Plans:
 **Requirements:** INDEX-01, INDEX-02, INDEX-03, INDEX-04, INDEX-05
 
 **Success Criteria:**
+
 1. User configures watch roots in config and all nested `.git` repos appear in the index
 2. User can add a repo outside watch roots and it appears in the index
 3. User can exclude a path and it never reappears on rescan
@@ -60,15 +65,27 @@ Plans:
 **Plans:** 5 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 02-01-PLAN.md — Migration 002, deps, git_common_dir helper, RED tests (wave 1a)
 - [ ] 02-02-PLAN.md — Discovery walk + minimal `workpot index` slice (INDEX-04/05, wave 1b)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 02-03-PLAN.md — `workpot roots` CLI + config limits + Rust prefix prune (INDEX-01, D-19–24)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 02-04-PLAN.md — Excludes + `repo remove` persist glob (INDEX-03, D-08–12)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 02-05-PLAN.md — Backfill, transactional index, history, caps, bare/worktrees (INDEX-02/05, D-03–04, D-07, D-14–18)
 
 ---
 
 ### Phase 3: Git state
+
 **Goal:** Trustworthy per-repo git summary at scale (many repos, no UI freeze).
 
 **Mode:** mvp
@@ -76,6 +93,7 @@ Plans:
 **Requirements:** GIT-01, GIT-02, GIT-03, GIT-04
 
 **Success Criteria:**
+
 1. Each indexed repo displays its current branch
 2. Dirty repos are visually distinguishable from clean repos
 3. Repos with upstream show ahead/behind when available
@@ -86,6 +104,7 @@ Plans:
 ---
 
 ### Phase 4: Tray finder MVP
+
 **Goal:** Ship the daily loop — glance tray, filter, open in Cursor.
 
 **Mode:** mvp
@@ -93,6 +112,7 @@ Plans:
 **Requirements:** UI-01, UI-02, UI-03, UI-04, SRCH-01, SRCH-02, SRCH-03, LAUNCH-01
 
 **Success Criteria:**
+
 1. Tray icon is visible in the macOS menu bar and opens the finder panel
 2. User sees a prioritized list with branch and dirty indicator per repo
 3. Typing filters the list in real time
@@ -106,6 +126,7 @@ Plans:
 ---
 
 ### Phase 5: Tags & prioritization
+
 **Goal:** Help users manage 20+ repos with tags, pins, notes, and smart ordering.
 
 **Mode:** mvp
@@ -113,6 +134,7 @@ Plans:
 **Requirements:** ORG-01, ORG-02, ORG-03, ORG-04
 
 **Success Criteria:**
+
 1. User can add tags to a repo and filter by tag in the tray
 2. Pinned repos stay above unpinned regardless of other signals
 3. Dirty and recently opened repos rank higher than stale clean repos
@@ -123,6 +145,7 @@ Plans:
 ---
 
 ### Phase 6: CLI parity
+
 **Goal:** Power users can drive Workpot entirely from the terminal with identical data.
 
 **Mode:** mvp
@@ -130,6 +153,7 @@ Plans:
 **Requirements:** CLI-01, CLI-02, CLI-03
 
 **Success Criteria:**
+
 1. `workpot list` shows the same repos and order as the tray default view
 2. `workpot search <query>` returns the same results as tray filter
 3. `workpot open <name|path>` opens Cursor for the matched repo
@@ -139,6 +163,7 @@ Plans:
 ---
 
 ### Phase 7: Recipes
+
 **Goal:** One-action workflows — open, pull, test, or custom shell chains.
 
 **Mode:** mvp
@@ -146,6 +171,7 @@ Plans:
 **Requirements:** LAUNCH-02, LAUNCH-03, LAUNCH-04, LAUNCH-05, LAUNCH-06
 
 **Success Criteria:**
+
 1. User can define a recipe in config with named steps
 2. Recipe runs shell commands with repo as working directory
 3. Recipe can include a Cursor launch step
