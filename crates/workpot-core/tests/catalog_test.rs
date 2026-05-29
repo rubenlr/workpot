@@ -141,21 +141,21 @@ fn register_accepts_gitdir_file_worktree() {
 }
 
 #[test]
-fn register_rejects_file_not_directory() {
+fn register_rejects_invalid_gitdir_target() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let file_path = dir.path().join("not-a-dir");
-    fs::write(&file_path, "x").expect("file");
+    let repo = dir.path().join("bad-worktree");
+    fs::create_dir_all(&repo).expect("worktree dir");
+    fs::write(repo.join(".git"), "gitdir: /nonexistent/nowhere\n").expect(".git file");
 
     let config_path = dir.path().join("config.toml");
     let db_path = dir.path().join("workpot.db");
     let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
 
-    let err = ctx.register_manual(&file_path).unwrap_err();
-    assert!(matches!(
-        err,
-        WorkpotError::InvalidPath(msg) if msg.contains("not a directory")
-    ));
+    let err = ctx.register_manual(&repo).unwrap_err();
+    assert!(matches!(err, WorkpotError::NotGitRepo(_)));
 }
+
+#[test]
 
 #[test]
 fn list_repos_skips_excluded_rows() {

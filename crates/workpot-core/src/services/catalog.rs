@@ -156,9 +156,21 @@ pub(crate) fn is_git_worktree(path: &Path) -> bool {
         return marker.join("HEAD").is_file();
     }
     if marker.is_file() {
-        return std::fs::read_to_string(&marker)
-            .map(|s| s.starts_with("gitdir:"))
-            .unwrap_or(false);
+        let content = match std::fs::read_to_string(&marker) {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        let rest = match content.strip_prefix("gitdir:") {
+            Some(r) => r.trim(),
+            None => return false,
+        };
+        let gitdir = PathBuf::from(rest);
+        let gitdir = if gitdir.is_absolute() {
+            gitdir
+        } else {
+            path.join(gitdir)
+        };
+        return gitdir.join("HEAD").is_file();
     }
     false
 }
