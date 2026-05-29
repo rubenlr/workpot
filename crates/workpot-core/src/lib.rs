@@ -5,7 +5,7 @@ pub mod error;
 pub mod infra;
 pub mod services;
 
-use crate::domain::{Config, RepoRecord};
+use crate::domain::Config;
 use crate::error::Result;
 use crate::infra::paths;
 use crate::infra::store;
@@ -15,6 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub use crate::domain::GitState;
+pub use crate::domain::RepoRecord;
 pub use crate::error::WorkpotError;
 
 pub fn version() -> &'static str {
