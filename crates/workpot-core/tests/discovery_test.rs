@@ -23,6 +23,18 @@ fn git_worktree(parent: &Path, name: &str) -> std::path::PathBuf {
     repo
 }
 
+fn git_init_worktree(parent: &Path, name: &str) -> std::path::PathBuf {
+    let repo = parent.join(name);
+    fs::create_dir_all(&repo).expect("repo dir");
+    let status = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&repo)
+        .status()
+        .expect("git init");
+    assert!(status.success(), "git init failed for {}", repo.display());
+    repo
+}
+
 #[test]
 fn discovery_finds_repo_under_root() {
     let root = tempfile::tempdir().expect("tempdir");
@@ -196,6 +208,27 @@ fn scan_root_returns_empty_for_missing_path() {
     let candidates =
         discovery::scan_root(&missing, &empty_excludes()).expect("scan missing root");
     assert!(candidates.is_empty(), "missing watch root must yield no candidates");
+}
+
+#[test]
+fn resolve_git_common_dir_errors_on_plain_directory() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let plain = root.path().join("plain");
+    fs::create_dir_all(&plain).expect("plain dir");
+    let err = resolve_git_common_dir(&plain).unwrap_err();
+    assert!(matches!(err, WorkpotError::GitUnavailable(_)));
+}
+
+#[test]
+fn list_worktree_paths_empty_without_linked_worktrees() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let repo = git_init_worktree(root.path(), "normal");
+    let canon = repo.canonicalize().expect("canonicalize");
+    let linked = workpot_core::infra::git::list_worktree_paths(&canon).expect("list worktrees");
+    assert!(
+        linked.is_empty(),
+        "repo with no extra worktrees should yield an empty linked list (D-04)"
+    );
 }
 
 #[test]

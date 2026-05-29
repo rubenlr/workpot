@@ -146,6 +146,18 @@ fn remove_then_index_skips() {
 }
 
 #[test]
+fn excludes_remove_not_found() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(&config_path, empty_config_marker()).expect("write config");
+
+    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let err = ctx.excludes_remove("/no-such-glob/**").unwrap_err();
+    assert!(matches!(err, workpot_core::WorkpotError::NotFound(_)));
+}
+
+#[test]
 fn excludes_remove_persists() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("config.toml");

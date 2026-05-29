@@ -246,6 +246,28 @@ fn index_cap_exceeded_exits_one() {
 }
 
 #[test]
+fn roots_list_shows_configured_watch_roots() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let watch = home.path().join("watch");
+    fs::create_dir_all(&watch).expect("watch dir");
+    let watch_str = watch.to_str().expect("utf8");
+
+    let config_dir = home.path().join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    fs::write(
+        config_dir.join("config.toml"),
+        format!("watch_roots = [\"{watch_str}\"]\nexcludes = []\n"),
+    )
+    .expect("config");
+
+    workpot_cmd(home.path())
+        .args(["roots", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(watch_str));
+}
+
+#[test]
 fn excludes_list_shows_configured_glob() {
     let home = tempfile::tempdir().expect("tempdir");
     let config_dir = home.path().join(".config").join("workpot");

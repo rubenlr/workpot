@@ -33,6 +33,15 @@ fn default_limits_deserialize() {
 }
 
 #[test]
+fn config_validate_rejects_watch_roots_hard_max() {
+    let mut config = Config::default();
+    config.limits.max_watch_roots = 5001;
+    let err = config.validate().expect_err("validate should fail");
+    assert!(err.contains("max_watch_roots"));
+    assert!(err.contains("5000"));
+}
+
+#[test]
 fn limits_reject_over_hard_max() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("config.toml");

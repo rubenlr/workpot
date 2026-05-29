@@ -139,6 +139,15 @@ fn index_removes_stale_path() {
     let summary = index::run_full(&conn, &config).expect("second index");
     assert_eq!(summary.removed, 1);
 
+    let removed_changes: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM index_changes WHERE action = 'removed'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("removed changes");
+    assert_eq!(removed_changes, 1, "stale path must appear in index_changes");
+
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
             row.get(0)
