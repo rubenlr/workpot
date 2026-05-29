@@ -91,6 +91,21 @@ mod tests {
     }
 
     #[test]
+    fn format_git_state_clean_label() {
+        let repo = sample_repo();
+        let out = format_git_state(&repo);
+        assert!(out.contains("clean"), "clean repo label: {out}");
+    }
+
+    #[test]
+    fn format_git_state_dirty_label() {
+        let mut repo = sample_repo();
+        repo.is_dirty = Some(true);
+        let out = format_git_state(&repo);
+        assert!(out.contains("dirty"), "dirty repo label: {out}");
+    }
+
+    #[test]
     fn format_git_state_omits_ahead_behind_without_upstream() {
         let repo = sample_repo();
         let out = format_git_state(&repo);

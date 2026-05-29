@@ -291,6 +291,64 @@ fn refresh_all_absorbs_per_repo_failure() {
 }
 
 #[test]
+fn persist_git_state_maps_is_dirty_in_db() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("workpot.db");
+    let conn = workpot_core::infra::store::open_connection(&db_path).expect("open db");
+
+    let (repo, repo_path) = init_git_repo(dir.path(), "clean-row");
+    make_commit(&repo, "initial");
+    let path_key = repo_path.canonicalize().expect("canonical").display().to_string();
+
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'clean-row', 0, 'scan', '', 0)",
+        rusqlite::params![path_key],
+    )
+    .expect("insert repo row");
+
+    let clean = workpot_core::services::git_state::refresh_git_state(&repo_path)
+        .expect("refresh");
+    assert_eq!(clean.is_dirty, Some(false));
+    workpot_core::services::git_state::persist_git_state(&conn, &path_key, &clean)
+        .expect("persist clean");
+
+    let dirty_flag: Option<i64> = conn
+        .query_row(
+            "SELECT is_dirty FROM repos WHERE path = ?1",
+            rusqlite::params![path_key],
+            |row| row.get(0),
+        )
+        .expect("is_dirty");
+    assert_eq!(dirty_flag, Some(0), "clean repo stores is_dirty=0");
+
+    let bare_path = dir.path().join("bare-row");
+    git2::Repository::init_bare(&bare_path).expect("init bare");
+    let bare_key = bare_path.canonicalize().expect("canonical").display().to_string();
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'bare-row', 0, 'scan', '', 0)",
+        rusqlite::params![bare_key],
+    )
+    .expect("insert bare row");
+
+    let bare_state = workpot_core::services::git_state::refresh_git_state(&bare_path)
+        .expect("refresh bare");
+    assert_eq!(bare_state.is_dirty, None);
+    workpot_core::services::git_state::persist_git_state(&conn, &bare_key, &bare_state)
+        .expect("persist bare");
+
+    let bare_dirty: Option<i64> = conn
+        .query_row(
+            "SELECT is_dirty FROM repos WHERE path = ?1",
+            rusqlite::params![bare_key],
+            |row| row.get(0),
+        )
+        .expect("bare is_dirty");
+    assert_eq!(bare_dirty, None, "bare repo stores is_dirty=NULL (D-13)");
+}
+
+#[test]
 fn refresh_and_persist_writes_columns() {
     let dir = tempfile::tempdir().expect("tempdir");
     let db_path = dir.path().join("workpot.db");

@@ -64,6 +64,49 @@ fn gitdir_file_worktree_fixture() -> (tempfile::TempDir, PathBuf) {
 }
 
 #[test]
+fn list_repos_returns_git_state_after_index() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(
+        &config_path,
+        "watch_roots = []\nexcludes = []\n",
+    )
+    .expect("write config");
+
+    let watch = dir.path().join("watch");
+    fs::create_dir_all(&watch).expect("watch");
+    let repo_path = watch.join("indexed");
+    fs::create_dir_all(&repo_path).expect("repo dir");
+    git_init(&repo_path);
+
+    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    ctx.roots_add(&watch).expect("roots_add");
+    ctx.run_index().expect("index");
+
+    let repos = ctx.list_repos().expect("list");
+    let canon = repo_path.canonicalize().expect("canonicalize");
+    let record = repos
+        .iter()
+        .find(|r| r.path == canon)
+        .unwrap_or_else(|| panic!("expected repo at {}", canon.display()));
+    assert!(
+        record.git_refreshed_at.is_some(),
+        "list_repos must surface git_refreshed_at after index git pass"
+    );
+    assert!(
+        record.branch.is_some(),
+        "list_repos must surface branch after refresh"
+    );
+    assert_eq!(
+        record.is_dirty,
+        Some(false),
+        "fresh init repo should be clean"
+    );
+    assert!(record.git_state_error.is_none());
+}
+
+#[test]
 fn register_manual_sets_source_manual() {
     let (dir, repo_path) = git_fixture();
     let config_path = dir.path().join("config.toml");

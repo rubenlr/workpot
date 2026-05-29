@@ -250,6 +250,48 @@ fn index_second_pass_persists_git_state() {
 }
 
 #[test]
+fn index_git_pass_counts_refresh_errors() {
+    let (_dir, conn, config) = open_index_fixture(None);
+    let watch_root = config.watch_roots[0].clone();
+    git_worktree(&watch_root, "good");
+
+    let plain = watch_root.join("not-git");
+    fs::create_dir_all(&plain).expect("plain dir");
+
+    index::run_full(&conn, &config).expect("first index");
+
+    let plain_key = plain.canonicalize().expect("canonical").display().to_string();
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'not-git', 0, 'manual', '', 0)",
+        rusqlite::params![plain_key],
+    )
+    .expect("seed non-git row for git pass");
+
+    let summary = index::run_full(&conn, &config).expect("second index");
+    assert!(
+        summary.git_refreshed >= 1,
+        "healthy repo should refresh: {summary:?}"
+    );
+    assert!(
+        summary.git_errors >= 1,
+        "non-git row should count as git error (D-16/D-17): {summary:?}"
+    );
+
+    let git_err: Option<String> = conn
+        .query_row(
+            "SELECT git_state_error FROM repos WHERE path = ?1",
+            rusqlite::params![plain_key],
+            |row| row.get(0),
+        )
+        .expect("git_state_error column");
+    assert!(
+        git_err.is_some(),
+        "failed refresh must persist git_state_error (D-09)"
+    );
+}
+
+#[test]
 fn index_git_failure_writes_skipped() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
