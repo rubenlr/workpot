@@ -9,7 +9,7 @@ cargo build --workspace
 cargo test --workspace
 ```
 
-Rust 1.85 is required (pinned in `rust-toolchain.toml`).
+Rust 1.96 is required (pinned in `rust-toolchain.toml`).
 
 ## Required gates before every PR
 

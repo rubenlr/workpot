@@ -12,9 +12,9 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 clap = { version = "4.6.1", features = ["derive"] }
-env_logger = "0.11"
-humantime = "2"
-workpot-core = { path = "../workpot-core" }
+env_logger = "0.11.10"
+humantime = "2.3"
+workpot-core = { path = "../workpot-core", version = "0.1.0" }
 
 [dev-dependencies]
 assert_cmd = "2"

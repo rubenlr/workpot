@@ -71,14 +71,14 @@ pub fn scan_root(root: &Path, exclude_set: &GlobSet) -> Result<Vec<PathBuf>> {
                 if entry.file_type().is_some_and(|t| t.is_dir())
                     && (is_git_worktree(path) || is_bare_repo(path))
                 {
-                    if let Ok(canon) = path.canonicalize() {
-                        if let Ok(mut list) = candidates.lock() {
-                            list.push(canon.clone());
-                            if is_bare_repo(&canon) {
-                                if let Ok(linked) = list_worktree_paths(&canon) {
-                                    list.extend(linked);
-                                }
-                            }
+                    if let Ok(canon) = path.canonicalize()
+                        && let Ok(mut list) = candidates.lock()
+                    {
+                        list.push(canon.clone());
+                        if is_bare_repo(&canon)
+                            && let Ok(linked) = list_worktree_paths(&canon)
+                        {
+                            list.extend(linked);
                         }
                     }
                     return false;
