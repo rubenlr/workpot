@@ -1,6 +1,6 @@
 ---
 phase: 01-core-persistence
-reviewed: 2026-05-30T20:00:00Z
+reviewed: 2026-05-30T22:30:00Z
 depth: standard
 files_reviewed: 23
 files_reviewed_list:
@@ -29,69 +29,54 @@ files_reviewed_list:
   - scripts/check-no-network-deps.sh
 findings:
   critical: 0
-  warning: 1
-  info: 1
+  warning: 0
+  info: 2
   total: 2
-status: issues_found
+status: clean
 ---
 
 # Phase 1: Code Review Report
 
-**Reviewed:** 2026-05-30T20:00:00Z  
+**Reviewed:** 2026-05-30T22:30:00Z  
 **Depth:** standard  
 **Files Reviewed:** 23  
-**Status:** issues_found
+**Status:** clean
 
 ## Summary
 
-Fourth pass on Phase 1 core-persistence. All three findings from the third pass (2026-05-30) are **fixed** in code: basename fallback for remove-after-delete (`resolve_repo_path_key`), stale `config.tmp` cleanup on open, and first-run watch-root seeding documented in `workpot paths` output.
+Fifth pass on Phase 1 core-persistence. Both open items from the fourth pass are **fixed** in current code: SQL `LIKE` metacharacters in deleted-repo basename lookup (`escape_like` + `ESCAPE '\\'` + Rust `file_name` filter), and a regression test for stale `config.tmp` cleanup (`open_removes_stale_config_tmp`).
 
-Security and persistence posture remain sound: parameterized SQL, path canonicalization on register, atomic config writes via temp+rename+fsync, WAL + busy timeout, macOS offline CI gate with banned-network script.
+Phase 1 persistence posture remains sound: parameterized SQL, path canonicalization on register, atomic config writes (temp + fsync + rename), WAL + busy timeout, macOS offline CI with banned-network dependency gate, locked macOS path layout.
 
-Two minor new items remain — one warning (SQL LIKE metacharacters in deleted-repo basename lookup), one informational (missing regression test for tmp cleanup).
+Later-phase code in `catalog.rs` (`upsert_scan`, `remove_repo_with_exclude`, git columns in `list_repos`) was reviewed for correctness/security; no blockers found. Index-time `max_repos` enforcement lives in `services/index.rs` (Phase 2), not in `upsert_scan` alone.
 
-## Prior Finding Verification (third pass → fourth pass)
+No BLOCKER or WARNING findings for Phase 1 scope.
+
+## Prior Finding Verification (fourth pass → fifth pass)
 
 | ID | Status | Evidence |
 |----|--------|----------|
-| WR-01 (non-canonical remove after delete) | ✅ Fixed | `catalog.rs:126-163` `resolve_repo_path_key` basename/suffix lookup; `catalog_test.rs:194-213` removes via relative path after directory delete |
-| IN-01 (orphan config tmp) | ✅ Fixed | `lib.rs:55,145-149` `remove_stale_config_temp` before config load; same `with_extension("tmp")` as `write_atomic` (`lib.rs:197`) |
-| IN-02 (default watch roots surprise) | ✅ Fixed | `main.rs:92` documents seeding in `paths` output; `lib.rs:25-34` comment on `default_config` |
+| WR-01 (SQL LIKE metacharacters in basename lookup) | ✅ Fixed | `catalog.rs:125-165` `escape_like`, `LIKE ... ESCAPE '\\'`, ambiguity error; `catalog_test.rs:239-268` `foo` vs `foo-extra` |
+| IN-01 (no regression test for tmp cleanup) | ✅ Fixed | `bootstrap_test.rs:54-69` `open_removes_stale_config_tmp` |
 
 ## Narrative Findings (AI reviewer)
 
-## Warnings
-
-### WR-01: Basename lookup for deleted repos does not escape SQL LIKE metacharacters
-
-**File:** `crates/workpot-core/src/services/catalog.rs:141-151`  
-**Issue:** When the repo directory is gone, `resolve_repo_path_key` falls back to `path LIKE '%' || ?2` where `?2` is `/{basename}`. Basenames containing `%` or `_` are interpreted as LIKE wildcards, not literal characters. A single spurious match can resolve to the wrong `repos.path` key and delete the wrong catalog row.  
-**Fix:** Escape LIKE metacharacters in the basename before building the suffix, or avoid LIKE entirely:
-
-```rust
-fn escape_like(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
-}
-
-// In resolve_repo_path_key, when building the query:
-let suffix = format!("/{}", escape_like(name));
-let mut stmt = conn.prepare(
-    "SELECT path FROM repos WHERE path = ?1 OR path LIKE '%' || ?2 ESCAPE '\\'",
-)?;
-```
-
-Prefer filtering candidates in Rust (`path.ends_with(&format!("/{name}"))`) if the table stays small in v1.
-
 ## Info
 
-### IN-01: No regression test for stale `config.tmp` cleanup
+### IN-01: No regression test for SQL LIKE escape on repo basename
 
-**File:** `crates/workpot-core/src/lib.rs:145-149`  
-**Issue:** `remove_stale_config_temp` is the fix for the prior IN-01 finding but has no integration test. A future refactor could drop the call without CI catching it.  
-**Fix:** Add a bootstrap test: create `config.tmp` beside a valid `config.toml`, open `AppContext`, assert tmp is gone.
+**File:** `crates/workpot-core/src/services/catalog.rs:125-165`  
+**Issue:** `escape_like` fixes WR-01, and `remove_repo_by_basename_does_not_match_similar_directory_name` covers suffix collision, but there is no test where the registered directory name contains `%` or `_` and removal uses basename after delete.  
+**Fix:** Add a catalog test: repo dir named e.g. `foo%bar`, register, delete directory, `remove_repo` by basename only; assert the correct row is removed.
+
+### IN-02: `upsert_scan` does not enforce `max_repos` (Phase 2+; not a Phase 1 gap)
+
+**File:** `crates/workpot-core/src/services/catalog.rs:288-341`  
+**Issue:** `register_manual` checks `max_repos`; `upsert_scan` does not. Direct callers could grow the table without cap.  
+**Fix:** Not required for Phase 1 — `index::run_full` already projects count and returns `IndexCapExceeded` before bulk upsert (`services/index.rs`). Document or add a guard in `upsert_scan` only if a future caller bypasses the indexer.
 
 ---
 
-_Reviewed: 2026-05-30T20:00:00Z_  
+_Reviewed: 2026-05-30T22:30:00Z_  
 _Reviewer: Claude (gsd-code-reviewer)_  
 _Depth: standard_
