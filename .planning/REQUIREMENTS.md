@@ -7,7 +7,7 @@
 
 ### Indexing (INDEX)
 
-- [ ] **INDEX-01**: User can configure one or more watch roots that are scanned for git repositories
+- [x] **INDEX-01**: User can configure one or more watch roots that are scanned for git repositories
 - [ ] **INDEX-02**: User can manually add a repository path to the index
 - [ ] **INDEX-03**: User can exclude a path from indexing (even under a watch root)
 - [x] **INDEX-04**: System detects repositories by presence of `.git` (not by folder name alone)
@@ -89,7 +89,8 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INDEX-01..05 | Phase 2 | Pending |
+| INDEX-01 | Phase 2 | Complete |
+| INDEX-02..05 | Phase 2 | Pending |
 | GIT-01..04 | Phase 3 | Pending |
 | SRCH-01..03 | Phase 4 | Pending |
 | ORG-01..04 | Phase 5 | Pending |

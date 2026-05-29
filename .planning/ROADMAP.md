@@ -62,7 +62,7 @@ Plans:
 4. Non-git directories under watch roots are not indexed
 5. User can trigger rescan from CLI without restarting the app
 
-**Plans:** 2/5 plans executed
+**Plans:** 3/5 plans executed
 
 Plans:
 **Wave 1**
@@ -72,7 +72,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-03-PLAN.md — `workpot roots` CLI + config limits + Rust prefix prune (INDEX-01, D-19–24)
+- [x] 02-03-PLAN.md — `workpot roots` CLI + config limits + Rust prefix prune (INDEX-01, D-19–24) (2026-05-29)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
