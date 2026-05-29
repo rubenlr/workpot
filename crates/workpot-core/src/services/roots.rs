@@ -90,10 +90,10 @@ fn prune_scan_repos_under_root(conn: &Connection, root: &Path) -> Result<u32> {
 }
 
 fn repo_under_root(repo_path: &Path, root_canon: &Path) -> Result<bool> {
-    let Ok(repo_canon) = repo_path.canonicalize() else {
-        return Ok(false);
-    };
-    Ok(repo_canon.starts_with(root_canon))
+    match repo_path.canonicalize() {
+        Ok(repo_canon) => Ok(repo_canon.starts_with(root_canon)),
+        Err(_) => Ok(repo_path.starts_with(root_canon)),
+    }
 }
 
 fn canonicalize_watch_root(path: &Path) -> Result<PathBuf> {
