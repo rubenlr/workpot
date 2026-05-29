@@ -14,6 +14,7 @@ use rusqlite::Connection;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+pub use crate::domain::GitState;
 pub use crate::error::WorkpotError;
 
 pub fn version() -> &'static str {
@@ -119,6 +120,11 @@ impl AppContext {
 
     pub fn roots_remove(&mut self, path: &Path, skip_prune: bool) -> Result<()> {
         roots::remove_root(self, path, skip_prune)
+    }
+
+    /// Refresh git state for a single repository. Public API for Phase 4 tray (D-18).
+    pub fn refresh_git_state(&self, path: &std::path::Path) -> crate::error::Result<crate::domain::GitState> {
+        crate::services::git_state::refresh_git_state(path)
     }
 }
 
