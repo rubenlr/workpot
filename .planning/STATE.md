@@ -2,15 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-last_updated: 2026-05-29T15:51:35.560Z
+status: Phase 02 shipped — PR #1
+last_updated: "2026-05-29T16:28:23.871Z"
 progress:
   total_phases: 7
   completed_plans: 8
   completed_phases: 1
   total_plans: 8
   percent: 14
-stopped_at: Phase 02 complete (5/5) — ready to discuss Phase 3
 ---
 
 # Project State
@@ -39,6 +38,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 - Phase 2 context via `/gsd-discuss-phase 2` (2026-05-29): discovery, excludes, index merge, roots CLI, caps, `git_common_dir` grouping
 - 02-05 (2026-05-29): transactional index, history, caps, bare/worktrees; commits `697873d`, `ad2bbf5`, `271b581`
+- Phase 2 shipped (2026-05-29): PR https://github.com/rubenlr/workpot/pull/1 — branch `feature/repo-discovery` → `master`
 
 ## Decisions
 
