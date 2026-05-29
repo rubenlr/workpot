@@ -12,7 +12,7 @@
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
 | 1 | Core & persistence | Runnable Rust core with local DB and config | DATA-01, DATA-02 | 3 |
-| 2 | Repo discovery | 2/5 | In Progress|  |
+| 2 | Repo discovery | 4/5 | In Progress|  |
 | 3 | Git state | Fresh branch/dirty/ahead-behind per repo | GIT-01..04 | 4 |
 | 4 | Tray finder MVP | Daily driver: list, filter, open in Cursor | UI-01..04, SRCH-01..03, LAUNCH-01 | 5 |
 | 5 | Tags & prioritization | Pins, tags, notes, signal ranking | ORG-01..04 | 4 |
@@ -62,7 +62,7 @@ Plans:
 4. Non-git directories under watch roots are not indexed
 5. User can trigger rescan from CLI without restarting the app
 
-**Plans:** 3/5 plans executed
+**Plans:** 4/5 plans executed
 
 Plans:
 **Wave 1**
@@ -76,7 +76,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-04-PLAN.md — Excludes + `repo remove` persist glob (INDEX-03, D-08–12)
+- [x] 02-04-PLAN.md — Excludes + `repo remove` persist glob (INDEX-03, D-08–12) (2026-05-29)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 

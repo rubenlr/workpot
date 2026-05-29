@@ -9,7 +9,7 @@
 
 - [x] **INDEX-01**: User can configure one or more watch roots that are scanned for git repositories
 - [ ] **INDEX-02**: User can manually add a repository path to the index
-- [ ] **INDEX-03**: User can exclude a path from indexing (even under a watch root)
+- [x] **INDEX-03**: User can exclude a path from indexing (even under a watch root)
 - [x] **INDEX-04**: System detects repositories by presence of `.git` (not by folder name alone)
 - [x] **INDEX-05**: User can trigger a full re-scan of watch roots from CLI or tray
 
