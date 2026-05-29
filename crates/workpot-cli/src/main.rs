@@ -14,6 +14,8 @@ struct Cli {
 enum Commands {
     /// Print resolved config and database paths (creates defaults on first run).
     Paths,
+    /// Full rescan of configured watch roots.
+    Index,
     #[command(subcommand)]
     Repo(RepoCommands),
 }
@@ -35,6 +37,14 @@ fn main() -> anyhow::Result<()> {
             let ctx = AppContext::open().context("failed to open workpot")?;
             println!("config: {}", ctx.config_path().display());
             println!("database: {}", ctx.database_path().display());
+        }
+        Commands::Index => {
+            let ctx = AppContext::open().context("failed to open workpot")?;
+            let summary = ctx.run_index().context("index failed")?;
+            println!(
+                "index: +{} -{} skipped {}",
+                summary.added, summary.removed, summary.skipped
+            );
         }
         Commands::Repo(sub) => match sub {
             RepoCommands::Add { path } => {
