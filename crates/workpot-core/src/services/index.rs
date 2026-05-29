@@ -1,4 +1,4 @@
-use crate::domain::Config;
+use crate::domain::{Config, SOURCE_MANUAL, SOURCE_SCAN};
 use crate::error::{Result, WorkpotError};
 use crate::infra::git::resolve_git_common_dir;
 use crate::services::{catalog, discovery, git_state};
@@ -73,10 +73,7 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
                 upserts.push((path, common.display().to_string()));
             }
             Err(_) => {
-                eprintln!(
-                    "warning: skip {}: git unavailable",
-                    path_key
-                );
+                log::warn!("skip {}: git unavailable", path_key);
                 pre_skipped += 1;
                 changelog.push(ChangeEntry {
                     path: path_key,
@@ -144,7 +141,6 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
     finish_index_run(
         &tx,
         run_id,
-        started_at,
         "ok",
         &summary,
         None,

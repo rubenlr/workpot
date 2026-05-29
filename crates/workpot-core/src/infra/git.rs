@@ -49,7 +49,7 @@ pub fn list_worktree_paths(repo_path: &Path) -> Result<Vec<PathBuf>> {
                 paths.push(canon);
             }
             Err(e) => {
-                eprintln!("warning: skip worktree {}: {e}", wt_path.display());
+                log::warn!("skip worktree {}: {e}", wt_path.display());
             }
         }
     }
