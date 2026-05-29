@@ -1,5 +1,7 @@
 use rusqlite::Connection;
 use std::fs;
+use std::path::PathBuf;
+use workpot_core::domain::Config;
 use workpot_core::{default_config, AppContext, WorkpotError};
 
 #[test]
@@ -114,6 +116,23 @@ fn open_enables_wal_journal_mode() {
         .pragma_query_value(None, "journal_mode", |row| row.get(0))
         .expect("journal_mode");
     assert_eq!(mode.to_lowercase(), "wal");
+}
+
+#[test]
+fn config_validate_rejects_hard_max_repos() {
+    let mut config = Config::default();
+    config.limits.max_repos = 25_000;
+    assert!(config.validate().is_err());
+}
+
+#[test]
+fn config_validate_rejects_too_many_watch_roots() {
+    let mut config = Config::default();
+    config.limits.max_watch_roots = 100;
+    config.watch_roots = (0..101)
+        .map(|i| PathBuf::from(format!("/tmp/workpot-root-{i}")))
+        .collect();
+    assert!(config.validate().is_err());
 }
 
 #[test]

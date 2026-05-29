@@ -54,6 +54,20 @@ fn first_run_seeds_watch_roots_for_existing_code_and_dev() {
     );
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn paths_prints_application_support_database() {
+    let home = tempfile::tempdir().expect("tempdir");
+
+    workpot_cmd(home.path())
+        .arg("paths")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Library/Application Support/workpot/workpot.db",
+        ));
+}
+
 #[test]
 fn paths_prints_config_and_database() {
     let home = tempfile::tempdir().expect("tempdir");

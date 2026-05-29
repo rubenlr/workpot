@@ -34,6 +34,17 @@ fn bare_git_fixture() -> (tempfile::TempDir, PathBuf) {
     (dir, repo)
 }
 
+fn relative_gitdir_fixture() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let main = dir.path().join("main");
+    fs::create_dir_all(&main).expect("main dir");
+    git_init(&main);
+    let linked = dir.path().join("linked");
+    fs::create_dir_all(&linked).expect("linked dir");
+    fs::write(linked.join(".git"), "gitdir: ../main/.git\n").expect(".git file");
+    (dir, linked)
+}
+
 fn gitdir_file_worktree_fixture() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
     let main = dir.path().join("main");
@@ -47,6 +58,35 @@ fn gitdir_file_worktree_fixture() -> (tempfile::TempDir, PathBuf) {
         .expect("git worktree add");
     assert!(status.success(), "git worktree add failed");
     (dir, linked)
+}
+
+#[test]
+fn register_manual_sets_source_manual() {
+    let (dir, repo_path) = git_fixture();
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+
+    ctx.register_manual(&repo_path).expect("register");
+    let repos = ctx.list_repos().expect("list");
+    assert_eq!(repos.len(), 1);
+    assert_eq!(repos[0].source, "manual");
+}
+
+#[test]
+fn register_accepts_relative_gitdir_file() {
+    let (dir, repo_path) = relative_gitdir_fixture();
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+
+    let record = ctx
+        .register_manual(&repo_path)
+        .expect("register relative gitdir worktree");
+    assert_eq!(
+        record.path,
+        repo_path.canonicalize().expect("canonicalize")
+    );
 }
 
 #[test]
