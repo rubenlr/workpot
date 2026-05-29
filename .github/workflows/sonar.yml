@@ -16,12 +16,6 @@ jobs:
   sonarcloud:
     runs-on: ubuntu-latest
     steps:
-      - name: Manual run required
-        if: fromJSON(github.run_attempt) == 1
-        run: |
-          echo "::notice title=Manual Sonar required::Re-run this workflow from the PR Checks tab to start the Sonar scan."
-          exit 1
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
