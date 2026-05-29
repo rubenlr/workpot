@@ -85,6 +85,15 @@ fn run() -> anyhow::Result<()> {
             let ctx = AppContext::open().context("failed to open workpot")?;
             println!("config: {}", ctx.config_path().display());
             println!("database: {}", ctx.database_path().display());
+            let roots = ctx.roots_list();
+            if roots.is_empty() {
+                println!("watch_roots: (none)");
+            } else {
+                println!("watch_roots: (first-run config may seed ~/code and ~/dev when those dirs exist)");
+                for root in roots {
+                    println!("  {}", root.display());
+                }
+            }
         }
         Commands::Index => {
             let ctx = AppContext::open().context("failed to open workpot")?;
