@@ -24,10 +24,14 @@ pub fn add_root(ctx: &mut AppContext, path: &Path) -> Result<()> {
 
     ctx.config_mut().watch_roots.push(canonical.clone());
     match index::run_full(ctx.connection(), ctx.config()) {
-        Ok(_) => {
-            save_config(ctx.config_path(), ctx.config())?;
-            Ok(())
-        }
+        Ok(_) => match save_config(ctx.config_path(), ctx.config()) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                ctx.config_mut().watch_roots.pop();
+                let _ = prune_scan_repos_under_root(ctx.connection(), &canonical);
+                Err(e)
+            }
+        },
         Err(e) => {
             ctx.config_mut().watch_roots.pop();
             Err(e)
