@@ -1,8 +1,7 @@
 use crate::domain::Config;
-use crate::error::{Result, WorkpotError};
+use crate::error::Result;
 use crate::infra::git::resolve_git_common_dir;
 use crate::services::{catalog, discovery};
-use globset::{Glob, GlobSet, GlobSetBuilder};
 use rusqlite::{params, Connection};
 use std::collections::HashSet;
 use std::path::Path;
@@ -16,7 +15,7 @@ pub struct IndexSummary {
 
 /// Full watch-root rescan: discover candidates, resolve `git_common_dir`, merge into SQLite.
 pub fn run_full(conn: &Connection, config: &Config) -> Result<IndexSummary> {
-    let exclude_set = build_exclude_set(&config.excludes)?;
+    let exclude_set = discovery::build_exclude_set(config)?;
     let mut summary = IndexSummary::default();
     let mut seen_paths = HashSet::new();
 
@@ -55,18 +54,6 @@ pub fn run_full(conn: &Connection, config: &Config) -> Result<IndexSummary> {
     }
 
     Ok(summary)
-}
-
-fn build_exclude_set(patterns: &[String]) -> Result<GlobSet> {
-    let mut builder = GlobSetBuilder::new();
-    for pat in patterns {
-        builder.add(
-            Glob::new(pat).map_err(|e| WorkpotError::Config(format!("invalid exclude glob: {e}")))?,
-        );
-    }
-    builder
-        .build()
-        .map_err(|e| WorkpotError::Config(format!("exclude glob set: {e}")))
 }
 
 fn prune_stale_scan_under_root(
