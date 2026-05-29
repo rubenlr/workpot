@@ -96,7 +96,9 @@ fn repo_add_list_remove_roundtrip() {
         .args(["repo", "list"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(canonical.to_str().expect("utf8 path")));
+        .stdout(predicate::str::contains(
+            canonical.to_str().expect("utf8 path"),
+        ));
 
     workpot_cmd(home.path())
         .args(["repo", "remove", repo_path.to_str().expect("utf8 path")])
@@ -235,15 +237,9 @@ fn cli_repo_remove_stays_absent_after_index() {
         .assert()
         .success();
 
-    workpot_cmd(home.path())
-        .arg("index")
-        .assert()
-        .success();
+    workpot_cmd(home.path()).arg("index").assert().success();
 
-    workpot_cmd(home.path())
-        .arg("index")
-        .assert()
-        .success();
+    workpot_cmd(home.path()).arg("index").assert().success();
 
     workpot_cmd(home.path())
         .args(["repo", "list"])
@@ -275,7 +271,9 @@ fn roots_add_index_list_roundtrip() {
         .args(["repo", "list"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(canonical.to_str().expect("utf8 path")));
+        .stdout(predicate::str::contains(
+            canonical.to_str().expect("utf8 path"),
+        ));
 }
 
 #[test]
@@ -326,10 +324,7 @@ fn index_cap_exceeded_exits_one() {
     )
     .expect("config");
 
-    workpot_cmd(home.path())
-        .arg("paths")
-        .assert()
-        .success();
+    workpot_cmd(home.path()).arg("paths").assert().success();
 
     workpot_cmd(home.path())
         .arg("index")
@@ -415,7 +410,8 @@ fn repo_add_rejects_non_git() {
         .args(["repo", "add", plain.to_str().expect("utf8 path")])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("not a git repository").or(
-            predicate::str::contains("NotGitRepo"),
-        ));
+        .stderr(
+            predicate::str::contains("not a git repository")
+                .or(predicate::str::contains("NotGitRepo")),
+        );
 }

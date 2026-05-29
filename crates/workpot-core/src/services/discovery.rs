@@ -32,7 +32,8 @@ pub fn build_exclude_set(config: &Config) -> Result<GlobSet> {
         .chain(config.excludes.iter().map(String::as_str))
     {
         builder.add(
-            Glob::new(pat).map_err(|e| WorkpotError::Config(format!("invalid exclude glob: {e}")))?,
+            Glob::new(pat)
+                .map_err(|e| WorkpotError::Config(format!("invalid exclude glob: {e}")))?,
         );
     }
     builder

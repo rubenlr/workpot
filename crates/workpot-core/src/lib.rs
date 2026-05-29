@@ -128,7 +128,10 @@ impl AppContext {
     ///
     /// Read-only: does not persist to SQLite. Use [`Self::refresh_and_persist_git_state`]
     /// when the DB row must be updated (clears stale `git_state_error` on success).
-    pub fn refresh_git_state(&self, path: &std::path::Path) -> crate::error::Result<crate::domain::GitState> {
+    pub fn refresh_git_state(
+        &self,
+        path: &std::path::Path,
+    ) -> crate::error::Result<crate::domain::GitState> {
         crate::services::git_state::refresh_git_state(path)
     }
 
@@ -171,20 +174,17 @@ pub(crate) fn load_config(path: &Path) -> Result<Config> {
         return Ok(Config::default());
     }
     let contents = fs::read_to_string(path)?;
-    let config: Config = toml::from_str(&contents).map_err(|e| WorkpotError::Config(e.to_string()))?;
-    config
-        .validate()
-        .map_err(WorkpotError::Config)?;
+    let config: Config =
+        toml::from_str(&contents).map_err(|e| WorkpotError::Config(e.to_string()))?;
+    config.validate().map_err(WorkpotError::Config)?;
     Ok(config)
 }
 
 /// Persist config to disk (D-19).
 pub fn save_config(config_path: &Path, config: &Config) -> Result<()> {
-    config
-        .validate()
-        .map_err(WorkpotError::Config)?;
-    let contents = toml::to_string_pretty(config)
-        .map_err(|e| WorkpotError::Config(e.to_string()))?;
+    config.validate().map_err(WorkpotError::Config)?;
+    let contents =
+        toml::to_string_pretty(config).map_err(|e| WorkpotError::Config(e.to_string()))?;
     write_atomic(config_path, &contents)?;
     Ok(())
 }

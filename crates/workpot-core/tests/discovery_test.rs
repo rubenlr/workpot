@@ -1,13 +1,13 @@
 use globset::GlobSet;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use workpot_core::WorkpotError;
 use workpot_core::domain::Config;
 use workpot_core::infra::git::resolve_git_common_dir;
 use workpot_core::services::discovery;
-use workpot_core::WorkpotError;
 
 fn empty_excludes() -> GlobSet {
     globset::GlobSetBuilder::new()
@@ -205,9 +205,11 @@ fn discovery_skips_symlink() {
 #[test]
 fn scan_root_returns_empty_for_missing_path() {
     let missing = PathBuf::from("/tmp/workpot-discovery-missing-root-nope");
-    let candidates =
-        discovery::scan_root(&missing, &empty_excludes()).expect("scan missing root");
-    assert!(candidates.is_empty(), "missing watch root must yield no candidates");
+    let candidates = discovery::scan_root(&missing, &empty_excludes()).expect("scan missing root");
+    assert!(
+        candidates.is_empty(),
+        "missing watch root must yield no candidates"
+    );
 }
 
 #[test]

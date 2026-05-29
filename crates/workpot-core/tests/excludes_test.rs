@@ -1,10 +1,10 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use workpot_core::AppContext;
 use workpot_core::domain::Config;
 use workpot_core::save_config;
 use workpot_core::services::{discovery, excludes};
-use workpot_core::AppContext;
 
 fn git_worktree(parent: &Path, name: &str) -> std::path::PathBuf {
     let repo = parent.join(name);
@@ -75,7 +75,9 @@ fn manual_add_ignores_exclude_glob() {
     let repo = git_worktree(&blocked_parent, "repo");
 
     let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
-    let record = ctx.register_manual(&repo).expect("manual add despite exclude");
+    let record = ctx
+        .register_manual(&repo)
+        .expect("manual add despite exclude");
     assert_eq!(record.path, repo.canonicalize().expect("canonicalize"));
 }
 

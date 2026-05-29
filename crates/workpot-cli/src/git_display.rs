@@ -23,7 +23,7 @@ pub fn format_git_state(repo: &RepoRecord) -> String {
     }
     let branch = repo.branch.as_deref().unwrap_or("?");
     let dirty = match repo.is_dirty {
-        None => "N/A",         // bare repo (D-13)
+        None => "N/A", // bare repo (D-13)
         Some(true) => "dirty",
         Some(false) => "clean",
     };
@@ -87,7 +87,10 @@ mod tests {
         repo.ahead = Some(2);
         repo.behind = Some(1);
         let out = format_git_state(&repo);
-        assert!(out.contains("\u{2191}2\u{2193}1"), "ahead/behind arrows: {out}");
+        assert!(
+            out.contains("\u{2191}2\u{2193}1"),
+            "ahead/behind arrows: {out}"
+        );
     }
 
     #[test]

@@ -1,15 +1,20 @@
+use crate::AppContext;
 use crate::domain::SOURCE_SCAN;
 use crate::error::{Result, WorkpotError};
 use crate::save_config;
 use crate::services::{index, paths};
-use crate::AppContext;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::path::{Path, PathBuf};
 
 pub fn add_root(ctx: &mut AppContext, path: &Path) -> Result<()> {
     let canonical = canonicalize_watch_root(path)?;
 
-    if ctx.config().watch_roots.iter().any(|r| roots_equal(r, &canonical)) {
+    if ctx
+        .config()
+        .watch_roots
+        .iter()
+        .any(|r| roots_equal(r, &canonical))
+    {
         return Err(WorkpotError::WatchRootAlreadyExists(
             canonical.display().to_string(),
         ));

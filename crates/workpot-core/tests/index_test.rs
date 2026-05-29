@@ -1,10 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use workpot_core::WorkpotError;
 use workpot_core::domain::Config;
 use workpot_core::infra::store;
 use workpot_core::services::{catalog, index};
-use workpot_core::WorkpotError;
 
 fn git_worktree(parent: &Path, name: &str) -> PathBuf {
     let repo = parent.join(name);
@@ -184,7 +184,10 @@ fn index_removes_stale_path() {
             |row| row.get(0),
         )
         .expect("removed changes");
-    assert_eq!(removed_changes, 1, "stale path must appear in index_changes");
+    assert_eq!(
+        removed_changes, 1,
+        "stale path must appear in index_changes"
+    );
 
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
@@ -280,21 +283,21 @@ fn index_git_summary_accounts_for_all_non_excluded_repos() {
     let summary = index::run_full(&conn, &config).expect("run_full");
 
     let non_excluded: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM repos WHERE excluded = 0",
-            [],
-            |row| row.get(0),
-        )
+        .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
+            row.get(0)
+        })
         .expect("count");
     assert_eq!(non_excluded, 2);
 
     let accounted = summary.git_refreshed + summary.git_errors;
     assert_eq!(
-        accounted,
-        non_excluded as u32,
+        accounted, non_excluded as u32,
         "git pass must classify every indexed repo (D-16/D-17): {summary:?}"
     );
-    assert_eq!(summary.git_refreshed, 2, "both repos should refresh cleanly");
+    assert_eq!(
+        summary.git_refreshed, 2,
+        "both repos should refresh cleanly"
+    );
     assert_eq!(summary.git_errors, 0);
 }
 
@@ -303,7 +306,11 @@ fn index_second_pass_persists_git_state() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     let repo_path = git_worktree(&watch_root, "git-state-repo");
-    let path_key = repo_path.canonicalize().expect("canonical").display().to_string();
+    let path_key = repo_path
+        .canonicalize()
+        .expect("canonical")
+        .display()
+        .to_string();
 
     let summary = index::run_full(&conn, &config).expect("run_full");
     assert!(
@@ -335,7 +342,11 @@ fn index_git_pass_counts_refresh_errors() {
 
     index::run_full(&conn, &config).expect("first index");
 
-    let plain_key = plain.canonicalize().expect("canonical").display().to_string();
+    let plain_key = plain
+        .canonicalize()
+        .expect("canonical")
+        .display()
+        .to_string();
     conn.execute(
         "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'not-git', 0, 'manual', '', 0)",

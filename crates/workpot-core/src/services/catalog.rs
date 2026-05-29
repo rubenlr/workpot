@@ -2,7 +2,7 @@ use crate::domain::{Config, RepoRecord, SOURCE_MANUAL, SOURCE_SCAN};
 use crate::error::{Result, WorkpotError};
 use crate::infra::git::resolve_git_common_dir;
 use crate::save_config;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -35,11 +35,10 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
         .unwrap_or("unknown")
         .to_string();
 
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM repos WHERE excluded = 0",
-        [],
-        |row| row.get(0),
-    )?;
+    let count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
+            row.get(0)
+        })?;
     let count = u32::try_from(count).unwrap_or(u32::MAX);
     if count >= config.limits.max_repos {
         return Err(WorkpotError::IndexCapExceeded {
@@ -175,7 +174,10 @@ fn resolve_repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
             }
             Ok(display_key)
         }
-        Err(e) => Err(WorkpotError::InvalidPath(format!("{}: {e}", path.display()))),
+        Err(e) => Err(WorkpotError::InvalidPath(format!(
+            "{}: {e}",
+            path.display()
+        ))),
     }
 }
 

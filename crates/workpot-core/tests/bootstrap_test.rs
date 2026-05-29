@@ -2,7 +2,7 @@ use rusqlite::Connection;
 use std::fs;
 use std::path::PathBuf;
 use workpot_core::domain::Config;
-use workpot_core::{default_config, AppContext, WorkpotError};
+use workpot_core::{AppContext, WorkpotError, default_config};
 
 #[test]
 fn config_creates_defaults() {
@@ -10,8 +10,8 @@ fn config_creates_defaults() {
     let config_path = dir.path().join("config.toml");
     let db_path = dir.path().join("workpot.db");
 
-    let _ctx = AppContext::open_with_paths(config_path.clone(), db_path)
-        .expect("open should succeed");
+    let _ctx =
+        AppContext::open_with_paths(config_path.clone(), db_path).expect("open should succeed");
 
     let contents = fs::read_to_string(&config_path).expect("config file exists");
     assert!(contents.contains("watch_roots"));

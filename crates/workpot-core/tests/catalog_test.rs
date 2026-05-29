@@ -1,11 +1,11 @@
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use workpot_core::AppContext;
+use workpot_core::WorkpotError;
 use workpot_core::domain::{SOURCE_MANUAL, SOURCE_SCAN};
 use workpot_core::infra::{git, store};
 use workpot_core::services::catalog;
-use workpot_core::AppContext;
-use workpot_core::WorkpotError;
 
 fn git_init(repo: &std::path::Path) {
     let status = Command::new("git")
@@ -55,7 +55,12 @@ fn gitdir_file_worktree_fixture() -> (tempfile::TempDir, PathBuf) {
     git_init(&main);
     let linked = dir.path().join("linked-worktree");
     let status = Command::new("git")
-        .args(["worktree", "add", "-q", linked.to_str().expect("utf-8 path")])
+        .args([
+            "worktree",
+            "add",
+            "-q",
+            linked.to_str().expect("utf-8 path"),
+        ])
         .current_dir(&main)
         .status()
         .expect("git worktree add");
@@ -68,11 +73,7 @@ fn list_repos_returns_git_state_after_index() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("config.toml");
     let db_path = dir.path().join("workpot.db");
-    fs::write(
-        &config_path,
-        "watch_roots = []\nexcludes = []\n",
-    )
-    .expect("write config");
+    fs::write(&config_path, "watch_roots = []\nexcludes = []\n").expect("write config");
 
     let watch = dir.path().join("watch");
     fs::create_dir_all(&watch).expect("watch");
@@ -148,10 +149,7 @@ fn register_accepts_relative_gitdir_file() {
     let record = ctx
         .register_manual(&repo_path)
         .expect("register relative gitdir worktree");
-    assert_eq!(
-        record.path,
-        repo_path.canonicalize().expect("canonicalize")
-    );
+    assert_eq!(record.path, repo_path.canonicalize().expect("canonicalize"));
 }
 
 #[test]
@@ -161,8 +159,8 @@ fn repo_persists_across_reopen() {
     let db_path = dir.path().join("workpot.db");
 
     {
-        let ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone())
-            .expect("first open");
+        let ctx =
+            AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("first open");
         let record = ctx.register_manual(&repo_path).expect("register");
         let canonical = repo_path.canonicalize().expect("canonicalize");
         assert_eq!(record.path, canonical);
@@ -172,7 +170,10 @@ fn repo_persists_across_reopen() {
         let ctx = AppContext::open_with_paths(config_path, db_path).expect("second open");
         let repos = ctx.list_repos().expect("list");
         assert_eq!(repos.len(), 1);
-        assert_eq!(repos[0].path, repo_path.canonicalize().expect("canonicalize"));
+        assert_eq!(
+            repos[0].path,
+            repo_path.canonicalize().expect("canonicalize")
+        );
     }
 }
 
@@ -268,10 +269,7 @@ fn register_accepts_gitdir_file_worktree() {
     let record = ctx
         .register_manual(&repo_path)
         .expect("register gitdir worktree");
-    assert_eq!(
-        record.path,
-        repo_path.canonicalize().expect("canonicalize")
-    );
+    assert_eq!(record.path, repo_path.canonicalize().expect("canonicalize"));
 }
 
 #[test]
@@ -296,14 +294,17 @@ fn list_repos_skips_excluded_rows() {
     let db_path = dir.path().join("workpot.db");
 
     {
-        let ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone())
-            .expect("open");
+        let ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("open");
         ctx.register_manual(&repo_path).expect("register");
     }
 
     {
         let conn = rusqlite::Connection::open(&db_path).expect("open db");
-        let path_key = repo_path.canonicalize().expect("canonicalize").display().to_string();
+        let path_key = repo_path
+            .canonicalize()
+            .expect("canonicalize")
+            .display()
+            .to_string();
         conn.execute("UPDATE repos SET excluded = 1 WHERE path = ?1", [&path_key])
             .expect("mark excluded");
     }
@@ -325,8 +326,8 @@ fn remove_repo_succeeds_when_directory_deleted() {
     let relative_remove = dir.path().join(&repo_name);
 
     {
-        let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone())
-            .expect("open");
+        let mut ctx =
+            AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("open");
         ctx.register_manual(&repo_path).expect("register");
         fs::remove_dir_all(&repo_path).expect("delete repo dir");
         ctx.remove_repo(&relative_remove)
@@ -355,7 +356,10 @@ fn remove_repo_with_exclude_persists_excludes_before_row_removed() {
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos", [], |row| row.get(0))
         .expect("count");
-    assert_eq!(count, 0, "repo row should be removed after excludes persisted");
+    assert_eq!(
+        count, 0,
+        "repo row should be removed after excludes persisted"
+    );
 }
 
 #[test]
@@ -404,7 +408,11 @@ fn remove_repo_with_exclude_escapes_glob_metacharacters_in_path() {
     let canon = repo.canonicalize().expect("canonicalize");
     let escaped_name = "star\\*repo";
     assert!(
-        config.contains(&format!("{}/{}", canon.parent().expect("parent").display(), escaped_name)),
+        config.contains(&format!(
+            "{}/{}",
+            canon.parent().expect("parent").display(),
+            escaped_name
+        )),
         "expected escaped glob segment in config: {config}"
     );
 }
@@ -457,8 +465,8 @@ fn remove_repo_by_basename_with_like_metacharacters_in_name() {
     let relative_remove = dir.path().join(&repo_name);
 
     {
-        let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone())
-            .expect("open");
+        let mut ctx =
+            AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("open");
         ctx.register_manual(&repo).expect("register");
         fs::remove_dir_all(&repo).expect("delete repo dir");
         ctx.remove_repo(&relative_remove)
@@ -470,7 +478,10 @@ fn remove_repo_by_basename_with_like_metacharacters_in_name() {
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos", [], |row| row.get(0))
         .expect("count repos");
-    assert_eq!(count, 0, "row for foo%bar must be removed, not a LIKE false match");
+    assert_eq!(
+        count, 0,
+        "row for foo%bar must be removed, not a LIKE false match"
+    );
 }
 
 #[test]

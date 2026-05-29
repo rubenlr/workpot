@@ -46,7 +46,6 @@ fn make_commit(repo: &git2::Repository, message: &str) -> git2::Oid {
         .expect("commit")
 }
 
-
 // ─── GIT-01: branch name tests ────────────────────────────────────────────────
 
 #[test]
@@ -65,7 +64,11 @@ fn git_state_branch_normal() {
         branch == "master" || branch == "main",
         "expected 'master' or 'main', got '{branch}'"
     );
-    assert!(state.error.is_none(), "error should be None, got {:?}", state.error);
+    assert!(
+        state.error.is_none(),
+        "error should be None, got {:?}",
+        state.error
+    );
 }
 
 #[test]
@@ -80,16 +83,30 @@ fn detached_head() {
 
     let state = refresh_git_state(&repo_path).expect("refresh_git_state");
 
-    let branch = state.branch.as_deref().expect("branch should be Some for detached HEAD");
+    let branch = state
+        .branch
+        .as_deref()
+        .expect("branch should be Some for detached HEAD");
     // Must be a 7-char hex short OID — NOT "HEAD" (Pitfall 2)
-    assert_ne!(branch, "HEAD", "branch must not be 'HEAD' for detached HEAD");
-    assert_eq!(branch.len(), 7, "detached HEAD branch must be 7-char short OID, got '{branch}'");
+    assert_ne!(
+        branch, "HEAD",
+        "branch must not be 'HEAD' for detached HEAD"
+    );
+    assert_eq!(
+        branch.len(),
+        7,
+        "detached HEAD branch must be 7-char short OID, got '{branch}'"
+    );
     // Verify it is a valid hex string
     assert!(
         branch.chars().all(|c| c.is_ascii_hexdigit()),
         "detached HEAD branch must be hex, got '{branch}'"
     );
-    assert!(state.error.is_none(), "error should be None, got {:?}", state.error);
+    assert!(
+        state.error.is_none(),
+        "error should be None, got {:?}",
+        state.error
+    );
 }
 
 #[test]
@@ -101,9 +118,19 @@ fn unborn_branch() {
     let state = refresh_git_state(&repo_path).expect("refresh_git_state must not panic");
 
     // Must handle gracefully; expect "unborn" sentinel
-    let branch = state.branch.as_deref().expect("branch should be Some for unborn");
-    assert_eq!(branch, BRANCH_UNBORN, "unborn branch should return '{BRANCH_UNBORN}', got '{branch}'");
-    assert!(state.error.is_none(), "error should be None for unborn branch, got {:?}", state.error);
+    let branch = state
+        .branch
+        .as_deref()
+        .expect("branch should be Some for unborn");
+    assert_eq!(
+        branch, BRANCH_UNBORN,
+        "unborn branch should return '{BRANCH_UNBORN}', got '{branch}'"
+    );
+    assert!(
+        state.error.is_none(),
+        "error should be None for unborn branch, got {:?}",
+        state.error
+    );
 }
 
 // ─── GIT-02: dirty flag tests ─────────────────────────────────────────────────
@@ -120,7 +147,11 @@ fn dirty_unstaged() {
     std::fs::write(repo_path.join("file.txt"), b"modified but not staged\n").expect("write");
 
     let state = refresh_git_state(&repo_path).expect("refresh_git_state");
-    assert_eq!(state.is_dirty, Some(true), "unstaged modification must be dirty");
+    assert_eq!(
+        state.is_dirty,
+        Some(true),
+        "unstaged modification must be dirty"
+    );
 }
 
 #[test]
@@ -133,11 +164,17 @@ fn dirty_staged() {
     // Modify file.txt on disk and stage it (file.txt exists on disk from make_commit)
     std::fs::write(repo_path.join("file.txt"), b"staged change\n").expect("write");
     let mut index = repo.index().expect("index");
-    index.add_path(std::path::Path::new("file.txt")).expect("add_path");
+    index
+        .add_path(std::path::Path::new("file.txt"))
+        .expect("add_path");
     index.write().expect("index write");
 
     let state = refresh_git_state(&repo_path).expect("refresh_git_state");
-    assert_eq!(state.is_dirty, Some(true), "staged modification must be dirty");
+    assert_eq!(
+        state.is_dirty,
+        Some(true),
+        "staged modification must be dirty"
+    );
 }
 
 #[test]
@@ -152,7 +189,11 @@ fn untracked_is_clean() {
     std::fs::write(repo_path.join("untracked.txt"), b"untracked\n").expect("write");
 
     let state = refresh_git_state(&repo_path).expect("refresh_git_state");
-    assert_eq!(state.is_dirty, Some(false), "untracked files must not count as dirty (D-10)");
+    assert_eq!(
+        state.is_dirty,
+        Some(false),
+        "untracked files must not count as dirty (D-10)"
+    );
 }
 
 #[test]
@@ -162,7 +203,10 @@ fn bare_no_dirty() {
     git2::Repository::init_bare(&bare_path).expect("init_bare");
 
     let state = refresh_git_state(&bare_path).expect("refresh_git_state");
-    assert_eq!(state.is_dirty, None, "bare repo must return is_dirty=None (D-13)");
+    assert_eq!(
+        state.is_dirty, None,
+        "bare repo must return is_dirty=None (D-13)"
+    );
 }
 
 // ─── GIT-03: ahead/behind tests ───────────────────────────────────────────────
@@ -204,7 +248,11 @@ fn ahead_behind() {
     {
         let mut remote = local.find_remote("origin").expect("find remote");
         remote
-            .fetch(&["refs/heads/master:refs/remotes/origin/master"], None, None)
+            .fetch(
+                &["refs/heads/master:refs/remotes/origin/master"],
+                None,
+                None,
+            )
             .expect("fetch");
     }
 
@@ -237,7 +285,8 @@ fn ahead_behind() {
     std::fs::write(workdir.join("local.txt"), b"local change\n").expect("write local.txt");
     let tree2_oid = {
         let mut idx = local.index().expect("local index");
-        idx.add_path(std::path::Path::new("local.txt")).expect("add local.txt");
+        idx.add_path(std::path::Path::new("local.txt"))
+            .expect("add local.txt");
         idx.write().expect("write index");
         idx.write_tree().expect("write_tree")
     };
@@ -277,7 +326,11 @@ fn refresh_all_absorbs_per_repo_failure() {
         .iter()
         .find(|r| r.path.contains("good"))
         .expect("good repo result");
-    assert!(good.state.error.is_none(), "good repo: {:?}", good.state.error);
+    assert!(
+        good.state.error.is_none(),
+        "good repo: {:?}",
+        good.state.error
+    );
     assert!(good.state.branch.is_some());
 
     let bad = results
@@ -298,7 +351,11 @@ fn persist_git_state_maps_is_dirty_in_db() {
 
     let (repo, repo_path) = init_git_repo(dir.path(), "clean-row");
     make_commit(&repo, "initial");
-    let path_key = repo_path.canonicalize().expect("canonical").display().to_string();
+    let path_key = repo_path
+        .canonicalize()
+        .expect("canonical")
+        .display()
+        .to_string();
 
     conn.execute(
         "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
@@ -307,8 +364,7 @@ fn persist_git_state_maps_is_dirty_in_db() {
     )
     .expect("insert repo row");
 
-    let clean = workpot_core::services::git_state::refresh_git_state(&repo_path)
-        .expect("refresh");
+    let clean = workpot_core::services::git_state::refresh_git_state(&repo_path).expect("refresh");
     assert_eq!(clean.is_dirty, Some(false));
     workpot_core::services::git_state::persist_git_state(&conn, &path_key, &clean)
         .expect("persist clean");
@@ -324,7 +380,11 @@ fn persist_git_state_maps_is_dirty_in_db() {
 
     let bare_path = dir.path().join("bare-row");
     git2::Repository::init_bare(&bare_path).expect("init bare");
-    let bare_key = bare_path.canonicalize().expect("canonical").display().to_string();
+    let bare_key = bare_path
+        .canonicalize()
+        .expect("canonical")
+        .display()
+        .to_string();
     conn.execute(
         "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'bare-row', 0, 'scan', '', 0)",
@@ -332,8 +392,8 @@ fn persist_git_state_maps_is_dirty_in_db() {
     )
     .expect("insert bare row");
 
-    let bare_state = workpot_core::services::git_state::refresh_git_state(&bare_path)
-        .expect("refresh bare");
+    let bare_state =
+        workpot_core::services::git_state::refresh_git_state(&bare_path).expect("refresh bare");
     assert_eq!(bare_state.is_dirty, None);
     workpot_core::services::git_state::persist_git_state(&conn, &bare_key, &bare_state)
         .expect("persist bare");
@@ -356,7 +416,11 @@ fn refresh_and_persist_writes_columns() {
 
     let (repo, repo_path) = init_git_repo(dir.path(), "persist-me");
     make_commit(&repo, "initial");
-    let path_key = repo_path.canonicalize().expect("canonical").display().to_string();
+    let path_key = repo_path
+        .canonicalize()
+        .expect("canonical")
+        .display()
+        .to_string();
 
     conn.execute(
         "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)

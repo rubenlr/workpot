@@ -1,7 +1,7 @@
 use crate::domain::GitState;
 use crate::error::Result;
 use rayon::prelude::*;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 

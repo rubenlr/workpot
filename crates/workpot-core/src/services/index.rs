@@ -2,7 +2,7 @@ use crate::domain::{Config, SOURCE_MANUAL, SOURCE_SCAN};
 use crate::error::{Result, WorkpotError};
 use crate::infra::git::resolve_git_common_dir;
 use crate::services::{catalog, discovery, git_state, paths};
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{Connection, Transaction, params};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -144,13 +144,7 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
         )?;
     }
 
-    finish_index_run(
-        &tx,
-        run_id,
-        "ok",
-        &summary,
-        None,
-    )?;
+    finish_index_run(&tx, run_id, "ok", &summary, None)?;
     tx.commit()?;
 
     // Second pass: git state refresh (separate transaction per Pitfall 6)
@@ -200,9 +194,7 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
     }
     if let Err(e) = git_tx.commit() {
         log::warn!("git refresh commit failed after successful index merge: {e}");
-        summary.git_errors = summary
-            .git_errors
-            .saturating_add(summary.git_refreshed);
+        summary.git_errors = summary.git_errors.saturating_add(summary.git_refreshed);
         summary.git_refreshed = 0;
     }
 
@@ -227,9 +219,8 @@ fn backfill_empty_git_common_dir(
     conn: &Connection,
     changelog: &mut Vec<ChangeEntry>,
 ) -> Result<u32> {
-    let mut stmt = conn.prepare(
-        "SELECT path FROM repos WHERE git_common_dir = '' OR git_common_dir IS NULL",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT path FROM repos WHERE git_common_dir = '' OR git_common_dir IS NULL")?;
     let paths: Vec<String> = stmt
         .query_map([], |row| row.get(0))?
         .collect::<std::result::Result<_, _>>()?;
@@ -270,9 +261,7 @@ fn collect_stale_scan_paths(
     scan_roots: &[PathBuf],
     seen: &HashSet<String>,
 ) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT path FROM repos WHERE source = ?1 AND excluded = 0",
-    )?;
+    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1 AND excluded = 0")?;
     let paths: Vec<String> = stmt
         .query_map(params![SOURCE_SCAN], |row| row.get(0))?
         .collect::<std::result::Result<_, _>>()?;
@@ -305,9 +294,7 @@ fn collect_orphan_scan_paths(
     conn: &Connection,
     configured_roots: &[PathBuf],
 ) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT path FROM repos WHERE source = ?1 AND excluded = 0",
-    )?;
+    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1 AND excluded = 0")?;
     let paths: Vec<String> = stmt
         .query_map(params![SOURCE_SCAN], |row| row.get(0))?
         .collect::<std::result::Result<_, _>>()?;
@@ -340,9 +327,7 @@ fn validate_manual_outside_roots(
     configured_roots: &[PathBuf],
     removes: &mut Vec<String>,
 ) -> Result<()> {
-    let mut stmt = conn.prepare(
-        "SELECT path FROM repos WHERE source = ?1 AND excluded = 0",
-    )?;
+    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1 AND excluded = 0")?;
     let paths: Vec<String> = stmt
         .query_map(params![SOURCE_MANUAL], |row| row.get(0))?
         .collect::<std::result::Result<_, _>>()?;
@@ -355,9 +340,7 @@ fn validate_manual_outside_roots(
         {
             continue;
         }
-        if !path.exists()
-            || (!catalog::is_git_worktree(path) && !catalog::is_bare_repo(path))
-        {
+        if !path.exists() || (!catalog::is_git_worktree(path) && !catalog::is_bare_repo(path)) {
             removes.push(path_key);
         }
     }
@@ -475,8 +458,8 @@ mod tests {
             "repos under a configured root must not be purged when the root is absent from the canonical set"
         );
 
-        let orphans_without_configured =
-            collect_orphan_scan_paths(&conn, &[]).expect("collect orphans without configured roots");
+        let orphans_without_configured = collect_orphan_scan_paths(&conn, &[])
+            .expect("collect orphans without configured roots");
         assert_eq!(orphans_without_configured, vec![repo_key]);
     }
 
@@ -500,9 +483,12 @@ mod tests {
         let conn = conn_with_scan_path(existing);
         let replacement = PathBuf::from("/tmp/workpot-projected-count-replacement");
 
-        let count =
-            projected_repo_count(&conn, &[existing.to_string()], &[(replacement, String::new())])
-                .expect("projected count");
+        let count = projected_repo_count(
+            &conn,
+            &[existing.to_string()],
+            &[(replacement, String::new())],
+        )
+        .expect("projected count");
         assert_eq!(count, 1);
     }
 
@@ -513,17 +499,11 @@ mod tests {
         let conn = conn_with_scan_path(&repo_key);
         let seen = HashSet::new();
 
-        let stale = collect_stale_scan_paths(
-            &conn,
-            std::slice::from_ref(&configured),
-            &[],
-            &seen,
-        )
-        .expect("collect stale");
+        let stale = collect_stale_scan_paths(&conn, std::slice::from_ref(&configured), &[], &seen)
+            .expect("collect stale");
         assert!(
             stale.is_empty(),
             "repos under an unscannable configured root must not be marked stale"
         );
     }
 }
-
