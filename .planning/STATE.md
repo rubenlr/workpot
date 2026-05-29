@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Phase 2 context gathered
-last_updated: "2026-05-29T15:19:57.286Z"
+status: Phase 2 in progress — plan 02-02 complete
+last_updated: "2026-05-29T16:00:00.000Z"
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 8
-  completed_plans: 3
-  percent: 14
+  completed_plans: 5
+  percent: 63
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | Phase | Name | Status |
 |-------|------|--------|
 | 1 | Core & persistence | Complete (2026-05-28) |
-| 2 | Repo discovery | Context gathered |
+| 2 | Repo discovery | In progress (02-02 done) |
 | 3 | Git state | Not started |
 | 4 | Tray finder MVP | Not started |
 | 5 | Tags & prioritization | Not started |
@@ -40,6 +40,11 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 - Phase 1 executed via `/gsd-execute-phase 1` (inline; gsd-sdk unavailable)
 - Delivered: Cargo workspace, persistence bootstrap, `workpot paths`, `workpot repo add|list|remove`
 - All 5 integration tests pass; DATA-02 script + CI committed
+- 02-02 (2026-05-29): discovery walk, `upsert_scan`, `workpot index`, INDEX-04/05; commits `de02151`, `5a8fc73`
+
+## Decisions
+
+- Index tests use `git init`; discovery uses ignore `filter_entry` with `Arc<Mutex>` (02-02)
 
 ## Blockers
 
