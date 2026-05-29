@@ -17,6 +17,29 @@ fn config_creates_defaults() {
 }
 
 #[test]
+fn default_config_seeds_only_existing_roots() {
+    let home = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(home.path().join("code")).expect("code dir");
+
+    let config = default_config(home.path());
+    assert_eq!(config.watch_roots.len(), 1);
+    assert!(config.watch_roots[0].ends_with("code"));
+}
+
+#[test]
+fn open_does_not_overwrite_existing_config() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let marker = "watch_roots = []\nexcludes = [\"/custom/exclude\"]\n";
+    fs::write(&config_path, marker).expect("seed config");
+
+    let _ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+    let contents = fs::read_to_string(&config_path).expect("read config");
+    assert_eq!(contents, marker);
+}
+
+#[test]
 fn default_config_seeds_code_and_dev_when_present() {
     let home = tempfile::tempdir().expect("tempdir");
     fs::create_dir_all(home.path().join("code")).expect("code dir");

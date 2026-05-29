@@ -13,3 +13,8 @@ path = "src/main.rs"
 anyhow = "1"
 clap = { version = "4.6.1", features = ["derive"] }
 workpot-core = { path = "../workpot-core" }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
