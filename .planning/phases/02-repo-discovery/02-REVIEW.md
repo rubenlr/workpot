@@ -1,125 +1,107 @@
 ---
 phase: 02-repo-discovery
-reviewed: 2026-05-29T12:00:00Z
+reviewed: 2026-05-30T12:00:00Z
 depth: standard
 files_reviewed: 18
 files_reviewed_list:
-  - crates/workpot-core/src/infra/migrations/002_discovery.sql
-  - crates/workpot-core/src/infra/git.rs
-  - crates/workpot-core/src/services/discovery.rs
-  - crates/workpot-core/src/services/index.rs
-  - crates/workpot-core/src/services/catalog.rs
-  - crates/workpot-core/src/services/roots.rs
-  - crates/workpot-core/src/services/excludes.rs
-  - crates/workpot-core/src/services/mod.rs
+  - crates/workpot-cli/src/main.rs
+  - crates/workpot-cli/tests/cli_smoke.rs
   - crates/workpot-core/src/domain/config.rs
   - crates/workpot-core/src/error.rs
+  - crates/workpot-core/src/infra/git.rs
   - crates/workpot-core/src/lib.rs
-  - crates/workpot-cli/src/main.rs
+  - crates/workpot-core/src/services/catalog.rs
+  - crates/workpot-core/src/services/discovery.rs
+  - crates/workpot-core/src/services/excludes.rs
+  - crates/workpot-core/src/services/index.rs
+  - crates/workpot-core/src/services/mod.rs
+  - crates/workpot-core/src/services/roots.rs
+  - crates/workpot-core/tests/catalog_test.rs
   - crates/workpot-core/tests/discovery_test.rs
+  - crates/workpot-core/tests/excludes_test.rs
   - crates/workpot-core/tests/index_test.rs
   - crates/workpot-core/tests/roots_test.rs
-  - crates/workpot-core/tests/excludes_test.rs
-  - crates/workpot-core/tests/catalog_test.rs
-  - crates/workpot-cli/tests/cli_smoke.rs
+  - crates/workpot-core/src/infra/migrations/002_discovery.sql
 findings:
   critical: 0
   warning: 5
-  info: 3
-  total: 8
+  info: 2
+  total: 7
 status: issues_found
 ---
 
 # Phase 2: Code Review Report
 
-**Reviewed:** 2026-05-29T12:00:00Z  
+**Reviewed:** 2026-05-30T12:00:00Z  
 **Depth:** standard  
 **Files Reviewed:** 18  
 **Status:** issues_found
 
 ## Summary
 
-Phase 02 delivers discovery (`ignore` walk + excludes), transactional `run_full` with caps and audit tables, roots/excludes CLI, and solid integration coverage (45 workspace tests per summaries). SQL migrations and git subprocess usage are parameterized and shell-safe. No critical security or data-loss defects found in normal paths.
+Fresh adversarial pass on Phase 02 repo discovery after the 2026-05-29 fix iteration. Prior findings WR-01–WR-05 and IN-01–IN-03 were verified as landed: `repo_under_root` no longer aborts on missing paths, `Config::validate` enforces soft watch-root count, `roots add` runs index before save, bare worktree paths are canonicalized or skipped, error index runs are recorded, manual register resolves `git_common_dir`, and CLI cap handling is consolidated in `main`.
 
-Five warnings remain: root prune fragility on missing paths, soft `max_watch_roots` not enforced at load/scan, config-before-index ordering on `roots add`, orphan scan rows after `roots remove --skip-prune`, and inconsistent canonicalization for bare worktree expansion. Three info items cover unused schema status, deferred `git_common_dir` on manual add, and redundant CLI cap handling.
+No critical security or data-loss defects found in normal happy paths. Five warnings remain around limit enforcement gaps, partial-failure consistency, and orphan scan-row hygiene. SQL and git access remain parameterized and canonicalize-first.
+
+## Narrative Findings (AI reviewer)
 
 ## Warnings
 
-### WR-01: `roots remove` prune aborts when any scan path is missing on disk
+### WR-01: `register_manual` bypasses `max_repos`
 
-**File:** `crates/workpot-core/src/services/roots.rs:81-85`  
-**Issue:** `prune_scan_repos_under_root` calls `repo_path.canonicalize()` for every scan row. If the user deleted repo directories but has not run `workpot index` yet, `canonicalize` fails and the entire `roots remove` returns `InvalidPath` instead of deleting reachable rows.  
-**Fix:** Treat canonicalize failure as “not under root” (or delete by stored path key without re-canonicalizing):
+**File:** `crates/workpot-core/src/services/catalog.rs:9-50`  
+**Issue:** `index::run_full` enforces `limits.max_repos` before merge, but `register_manual` inserts directly with no count check. A user can exceed the configured cap indefinitely via `workpot repo add`, undermining D-14/D-23 for manually registered repos.  
+**Fix:** Before insert, count non-excluded rows and return `WorkpotError::IndexCapExceeded` (or a dedicated limit error) when `count >= config.limits.max_repos`. Thread `&Config` into `register_manual` or check via a small helper on `Connection`.
+
+### WR-02: `roots add` — index committed but `save_config` failure leaves orphan scan rows
+
+**File:** `crates/workpot-core/src/services/roots.rs:25-29`  
+**Issue:** The WR-03 fix runs index before save, but if `save_config` fails after a successful `run_full`, the watch root is not written to disk while scan-sourced repos are already in SQLite. On the next CLI invocation the root is absent from config, so `collect_stale_scan_paths` never targets those rows (they are not under any configured root). Repos persist until manual `repo remove`.  
+**Fix:** On `save_config` failure, pop the in-memory root (mirror the index-failure rollback) and either (a) run a compensating prune for repos discovered in that index pass, or (b) write config first to a temp file and atomically rename only after index succeeds.
+
+### WR-03: `roots remove` prune skips deleted paths under removed root
+
+**File:** `crates/workpot-core/src/services/roots.rs:88-92`  
+**Issue:** The WR-01 fix correctly avoids aborting the whole prune when `canonicalize` fails, but it also skips deletion for missing directories. After a user deletes repo folders and removes a watch root, scan rows remain in the DB until `workpot index` runs `collect_missing_paths`. `repo list` shows stale entries in the interim.  
+**Fix:** When `canonicalize` fails, fall back to prefix match on stored path keys (both sides are canonical strings from upsert) or delete scan rows whose stored `path` is under `root_canon` regardless of filesystem presence:
 
 ```rust
 fn repo_under_root(repo_path: &Path, root_canon: &Path) -> Result<bool> {
-    let Ok(repo_canon) = repo_path.canonicalize() else {
-        return Ok(false);
-    };
-    Ok(repo_canon.starts_with(root_canon))
+    match repo_path.canonicalize() {
+        Ok(repo_canon) => Ok(repo_canon.starts_with(root_canon)),
+        Err(_) => Ok(repo_path.starts_with(root_canon)),
+    }
 }
 ```
 
-Alternatively delete by `path` prefix using stored canonical strings only (no second canonicalize).
+### WR-04: Index never prunes scan repos outside all configured watch roots
 
-### WR-02: Soft `max_watch_roots` bypass via hand-edited config
+**File:** `crates/workpot-core/src/services/index.rs:259-281`  
+**Issue:** `collect_stale_scan_paths` only considers scan repos still under a *current* watch root. Scan rows whose directories exist but are no longer covered by any root (e.g. `roots remove --skip-prune`, hand-edited config, or WR-02 failure) are never removed by `run_full`. Only `collect_missing_paths` handles deleted directories. Operability gap is partially documented for `--skip-prune` but applies more broadly.  
+**Fix:** Add a pass that removes `source = 'scan'` rows not under any canonical watch root (unless `--skip-prune`-style opt-out is intentional), or document that `workpot index` will not clean these and require explicit `repo remove`.
 
-**File:** `crates/workpot-core/src/domain/config.rs:46-59`, `crates/workpot-core/src/services/index.rs:35-49`  
-**Issue:** `Config::validate` only checks that limit *fields* stay below hard caps (5000/20000). It does not reject `watch_roots.len() > limits.max_watch_roots`. `run_full` scans every entry in `watch_roots`, so a user (or bad merge) can list thousands of roots while `[limits] max_watch_roots = 100`, undermining D-22/D-24 intent. Only `roots add` enforces the soft cap.  
-**Fix:** Extend `validate()`:
+### WR-05: `path_under_root` skips canonicalization unlike `repo_under_root`
 
-```rust
-if self.watch_roots.len() > self.limits.max_watch_roots as usize {
-    return Err(format!(
-        "watch_roots count {} exceeds max_watch_roots {}",
-        self.watch_roots.len(),
-        self.limits.max_watch_roots
-    ));
-}
-```
-
-Reject on `load_config` / `save_config` the same way as hard caps.
-
-### WR-03: `roots add` persists config before index succeeds
-
-**File:** `crates/workpot-core/src/services/roots.rs:24-28`  
-**Issue:** `save_config` runs before `index::run_full`. If index fails (cap exceeded, DB error, git walk error), the watch root remains in `config.toml` but repos under it may be unindexed. Caller sees an error with a partially applied config change.  
-**Fix:** Run `run_full` first against an in-memory config clone, or wrap config write + index in a compensating rollback (remove root from config on index failure).
-
-### WR-04: Orphan `source=scan` rows after `roots remove --skip-prune`
-
-**File:** `crates/workpot-core/src/services/index.rs:199-221`, `crates/workpot-core/src/services/roots.rs:46-48`  
-**Issue:** `collect_stale_scan_paths` only considers scan repos still under a *current* watch root. Repos discovered under a removed root (with `--skip-prune`) are never stale and are not removed by `collect_missing_paths` if directories still exist. They linger until manual `repo remove` or config exclude. D-21 documents `--skip-prune`; operability gap is easy to miss.  
-**Fix:** Document in CLI help, or add `index` hygiene: remove scan rows whose path is not under any configured watch root (optional flag).
-
-### WR-05: Bare worktree paths may stay non-canonical in discovery
-
-**File:** `crates/workpot-core/src/infra/git.rs:71-74`, `crates/workpot-core/src/services/discovery.rs:77-79`  
-**Issue:** `list_worktree_paths` uses `canonicalize(...).unwrap_or(resolved)`, while `scan_root` pushes fully canonical paths. Mixed canonical keys can break dedup (`seen_paths`), exclude matching, and `path_under_root` checks if the same worktree is reached twice with different string forms.  
-**Fix:** Propagate canonicalize errors or skip non-resolvable worktrees with a logged warning; do not insert non-canonical paths into the candidate list.
+**File:** `crates/workpot-core/src/services/index.rs:401-403`, `crates/workpot-core/src/services/roots.rs:88-92`  
+**Issue:** Stale-scan and manual-outside-root checks use `path.starts_with(root)` on the raw DB path string, while root prune uses `canonicalize` + `starts_with`. If any stored path or root ever diverges in representation (e.g. `/tmp` vs `/private/tmp` on macOS before full canonicalization), stale detection and prune behavior can disagree.  
+**Fix:** Extract a shared helper that canonicalizes when possible and falls back to component-wise prefix match, used by both `index.rs` and `roots.rs`.
 
 ## Info
 
-### IN-01: `index_runs.status = 'error'` is never written
+### IN-01: Manual register still allows empty `git_common_dir` on git failure
 
-**File:** `crates/workpot-core/src/infra/migrations/002_discovery.sql:7`, `crates/workpot-core/src/services/index.rs:298-329`  
-**Issue:** Schema allows `'error'` but orchestration only records `'ok'` and `'cap_exceeded'`. Failed transactions surface as `WorkpotError` without a matching history row.  
-**Fix:** On `run_full` failure after `insert_index_run`, update run to `error` with message in a `catch` path, or drop `'error'` from the CHECK until Phase 3.
+**File:** `crates/workpot-core/src/services/catalog.rs:43-45`  
+**Issue:** IN-02 fix resolves `git_common_dir` when git is available, but `unwrap_or_default()` silently stores an empty string when `resolve_git_common_dir` fails. Row is incomplete until a successful index backfill.  
+**Fix:** Return `WorkpotError::GitUnavailable` when resolution fails (consistent with scan skip behavior), or document that empty `git_common_dir` is expected until index.
 
-### IN-02: Manual `repo add` leaves `git_common_dir` empty until first index
+### IN-02: Config validation errors always map to `LimitsExceeded`
 
-**File:** `crates/workpot-core/src/services/catalog.rs:42-44`, `crates/workpot-core/src/services/index.rs:155-196`  
-**Issue:** `register_manual` inserts `git_common_dir = ''`. Acceptable for Phase 2 (backfill on index), but `repo list` / future git-state consumers see incomplete rows if user never runs `workpot index`.  
-**Fix:** Resolve `git_common_dir` in `register_manual` when `git` is available (same as scan path), or document that index is required for full metadata.
-
-### IN-03: Duplicate `IndexCapExceeded` handling in CLI
-
-**File:** `crates/workpot-cli/src/main.rs:64-71`, `96-99`  
-**Issue:** `Commands::Index` maps cap errors into `anyhow`, then `main` matches `WorkpotError::IndexCapExceeded` again for exit code 1. Behavior is correct; structure is redundant.  
-**Fix:** Return cap error directly from `run()` without re-wrapping, or handle exit code only in the `Index` arm.
+**File:** `crates/workpot-core/src/lib.rs:166-168`  
+**Issue:** `config.validate()` returns `Result<(), String>` for both hard-cap violations and watch-root count violations, but `load_config` / `save_config` map all failures to `WorkpotError::LimitsExceeded`. Misleading for operators debugging invalid TOML limits vs count mismatch.  
+**Fix:** Map validation failures to `WorkpotError::Config(msg)` or split error variants.
 
 ---
 
-_Reviewed: 2026-05-29T12:00:00Z_  
+_Reviewed: 2026-05-30T12:00:00Z_  
 _Reviewer: Claude (gsd-code-reviewer)_  
 _Depth: standard_
