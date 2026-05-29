@@ -214,6 +214,34 @@ fn remove_repo_succeeds_when_directory_deleted() {
 }
 
 #[test]
+fn remove_repo_with_exclude_does_not_persist_excludes_when_remove_fails() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let first = dir.path().join("first").join("foo");
+    let second = dir.path().join("second").join("foo");
+    fs::create_dir_all(&first).expect("first foo dir");
+    fs::create_dir_all(&second).expect("second foo dir");
+    git_init(&first);
+    git_init(&second);
+
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+
+    ctx.register_manual(&first).expect("register first foo");
+    ctx.register_manual(&second).expect("register second foo");
+
+    let err = ctx
+        .remove_repo(PathBuf::from("foo").as_path())
+        .expect_err("ambiguous basename remove should fail");
+    assert!(matches!(err, WorkpotError::InvalidPath(_)));
+    assert!(
+        ctx.config().excludes.is_empty(),
+        "exclude globs must not be saved when repo row deletion fails"
+    );
+    assert_eq!(ctx.list_repos().expect("list").len(), 2);
+}
+
+#[test]
 fn remove_repo_with_exclude_escapes_glob_metacharacters_in_path() {
     let dir = tempfile::tempdir().expect("tempdir");
     let repo = dir.path().join("star*repo");

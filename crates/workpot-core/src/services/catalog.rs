@@ -207,6 +207,8 @@ pub fn remove_repo_with_exclude(
     let base = path_to_exclude_glob_prefix(&repo_path);
     let tree = format!("{base}/**");
 
+    remove_repo(conn, path)?;
+
     let mut config_to_save = config.clone();
     let mut changed = false;
     for glob in [base, tree] {
@@ -220,7 +222,7 @@ pub fn remove_repo_with_exclude(
         *config = config_to_save;
     }
 
-    remove_repo(conn, path)
+    Ok(())
 }
 
 /// Escape glob metacharacters in one path segment for globset patterns.
