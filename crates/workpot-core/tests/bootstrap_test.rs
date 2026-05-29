@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 use std::fs;
-use workpot_core::AppContext;
+use workpot_core::{default_config, AppContext};
 
 #[test]
 fn config_creates_defaults() {
@@ -14,6 +14,18 @@ fn config_creates_defaults() {
     let contents = fs::read_to_string(&config_path).expect("config file exists");
     assert!(contents.contains("watch_roots"));
     assert!(contents.contains("excludes"));
+}
+
+#[test]
+fn default_config_seeds_code_and_dev_when_present() {
+    let home = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(home.path().join("code")).expect("code dir");
+    fs::create_dir_all(home.path().join("dev")).expect("dev dir");
+
+    let config = default_config(home.path());
+    assert_eq!(config.watch_roots.len(), 2);
+    assert!(config.watch_roots.iter().any(|p| p.ends_with("code")));
+    assert!(config.watch_roots.iter().any(|p| p.ends_with("dev")));
 }
 
 #[test]

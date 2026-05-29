@@ -20,6 +20,18 @@ pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// First-run config: empty `excludes`; `watch_roots` seeded with existing `~/code` and `~/dev`.
+pub fn default_config(home: &Path) -> Config {
+    let mut config = Config::default();
+    for name in ["code", "dev"] {
+        let candidate = home.join(name);
+        if candidate.is_dir() {
+            config.watch_roots.push(candidate);
+        }
+    }
+    config
+}
+
 /// Application context: config + SQLite connection. Open via [`AppContext::open`] in production.
 pub struct AppContext {
     config_path: PathBuf,
@@ -81,7 +93,10 @@ fn ensure_default_config(path: &Path) -> Result<()> {
     if path.exists() {
         return Ok(());
     }
-    let default = Config::default();
+    let home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .ok_or(WorkpotError::PathsUnavailable)?;
+    let default = default_config(&home);
     let contents = toml::to_string_pretty(&default)
         .map_err(|e| crate::error::WorkpotError::Config(e.to_string()))?;
     fs::write(path, contents)?;
