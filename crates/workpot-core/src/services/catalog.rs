@@ -1,5 +1,6 @@
 use crate::domain::{Config, RepoRecord};
 use crate::error::{Result, WorkpotError};
+use crate::infra::git::resolve_git_common_dir;
 use crate::save_config;
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
@@ -39,9 +40,13 @@ pub fn register_manual(conn: &Connection, path: &Path) -> Result<RepoRecord> {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
 
+    let git_common_dir = resolve_git_common_dir(&canonical)
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+
     let rows = conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source) VALUES (?1, ?2, ?3, 'manual')",
-        params![path_key, name, registered_at],
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir) VALUES (?1, ?2, ?3, 'manual', ?4)",
+        params![path_key, name, registered_at, git_common_dir],
     );
 
     match rows {
@@ -50,7 +55,7 @@ pub fn register_manual(conn: &Connection, path: &Path) -> Result<RepoRecord> {
             name,
             registered_at,
             source: "manual".to_string(),
-            git_common_dir: String::new(),
+            git_common_dir,
         }),
         Err(rusqlite::Error::SqliteFailure(err, _))
             if err.code == rusqlite::ErrorCode::ConstraintViolation =>
