@@ -13,7 +13,7 @@
 |---|-------|------|--------------|------------------|
 | 1 | Core & persistence | Runnable Rust core with local DB and config | DATA-01, DATA-02 | 3 |
 | 2 | Repo discovery | 5/5 | Complete |
-| 3 | Git state | 2/3 | In Progress|  |
+| 3 | Git state | 3/3 | Complete   | 2026-05-29 |
 | 4 | Tray finder MVP | Daily driver: list, filter, open in Cursor | UI-01..04, SRCH-01..03, LAUNCH-01 | 5 |
 | 5 | Tags & prioritization | Pins, tags, notes, signal ranking | ORG-01..04 | 4 |
 | 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
@@ -99,7 +99,7 @@ Plans:
 3. Repos with upstream show ahead/behind when available
 4. Refreshing 50+ repos does not block the tray for more than 500ms perceived latency
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -112,7 +112,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 03-03-PLAN.md — index.rs second pass, CLI output (index stats + repo list git state), end-to-end verify (GIT-01/02/03/04)
+- [x] 03-03-PLAN.md — index.rs second pass, CLI output (index stats + repo list git state), end-to-end verify (GIT-01/02/03/04)
 
 ---
 
