@@ -124,8 +124,19 @@ impl AppContext {
     }
 
     /// Refresh git state for a single repository. Public API for Phase 4 tray (D-18).
+    ///
+    /// Read-only: does not persist to SQLite. Use [`Self::refresh_and_persist_git_state`]
+    /// when the DB row must be updated (clears stale `git_state_error` on success).
     pub fn refresh_git_state(&self, path: &std::path::Path) -> crate::error::Result<crate::domain::GitState> {
         crate::services::git_state::refresh_git_state(path)
+    }
+
+    /// Refresh git state for a single repository and persist the result to SQLite.
+    pub fn refresh_and_persist_git_state(
+        &self,
+        path: &std::path::Path,
+    ) -> crate::error::Result<crate::domain::GitState> {
+        crate::services::git_state::refresh_and_persist(&self.conn, path)
     }
 }
 
