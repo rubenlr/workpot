@@ -10,8 +10,8 @@ install: build
 
 check:
     cargo fmt --all -q
-    cargo clippy --workspace --all-targets -- -D warnings
-    cargo test --workspace --all-targets
+    cargo clippy --workspace --fix --all-targets -- -D warnings
+    cargo test --workspace --all-targets -q
     bash scripts/check-no-network-deps.sh
     #cargo deny check
 
