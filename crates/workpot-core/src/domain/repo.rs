@@ -6,4 +6,5 @@ pub struct RepoRecord {
     pub name: String,
     pub registered_at: i64,
     pub source: String,
+    pub git_common_dir: String,
 }

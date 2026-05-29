@@ -49,6 +49,7 @@ pub fn register_manual(conn: &Connection, path: &Path) -> Result<RepoRecord> {
             name,
             registered_at,
             source: "manual".to_string(),
+            git_common_dir: String::new(),
         }),
         Err(rusqlite::Error::SqliteFailure(err, _))
             if err.code == rusqlite::ErrorCode::ConstraintViolation =>
@@ -61,7 +62,7 @@ pub fn register_manual(conn: &Connection, path: &Path) -> Result<RepoRecord> {
 
 pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
     let mut stmt = conn.prepare(
-        "SELECT path, name, registered_at, source FROM repos WHERE excluded = 0 ORDER BY registered_at, path",
+        "SELECT path, name, registered_at, source, git_common_dir FROM repos WHERE excluded = 0 ORDER BY registered_at, path",
     )?;
 
     let rows = stmt.query_map([], |row| {
@@ -70,6 +71,7 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
             name: row.get(1)?,
             registered_at: row.get(2)?,
             source: row.get(3)?,
+            git_common_dir: row.get(4)?,
         })
     })?;
 

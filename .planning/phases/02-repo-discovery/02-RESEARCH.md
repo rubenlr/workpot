@@ -8,7 +8,7 @@
 
 Phase 2 delivers **on-demand discovery** under explicit watch roots: walk the filesystem, detect `.git` (directory, gitfile, or bare layout), merge into SQLite with `source=manual|scan`, honor exclude globs, and expose `workpot index`, `workpot roots`, and `workpot excludes`. No `notify` watcher, no git2 status (Phase 3), no tray.
 
-**Primary recommendation:** Add **`walkdir` 2.5.0** for traversal (`follow_links(false)` per D-02) and **`globset` 0.4.18** for built-in + user exclude globs. Resolve **`git_common_dir`** via **`git -C <path> rev-parse --git-common-dir`** (subprocess — keeps Phase 1 “no git2 crate” intact until Phase 3). Implement discovery in `services/discovery.rs`, orchestration in `services/index.rs`, migration `002_discovery.sql` for `git_common_dir` + `index_runs` / `index_changes`. Use **`filter_entry` + `skip_current_dir`** to prune exclude dirs and to stop descending into an already-indexed repo tree (D-01); after bare repo detection, run **`git worktree list --porcelain`** to add linked worktree rows (D-04).
+**Primary recommendation:** Add **`ignore` 0.4.25** for traversal (`follow_links(false)`, `standard_filters(false)` per D-02) and **`globset` 0.4.18** for built-in + user exclude globs. Resolve **`git_common_dir`** via **`git -C <path> rev-parse --git-common-dir`** (subprocess — keeps Phase 1 “no git2 crate” intact until Phase 3). Implement discovery in `services/discovery.rs`, orchestration in `services/index.rs`, migration `002_discovery.sql` for `git_common_dir` + `index_runs` / `index_changes`. Use **`WalkBuilder::filter_entry`** to prune exclude dirs and to stop descending into an already-indexed repo tree (D-01); after bare repo detection, run **`git worktree list --porcelain`** to add linked worktree rows (D-04).
 
 ## Architectural Responsibility Map
 
@@ -107,8 +107,8 @@ Phase 2 delivers **on-demand discovery** under explicit watch roots: walk the fi
 
 | Library | Version | Purpose | Why Standard |
 |---------|---------|---------|--------------|
-| **walkdir** | **2.5.0** | Recursive directory traversal | [CITED: docs.rs/walkdir 2.5.0] — `follow_links(false)`, `filter_entry`, `skip_current_dir` for prune; errors per-entry without aborting whole walk |
-| **globset** | **0.4.18** | Built-in + user exclude globs | [CITED: docs.rs/globset 0.4.18] — same ecosystem as ripgrep/`ignore`; `GlobSet::is_match` on full paths |
+| **ignore** | **0.4.25** | Recursive directory traversal | [CITED: docs.rs/ignore 0.4.25] — `follow_links(false)`, `standard_filters(false)`, `filter_entry` for prune; must not use default gitignore skipping (repo discovery) |
+| **globset** | **0.4.18** | Built-in + user exclude globs | [CITED: docs.rs/globset 0.4.18] — Workpot config excludes; `GlobSet::is_match` on full paths |
 
 ### Retained from Phase 1
 
@@ -124,26 +124,27 @@ Phase 2 delivers **on-demand discovery** under explicit watch roots: walk the fi
 | Library | Why defer |
 |---------|-----------|
 | **git2** | Phase 1 lock: filesystem validation only until Phase 3 git snapshot; use `git` subprocess for `git_common_dir` + worktree list |
-| **ignore** | Optimized for `.gitignore` during *content* walks; discovery must *detect* `.git` at repo roots and apply Workpot exclude globs, not repo ignore rules. Revisit if watch-root walks need gitignore-aware pruning at scale (STACK.md Phase 9 watcher path) |
+| **walkdir** | Replaced by `ignore` 0.4.25 (human-approved 2026-05-29); same ripgrep ecosystem as `globset` |
 | **notify** | On-demand scan only (CONTEXT deferred) |
 
 ### Alternatives Considered
 
 | Instead of | Could Use | Tradeoff |
 |------------|-----------|----------|
-| walkdir + globset | **ignore** crate | `ignore` skips `.git` dirs by default — wrong default for “find all repos”; extra glue for Workpot excludes |
-| walkdir | **`find` / `fd` subprocess** | PITFALLS: permission noise, no nested-git policy, harder cap enforcement — spike only |
+| walkdir | **ignore** 0.4.25 | Human-approved swap; disable `standard_filters` so `.git` dirs are visible for repo discovery |
+| ignore + globset | **walkdir** only | No `filter_entry` prune API; sequential only |
+| ignore | **`find` / `fd` subprocess** | PITFALLS: permission noise, no nested-git policy, harder cap enforcement — spike only |
 | `git rev-parse` subprocess | **git2 `Repository::discover`** | Correct but violates Phase 1 no-git2-until-3; migrate in Phase 3 with status batching |
 | path-only rows | **remote URL dedupe** | ARCHITECTURE anti-pattern #3 — conflicts with path-as-checkout identity |
 
 **Installation (`workpot-core/Cargo.toml`):**
 
 ```toml
-walkdir = "2.5.0"
+ignore = "0.4.25"
 globset = "0.4.18"
 ```
 
-**Version verification (2026-05-29, `cargo search`):** walkdir 2.5.0, globset 0.4.18.
+**Version verification (2026-05-29, `cargo search`):** ignore 0.4.25, globset 0.4.18. Human approved ignore 2026-05-29 (walkdir declined).
 
 ## Package Legitimacy Audit
 
@@ -151,8 +152,8 @@ globset = "0.4.18"
 
 | Package | Registry | Age | Downloads | Source Repo | slopcheck | Disposition |
 |---------|----------|-----|-----------|-------------|-----------|-------------|
-| walkdir | crates.io | mature (BurntSushi) | very high | github.com/BurntSushi/walkdir | n/a | Approved pending human-verify |
-| globset | crates.io | mature (BurntSushi) | very high | github.com/BurntSushi/ripgrep/tree/master/crates/globset | n/a | Approved pending human-verify |
+| ignore | crates.io | mature (BurntSushi) | very high | github.com/BurntSushi/ripgrep/tree/master/crates/ignore | n/a | **Approved** (2026-05-29) |
+| globset | crates.io | mature (BurntSushi) | very high | github.com/BurntSushi/ripgrep/tree/master/crates/globset | n/a | Approved with ignore (same review) |
 
 **Packages removed due to slopcheck [SLOP] verdict:** none  
 **Packages flagged as suspicious [SUS]:** none  

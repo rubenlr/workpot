@@ -12,7 +12,7 @@
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
 | 1 | Core & persistence | Runnable Rust core with local DB and config | DATA-01, DATA-02 | 3 |
-| 2 | Repo discovery | Index repos from watch roots and manual paths | INDEX-01..05 | 4 |
+| 2 | Repo discovery | 1/5 | In Progress|  |
 | 3 | Git state | Fresh branch/dirty/ahead-behind per repo | GIT-01..04 | 4 |
 | 4 | Tray finder MVP | Daily driver: list, filter, open in Cursor | UI-01..04, SRCH-01..03, LAUNCH-01 | 5 |
 | 5 | Tags & prioritization | Pins, tags, notes, signal ranking | ORG-01..04 | 4 |
@@ -62,12 +62,12 @@ Plans:
 4. Non-git directories under watch roots are not indexed
 5. User can trigger rescan from CLI without restarting the app
 
-**Plans:** 5 plans
+**Plans:** 1/5 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Migration 002, deps, git_common_dir helper, RED tests (wave 1a)
+- [x] 02-01-PLAN.md — Migration 002, deps, git_common_dir helper, RED tests (wave 1a)
 - [ ] 02-02-PLAN.md — Discovery walk + minimal `workpot index` slice (INDEX-04/05, wave 1b)
 
 **Wave 2** *(blocked on Wave 1 completion)*

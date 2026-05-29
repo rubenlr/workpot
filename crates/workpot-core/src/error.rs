@@ -29,6 +29,9 @@ pub enum WorkpotError {
 
     #[error("invalid path: {0}")]
     InvalidPath(String),
+
+    #[error("git unavailable for path: {0}")]
+    GitUnavailable(PathBuf),
 }
 
 pub type Result<T> = std::result::Result<T, WorkpotError>;
