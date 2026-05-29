@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: "Phase 02 shipped — PR #1"
-last_updated: "2026-05-29T20:07:26.992Z"
+last_updated: "2026-05-29T20:27:50.867Z"
 progress:
   total_phases: 7
   completed_phases: 2
@@ -20,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 3 — git state
+**Current focus:** Phase 03 — git-state
 
 ## Phase Status
 
