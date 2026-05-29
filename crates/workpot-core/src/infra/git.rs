@@ -97,7 +97,18 @@ pub fn open_and_query(path: &Path) -> Result<GitState> {
         }
     };
 
-    let (ahead, behind) = detect_ahead_behind(&repo).unwrap_or((None, None));
+    let (ahead, behind) = match detect_ahead_behind(&repo) {
+        Ok(pair) => pair,
+        Err(e) => {
+            return Ok(GitState {
+                branch,
+                is_dirty,
+                ahead: None,
+                behind: None,
+                error: Some(e.to_string()),
+            });
+        }
+    };
 
     Ok(GitState {
         branch,
