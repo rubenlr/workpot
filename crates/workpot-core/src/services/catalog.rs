@@ -139,13 +139,24 @@ fn resolve_repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
                 return Ok(display_key);
             }
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                let suffix = format!("/{name}");
+                // Suffix match only (`%/{basename}`), not substring — avoids `/tmp/foo-extra`
+                // matching a lookup for `foo`.
+                let suffix_pattern = format!("%/{name}");
                 let mut stmt = conn.prepare(
-                    "SELECT path FROM repos WHERE path = ?1 OR path LIKE '%' || ?2",
+                    "SELECT path FROM repos WHERE path = ?1 OR path LIKE ?2",
                 )?;
-                let matches: Vec<String> = stmt
-                    .query_map(params![name, suffix], |row| row.get(0))?
+                let candidates: Vec<String> = stmt
+                    .query_map(params![name, suffix_pattern], |row| row.get(0))?
                     .collect::<std::result::Result<_, _>>()?;
+                let matches: Vec<String> = candidates
+                    .into_iter()
+                    .filter(|p| {
+                        Path::new(p)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .is_some_and(|n| n == name)
+                    })
+                    .collect();
                 match matches.len() {
                     0 => {}
                     1 => return Ok(matches[0].clone()),

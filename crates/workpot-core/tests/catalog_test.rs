@@ -214,6 +214,37 @@ fn remove_repo_succeeds_when_directory_deleted() {
 }
 
 #[test]
+fn remove_repo_by_basename_does_not_match_similar_directory_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let parent = dir.path().join("collision-parent");
+    fs::create_dir_all(&parent).expect("parent");
+    let foo = parent.join("foo");
+    let foo_extra = parent.join("foo-extra");
+    fs::create_dir_all(&foo).expect("foo dir");
+    fs::create_dir_all(&foo_extra).expect("foo-extra dir");
+    git_init(&foo);
+    git_init(&foo_extra);
+
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+
+    ctx.register_manual(&foo).expect("register foo");
+    ctx.register_manual(&foo_extra).expect("register foo-extra");
+
+    fs::remove_dir_all(&foo).expect("delete foo dir");
+    ctx.remove_repo(&parent.join("foo"))
+        .expect("remove foo by basename only");
+
+    let remaining = ctx.list_repos().expect("list");
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(
+        remaining[0].path,
+        foo_extra.canonicalize().expect("canonicalize")
+    );
+}
+
+#[test]
 fn remove_repo_deletes_and_not_found() {
     let (dir, repo_path) = git_fixture();
     let config_path = dir.path().join("config.toml");
