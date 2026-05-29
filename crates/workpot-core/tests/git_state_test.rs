@@ -124,7 +124,7 @@ fn unborn_branch() {
 
     // Must handle gracefully; expect "unborn" sentinel
     let branch = state.branch.as_deref().expect("branch should be Some for unborn");
-    assert_eq!(branch, "unborn", "unborn branch should return 'unborn', got '{branch}'");
+    assert_eq!(branch, BRANCH_UNBORN, "unborn branch should return '{BRANCH_UNBORN}', got '{branch}'");
     assert!(state.error.is_none(), "error should be None for unborn branch, got {:?}", state.error);
 }
 

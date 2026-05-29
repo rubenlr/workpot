@@ -1,4 +1,4 @@
-use crate::domain::{Config, RepoRecord};
+use crate::domain::{Config, RepoRecord, SOURCE_MANUAL, SOURCE_SCAN};
 use crate::error::{Result, WorkpotError};
 use crate::infra::git::resolve_git_common_dir;
 use crate::save_config;
@@ -45,8 +45,8 @@ pub fn register_manual(conn: &Connection, path: &Path) -> Result<RepoRecord> {
         .unwrap_or_default();
 
     let rows = conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir) VALUES (?1, ?2, ?3, 'manual', ?4)",
-        params![path_key, name, registered_at, git_common_dir],
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![path_key, name, registered_at, SOURCE_MANUAL, git_common_dir],
     );
 
     match rows {
@@ -54,7 +54,7 @@ pub fn register_manual(conn: &Connection, path: &Path) -> Result<RepoRecord> {
             path: canonical,
             name,
             registered_at,
-            source: "manual".to_string(),
+            source: SOURCE_MANUAL.to_string(),
             git_common_dir,
             branch: None,
             is_dirty: None,
@@ -204,12 +204,19 @@ pub fn upsert_scan(conn: &Connection, path: &Path, git_common_dir: &str) -> Resu
 
     conn.execute(
         "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
-         VALUES (?1, ?2, ?3, 'scan', ?4, 0)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0)
          ON CONFLICT(path) DO UPDATE SET
            name = excluded.name,
            git_common_dir = excluded.git_common_dir,
-           source = CASE WHEN repos.source = 'manual' THEN 'manual' ELSE 'scan' END",
-        params![path_key, name, registered_at, git_common_dir],
+           source = CASE WHEN repos.source = ?6 THEN ?6 ELSE ?4 END",
+        params![
+            path_key,
+            name,
+            registered_at,
+            SOURCE_SCAN,
+            git_common_dir,
+            SOURCE_MANUAL,
+        ],
     )?;
 
     Ok(!existed)

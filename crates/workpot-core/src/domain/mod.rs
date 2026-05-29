@@ -4,4 +4,4 @@ pub mod repo;
 
 pub use config::Config;
 pub use git_state::GitState;
-pub use repo::RepoRecord;
+pub use repo::{RepoRecord, BRANCH_UNBORN, SOURCE_MANUAL, SOURCE_SCAN};

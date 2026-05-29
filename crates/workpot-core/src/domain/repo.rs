@@ -1,5 +1,9 @@
 use std::path::PathBuf;
 
+pub const SOURCE_MANUAL: &str = "manual";
+pub const SOURCE_SCAN: &str = "scan";
+pub const BRANCH_UNBORN: &str = "unborn";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoRecord {
     pub path: PathBuf,

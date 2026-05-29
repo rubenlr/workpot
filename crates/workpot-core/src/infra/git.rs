@@ -1,4 +1,4 @@
-use crate::domain::GitState;
+use crate::domain::{BRANCH_UNBORN, GitState};
 use crate::error::{Result, WorkpotError};
 use git2::{ErrorCode, Repository, Status, StatusOptions};
 use std::path::{Path, PathBuf};
@@ -114,7 +114,7 @@ fn head_name(repo: &Repository) -> std::result::Result<String, git2::Error> {
     let head = match repo.head() {
         Ok(h) => h,
         Err(ref e) if e.code() == ErrorCode::UnbornBranch => {
-            return Ok("unborn".to_string());
+            return Ok(BRANCH_UNBORN.to_string());
         }
         Err(e) => return Err(e),
     };
