@@ -53,16 +53,7 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
 
-    let git_common_dir = match resolve_git_common_dir(&canonical) {
-        Ok(p) => p.display().to_string(),
-        Err(e) => {
-            log::warn!(
-                "could not resolve git common dir for {}: {e}",
-                canonical.display()
-            );
-            String::new()
-        }
-    };
+    let git_common_dir = resolve_git_common_dir(&canonical)?.display().to_string();
 
     let rows = conn.execute(
         "INSERT INTO repos (path, name, registered_at, source, git_common_dir) VALUES (?1, ?2, ?3, ?4, ?5)",
