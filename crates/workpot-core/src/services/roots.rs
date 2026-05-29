@@ -1,7 +1,7 @@
 use crate::domain::SOURCE_SCAN;
 use crate::error::{Result, WorkpotError};
 use crate::save_config;
-use crate::services::index;
+use crate::services::{index, paths};
 use crate::AppContext;
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
@@ -90,10 +90,7 @@ fn prune_scan_repos_under_root(conn: &Connection, root: &Path) -> Result<u32> {
 }
 
 fn repo_under_root(repo_path: &Path, root_canon: &Path) -> Result<bool> {
-    match repo_path.canonicalize() {
-        Ok(repo_canon) => Ok(repo_canon.starts_with(root_canon)),
-        Err(_) => Ok(repo_path.starts_with(root_canon)),
-    }
+    Ok(paths::path_under_root(repo_path, root_canon))
 }
 
 fn canonicalize_watch_root(path: &Path) -> Result<PathBuf> {

@@ -1,7 +1,7 @@
 use crate::domain::{Config, SOURCE_MANUAL, SOURCE_SCAN};
 use crate::error::{Result, WorkpotError};
 use crate::infra::git::resolve_git_common_dir;
-use crate::services::{catalog, discovery, git_state};
+use crate::services::{catalog, discovery, git_state, paths};
 use rusqlite::{params, Connection, Transaction};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -272,7 +272,7 @@ fn collect_stale_scan_paths(
     let mut stale = Vec::new();
     for path_key in paths {
         let path = Path::new(&path_key);
-        if !watch_roots.iter().any(|root| path_under_root(path, root)) {
+        if !watch_roots.iter().any(|root| paths::path_under_root(path, root)) {
             continue;
         }
         if !seen.contains(&path_key) {
@@ -300,7 +300,7 @@ fn collect_orphan_scan_paths(
             let path = Path::new(path_key);
             !watch_roots
                 .iter()
-                .any(|root| path_under_root(path, root))
+                .any(|root| paths::path_under_root(path, root))
         })
         .collect())
 }
@@ -331,7 +331,7 @@ fn validate_manual_outside_roots(
 
     for path_key in paths {
         let path = Path::new(&path_key);
-        if watch_roots.iter().any(|root| path_under_root(path, root)) {
+        if watch_roots.iter().any(|root| paths::path_under_root(path, root)) {
             continue;
         }
         if !path.exists()
@@ -422,6 +422,3 @@ fn finish_index_run(
     Ok(())
 }
 
-fn path_under_root(path: &Path, root: &Path) -> bool {
-    path.starts_with(root)
-}
