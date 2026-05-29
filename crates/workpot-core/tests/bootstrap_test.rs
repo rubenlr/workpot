@@ -52,6 +52,23 @@ fn default_config_seeds_code_and_dev_when_present() {
 }
 
 #[test]
+fn open_removes_stale_config_tmp() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let tmp_path = dir.path().join("config.tmp");
+
+    fs::write(&config_path, "watch_roots = []\nexcludes = []\n").expect("seed config");
+    fs::write(&tmp_path, "partial write").expect("seed stale tmp");
+
+    let _ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    assert!(
+        !tmp_path.exists(),
+        "stale config.tmp should be removed on open"
+    );
+}
+
+#[test]
 fn migrations_apply() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("config.toml");
