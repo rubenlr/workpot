@@ -120,6 +120,25 @@ fn register_manual_sets_source_manual() {
 }
 
 #[test]
+fn register_manual_leaves_git_columns_null() {
+    let (dir, repo_path) = git_fixture();
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+
+    ctx.register_manual(&repo_path).expect("register");
+    let record = &ctx.list_repos().expect("list")[0];
+    assert!(
+        record.git_refreshed_at.is_none(),
+        "manual register must not set git_refreshed_at (D-06)"
+    );
+    assert!(record.branch.is_none(), "branch unset until git refresh");
+    assert!(record.is_dirty.is_none());
+    assert!(record.ahead.is_none() && record.behind.is_none());
+    assert!(record.git_state_error.is_none());
+}
+
+#[test]
 fn register_accepts_relative_gitdir_file() {
     let (dir, repo_path) = relative_gitdir_fixture();
     let config_path = dir.path().join("config.toml");

@@ -233,6 +233,34 @@ fn index_writes_history() {
 }
 
 #[test]
+fn index_git_summary_accounts_for_all_non_excluded_repos() {
+    let (_dir, conn, config) = open_index_fixture(None);
+    let watch_root = config.watch_roots[0].clone();
+    git_worktree(&watch_root, "repo-a");
+    git_worktree(&watch_root, "repo-b");
+
+    let summary = index::run_full(&conn, &config).expect("run_full");
+
+    let non_excluded: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM repos WHERE excluded = 0",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count");
+    assert_eq!(non_excluded, 2);
+
+    let accounted = summary.git_refreshed + summary.git_errors;
+    assert_eq!(
+        accounted,
+        non_excluded as u32,
+        "git pass must classify every indexed repo (D-16/D-17): {summary:?}"
+    );
+    assert_eq!(summary.git_refreshed, 2, "both repos should refresh cleanly");
+    assert_eq!(summary.git_errors, 0);
+}
+
+#[test]
 fn index_second_pass_persists_git_state() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();

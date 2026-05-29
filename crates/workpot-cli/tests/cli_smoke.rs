@@ -135,6 +135,23 @@ fn index_prints_git_refresh_stats() {
 }
 
 #[test]
+fn repo_list_shows_question_mark_before_index() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = git_fixture(home.path());
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["repo", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("?"));
+}
+
+#[test]
 fn repo_list_shows_git_state_after_index() {
     let home = tempfile::tempdir().expect("tempdir");
     let watch = home.path().join("watch");
