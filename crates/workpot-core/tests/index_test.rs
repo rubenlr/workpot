@@ -113,7 +113,7 @@ fn index_preserves_manual_source() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     let repo = git_worktree(&watch_root, "manual-repo");
-    catalog::register_manual(&conn, &repo).expect("manual register");
+    catalog::register_manual(&conn, &config, &repo).expect("manual register");
 
     index::run_full(&conn, &config).expect("run_full");
 
@@ -161,7 +161,7 @@ fn index_validates_manual_outside_roots() {
     config.watch_roots.push(watch_root);
     let conn = store::open_connection(&db_path).expect("open");
 
-    catalog::register_manual(&conn, &repo).expect("manual outside roots");
+    catalog::register_manual(&conn, &config, &repo).expect("manual outside roots");
     index::run_full(&conn, &config).expect("index keeps valid manual");
 
     let count: i64 = conn

@@ -6,7 +6,7 @@ use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub fn register_manual(conn: &Connection, path: &Path) -> Result<RepoRecord> {
+pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Result<RepoRecord> {
     if !path.exists() {
         return Err(WorkpotError::InvalidPath(format!(
             "path does not exist: {}",
@@ -34,6 +34,19 @@ pub fn register_manual(conn: &Connection, path: &Path) -> Result<RepoRecord> {
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
         .to_string();
+
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM repos WHERE excluded = 0",
+        [],
+        |row| row.get(0),
+    )?;
+    let count = u32::try_from(count).unwrap_or(u32::MAX);
+    if count >= config.limits.max_repos {
+        return Err(WorkpotError::IndexCapExceeded {
+            projected: count.saturating_add(1),
+            max: config.limits.max_repos,
+        });
+    }
 
     let registered_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)

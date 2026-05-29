@@ -76,7 +76,7 @@ impl AppContext {
     }
 
     pub fn register_manual(&self, path: &Path) -> Result<RepoRecord> {
-        catalog::register_manual(&self.conn, path)
+        catalog::register_manual(&self.conn, &self.config, path)
     }
 
     pub fn list_repos(&self) -> Result<Vec<RepoRecord>> {
