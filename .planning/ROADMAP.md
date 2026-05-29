@@ -57,7 +57,13 @@ Plans:
 4. Non-git directories under watch roots are not indexed
 5. User can trigger rescan from CLI without restarting the app
 
-**Plans:** TBD via `/gsd-plan-phase 2`
+**Plans:** 4 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Migration + discovery walk + `workpot index` happy path (INDEX-04/05)
+- [ ] 02-02-PLAN.md — `workpot roots` CLI + config limits (INDEX-01, D-19–24)
+- [ ] 02-03-PLAN.md — Excludes + `repo remove` persist glob (INDEX-03, D-08–12)
+- [ ] 02-04-PLAN.md — Transactional index merge, history, caps, bare/worktrees (INDEX-02/05, D-03–04, D-07, D-14–18)
 
 ---
 
@@ -154,7 +160,7 @@ Plans:
 | Phase | Status | Plans Complete |
 |-------|--------|----------------|
 | 1 | Planned | 0/3 |
-| 2 | Not started | 0/0 |
+| 2 | Planned | 0/4 |
 | 3 | Not started | 0/0 |
 | 4 | Not started | 0/0 |
 | 5 | Not started | 0/0 |
