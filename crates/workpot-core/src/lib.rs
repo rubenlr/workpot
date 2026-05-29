@@ -165,7 +165,7 @@ pub(crate) fn load_config(path: &Path) -> Result<Config> {
     let config: Config = toml::from_str(&contents).map_err(|e| WorkpotError::Config(e.to_string()))?;
     config
         .validate()
-        .map_err(WorkpotError::LimitsExceeded)?;
+        .map_err(WorkpotError::Config)?;
     Ok(config)
 }
 
@@ -173,7 +173,7 @@ pub(crate) fn load_config(path: &Path) -> Result<Config> {
 pub fn save_config(config_path: &Path, config: &Config) -> Result<()> {
     config
         .validate()
-        .map_err(WorkpotError::LimitsExceeded)?;
+        .map_err(WorkpotError::Config)?;
     let contents = toml::to_string_pretty(config)
         .map_err(|e| WorkpotError::Config(e.to_string()))?;
     write_atomic(config_path, &contents)?;
