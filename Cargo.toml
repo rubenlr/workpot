@@ -12,3 +12,8 @@ license = "MIT"
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+# git2 0.21.0 has a Rust 2024 edition incompatibility (str::from_utf8 -> std::str::from_utf8).
+# Patched local copy until a fixed release is published upstream.
+[patch.crates-io]
+git2 = { path = "vendor/git2" }
