@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+# Cut a release of workpot.
+#
+# Usage: bin/release <version>
+#
+# Where <version> is a semver string without the leading "v", e.g. "0.1.0".
+#
+# What this script does:
+#   1. Validates the version string.
+#   2. Runs fmt / clippy / test gates.
+#   3. Runs cargo-deny and cargo-audit (warn-only — a known advisory should
+#      not block a release; the operator reviews the output).
+#   4. Updates [workspace.package] version in Cargo.toml.
+#   5. Moves CHANGELOG.md [Unreleased] entries to a new [X.Y.Z] section
+#      dated today.
+#   6. Commits both files as "release: vX.Y.Z".
+#   7. Creates an annotated git tag vX.Y.Z whose message is the changelog
+#      entry for this version.
+#   8. Prints next-step instructions: push the commit + tag.
+#
+# The script intentionally does NOT push to git remote. Releases are
+# operator-driven: review the tag locally before pushing.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# ── argument validation ────────────────────────────────────────────────────
+
+if [[ $# -ne 1 ]]; then
+    echo "Usage: bin/release <version>  (e.g. bin/release 0.1.0)" >&2
+    exit 64
+fi
+
+VERSION="$1"
+
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.+_-]*)?$ ]]; then
+    echo "ERROR: '$VERSION' does not look like a semver string (expected X.Y.Z)" >&2
+    exit 1
+fi
+
+TAG="v${VERSION}"
+TODAY="$(date -u +%Y-%m-%d)"
+CARGO_TOML="$REPO_ROOT/Cargo.toml"
+CHANGELOG="$REPO_ROOT/CHANGELOG.md"
+
+echo "==> Releasing ${TAG} (dated ${TODAY})"
+
+# ── quality gates ──────────────────────────────────────────────────────────
+
+cd "$REPO_ROOT"
+
+echo "==> cargo fmt --check"
+cargo fmt --all -- --check
+
+echo "==> cargo clippy"
+cargo clippy --workspace --all-targets -- -D warnings
+
+echo "==> cargo test"
+cargo test --workspace --all-targets
+
+echo "==> check no network deps (DATA-02)"
+bash scripts/check-no-network-deps.sh
+
+echo "==> cargo deny check (warn-only)"
+if command -v cargo-deny &>/dev/null; then
+    cargo deny check || echo "  [warn] cargo deny reported issues — review before pushing"
+else
+    echo "  [warn] cargo-deny not installed; skipping (install with: cargo install cargo-deny)"
+fi
+
+echo "==> cargo audit (warn-only)"
+if command -v cargo-audit &>/dev/null; then
+    cargo audit || echo "  [warn] cargo audit reported advisories — review before pushing"
+else
+    echo "  [warn] cargo-audit not installed; skipping (install with: cargo install cargo-audit)"
+fi
+
+# ── update Cargo.toml version ──────────────────────────────────────────────
+
+echo "==> Updating Cargo.toml workspace version to ${VERSION}"
+
+python3 - <<PYEOF
+import re, pathlib, sys
+
+path = pathlib.Path("$CARGO_TOML")
+text = path.read_text()
+
+new_text = re.sub(
+    r'(\[workspace\.package\].*?^version\s*=\s*")[^"]+(")',
+    r'\g<1>$VERSION\g<2>',
+    text,
+    count=1,
+    flags=re.MULTILINE | re.DOTALL,
+)
+if new_text == text:
+    sys.exit("ERROR: could not find [workspace.package] version in Cargo.toml")
+
+# Bump version constraints in [workspace.dependencies] for intra-crate path
+# deps when present (workpot-core, workpot-cli, etc.).
+new_text = re.sub(
+    r'(workpot-\w+\s*=\s*\{[^}]*version\s*=\s*")[^"]+(")',
+    r'\g<1>$VERSION\g<2>',
+    new_text,
+    flags=re.MULTILINE,
+)
+
+path.write_text(new_text)
+print(f"  version -> $VERSION")
+PYEOF
+
+echo "==> Syncing Cargo.lock"
+cargo update --workspace --offline 2>/dev/null || cargo update --workspace
+
+# ── update CHANGELOG.md ────────────────────────────────────────────────────
+
+echo "==> Updating CHANGELOG.md"
+
+python3 - <<PYEOF
+import pathlib, re, sys
+
+path = pathlib.Path("$CHANGELOG")
+text = path.read_text()
+
+unreleased_pattern = re.compile(
+    r'(## \[Unreleased\]\n)(.*?)(\n## \[)',
+    re.DOTALL,
+)
+m = unreleased_pattern.search(text)
+if not m:
+    print("  [warn] no [Unreleased] section with content found; CHANGELOG not updated", file=sys.stderr)
+    sys.exit(0)
+
+unreleased_body = m.group(2)
+
+new_version_header = f"## [$VERSION] - $TODAY"
+new_block = (
+    "## [Unreleased]\n\n"
+    + new_version_header + "\n"
+    + unreleased_body
+)
+
+new_text = unreleased_pattern.sub(new_block + r"\n## [", text, count=1)
+
+new_text = re.sub(
+    r'^\[Unreleased\]:.*$',
+    "[Unreleased]: https://github.com/rubenlr/workpot/compare/$TAG...HEAD\n"
+    "[$VERSION]: https://github.com/rubenlr/workpot/releases/tag/$TAG",
+    new_text,
+    flags=re.MULTILINE,
+)
+
+path.write_text(new_text)
+print("  moved [Unreleased] entries to [$VERSION] - $TODAY")
+PYEOF
+
+# ── commit + tag ───────────────────────────────────────────────────────────
+
+echo "==> Committing release files"
+git add "$CARGO_TOML" "$CHANGELOG" Cargo.lock
+git commit -m "release: ${TAG}"
+
+echo "==> Extracting changelog entry for tag message"
+CHANGELOG_ENTRY="$(python3 - <<PYEOF
+import pathlib, re
+
+path = pathlib.Path("$CHANGELOG")
+text = path.read_text()
+
+m = re.search(
+    r'## \[$VERSION\] - $TODAY\n(.*?)(?=\n## \[|\Z)',
+    text,
+    re.DOTALL,
+)
+print(m.group(1).strip() if m else "Release $TAG")
+PYEOF
+)"
+
+echo "==> Creating annotated tag ${TAG}"
+git tag -a "${TAG}" -m "$(printf '%s\n\n%s' "Release ${TAG}" "${CHANGELOG_ENTRY}")"
+
+# ── next steps ─────────────────────────────────────────────────────────────
+
+cat <<EOF
+
+Release ${TAG} is ready locally. To publish:
+
+  git push && git push origin ${TAG}
+
+The release workflow will build macOS tarballs and create the GitHub Release.
+
+EOF

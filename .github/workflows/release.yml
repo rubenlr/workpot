@@ -1,0 +1,133 @@
+name: release
+
+# Triggered when a version tag is pushed, e.g. git push origin v0.1.0.
+# Builds macOS release tarballs and creates the GitHub Release.
+#
+# The CI workflow already validates the binary (fmt / clippy / test / deny).
+# This workflow assumes CI passed on the same commit and only publishes.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  validate-version:
+    name: validate release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: version
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          manifest_version="$(awk -F ' *= *' '
+            /^\[workspace.package\]$/ { in_workspace_package = 1; next }
+            /^\[/ { in_workspace_package = 0 }
+            in_workspace_package && $1 == "version" {
+              gsub(/"/, "", $2);
+              print $2;
+              exit;
+            }
+          ' Cargo.toml)"
+          if [ -z "$manifest_version" ]; then
+            echo "could not read [workspace.package].version from Cargo.toml" >&2
+            exit 1
+          fi
+          if [ "$tag_version" != "$manifest_version" ]; then
+            echo "tag version v${tag_version} does not match Cargo.toml version ${manifest_version}" >&2
+            exit 1
+          fi
+          echo "version=${tag_version}" >> "$GITHUB_OUTPUT"
+
+  binary:
+    name: macos ${{ matrix.arch }} binary
+    needs: validate-version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            artifact: workpot-macos-aarch64
+            runner: macos-latest
+          - arch: x86_64
+            artifact: workpot-macos-x86_64
+            runner: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.85
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release -p workpot-cli
+
+      - name: Create release tarball
+        env:
+          RELEASE_ARTIFACT: ${{ matrix.artifact }}
+        run: |
+          artifact="$RELEASE_ARTIFACT"
+          mkdir -p "dist/$artifact"
+          cp target/release/workpot "dist/$artifact/workpot"
+          cp README.md LICENSE "dist/$artifact/"
+          tar -C "dist/$artifact" -czf "$artifact.tar.gz" .
+          shasum -a 256 "$artifact.tar.gz" > "$artifact.tar.gz.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.tar.gz.sha256
+
+  github-release:
+    name: github release
+    needs: [binary, validate-version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate release body
+        run: |
+          echo "## Checksums (SHA256)" > body.md
+          echo '```' >> body.md
+          cat artifacts/*.sha256 >> body.md
+          echo '```' >> body.md
+          echo "" >> body.md
+          echo "## Install" >> body.md
+          echo '```bash' >> body.md
+          echo "# From source" >> body.md
+          echo "cargo install --git https://github.com/rubenlr/workpot --tag ${GITHUB_REF_NAME}" >> body.md
+          echo "" >> body.md
+          echo "# Binary tarball (macOS)" >> body.md
+          echo "curl -LO https://github.com/rubenlr/workpot/releases/download/${GITHUB_REF_NAME}/workpot-macos-aarch64.tar.gz" >> body.md
+          echo "curl -LO https://github.com/rubenlr/workpot/releases/download/${GITHUB_REF_NAME}/workpot-macos-aarch64.tar.gz.sha256" >> body.md
+          echo "shasum -a 256 -c workpot-macos-aarch64.tar.gz.sha256" >> body.md
+          echo "tar -xzf workpot-macos-aarch64.tar.gz" >> body.md
+          echo '```' >> body.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file body.md \
+            --latest

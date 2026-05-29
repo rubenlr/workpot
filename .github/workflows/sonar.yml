@@ -1,43 +1,38 @@
-# Manual Sonar on open PRs only. Required for merge (context: sonarcloud).
+# Sonar on PRs after CI coverage completes. Required for merge (context: sonarcloud).
 #
-# On each PR push the job fails fast. From the PR Checks tab, open this
-# workflow run and choose "Re-run all jobs" to start the Sonar scan.
+# Downloads the lcov.info artifact from the ci workflow's coverage job instead of
+# re-running tests, keeping Sonar aligned with the offline coverage gate.
 name: Sonar
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
 
 permissions:
   contents: read
   pull-requests: write
+  actions: read
 
 jobs:
   sonarcloud:
+    name: sonarcloud
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Download coverage artifact from CI
+        uses: dawidd6/action-download-artifact@v6
         with:
-          toolchain: 1.85
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: .
-          shared-key: llvm-cov
-
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-llvm-cov
-
-      - name: Fetch dependencies
-        run: cargo fetch
-
-      - name: Test with coverage
-        run: cargo llvm-cov test --offline --workspace --lcov --output-path lcov.info
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          run_id: ${{ github.event.workflow_run.id }}
+          name: lcov.info
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v5
@@ -46,6 +41,6 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
-            -Dsonar.pullrequest.branch=${{ github.event.pull_request.head.ref }}
-            -Dsonar.pullrequest.base=${{ github.event.pull_request.base.ref }}
+            -Dsonar.pullrequest.key=${{ github.event.workflow_run.pull_requests[0].number }}
+            -Dsonar.pullrequest.branch=${{ github.event.workflow_run.pull_requests[0].head.ref }}
+            -Dsonar.pullrequest.base=${{ github.event.workflow_run.pull_requests[0].base.ref }}
