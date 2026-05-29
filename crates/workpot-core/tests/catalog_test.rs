@@ -181,6 +181,23 @@ fn list_repos_skips_excluded_rows() {
 }
 
 #[test]
+fn remove_repo_succeeds_when_directory_deleted() {
+    let (dir, repo_path) = git_fixture();
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let canonical = repo_path.canonicalize().expect("canonicalize");
+
+    {
+        let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone())
+            .expect("open");
+        ctx.register_manual(&repo_path).expect("register");
+        fs::remove_dir_all(&repo_path).expect("delete repo dir");
+        ctx.remove_repo(&canonical).expect("remove after delete");
+        assert!(ctx.list_repos().expect("list").is_empty());
+    }
+}
+
+#[test]
 fn remove_repo_deletes_and_not_found() {
     let (dir, repo_path) = git_fixture();
     let config_path = dir.path().join("config.toml");

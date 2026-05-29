@@ -99,11 +99,26 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
         .map_err(WorkpotError::Database)
 }
 
+/// Resolve repo location and SQLite path key, falling back when the directory is gone.
+fn resolve_repo_location(path: &Path) -> Result<(PathBuf, String)> {
+    match path.canonicalize() {
+        Ok(c) => {
+            let key = c.display().to_string();
+            Ok((c, key))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Ok((path.to_path_buf(), path.display().to_string()))
+        }
+        Err(e) => Err(WorkpotError::InvalidPath(format!("{}: {e}", path.display()))),
+    }
+}
+
+fn repo_path_key(path: &Path) -> Result<String> {
+    resolve_repo_location(path).map(|(_, key)| key)
+}
+
 pub fn remove_repo(conn: &Connection, path: &Path) -> Result<()> {
-    let canonical = path
-        .canonicalize()
-        .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?;
-    let path_key = canonical.display().to_string();
+    let path_key = repo_path_key(path)?;
 
     let deleted = conn.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
     if deleted == 0 {
