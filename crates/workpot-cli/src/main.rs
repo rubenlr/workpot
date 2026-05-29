@@ -59,6 +59,8 @@ enum RootsCommands {
 }
 
 fn main() -> ExitCode {
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+        .try_init();
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) if matches!(
