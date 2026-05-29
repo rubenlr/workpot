@@ -34,11 +34,15 @@ pub fn run_full(conn: &Connection, config: &Config) -> Result<IndexSummary> {
     match run_full_inner(conn, config, started_at) {
         Ok(summary) => Ok(summary),
         Err(WorkpotError::IndexCapExceeded { projected, max }) => {
-            let _ = record_cap_exceeded_run(conn, started_at, i64::from(projected), max);
+            if let Err(e) = record_cap_exceeded_run(conn, started_at, i64::from(projected), max) {
+                log::warn!("failed to record cap-exceeded audit row: {e}");
+            }
             Err(WorkpotError::IndexCapExceeded { projected, max })
         }
         Err(e) => {
-            let _ = record_error_run(conn, started_at, &e);
+            if let Err(audit_err) = record_error_run(conn, started_at, &e) {
+                log::warn!("failed to record error audit row: {audit_err}");
+            }
             Err(e)
         }
     }
