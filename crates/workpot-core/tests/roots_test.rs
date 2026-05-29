@@ -50,6 +50,28 @@ fn limits_reject_over_hard_max() {
 }
 
 #[test]
+fn roots_add_persists_watch_root_on_disk() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(&config_path, empty_config_marker()).expect("write config");
+
+    let watch_parent = dir.path().join("roots");
+    fs::create_dir_all(&watch_parent).expect("watch parent");
+    git_worktree(&watch_parent, "nested-repo");
+
+    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+    ctx.roots_add(&watch_parent).expect("roots_add");
+
+    let on_disk = fs::read_to_string(&config_path).expect("read config");
+    let watch_canon = watch_parent.canonicalize().expect("canonicalize watch");
+    assert!(
+        on_disk.contains(watch_canon.to_str().expect("utf-8 path")),
+        "watch root must be saved to config.toml before/during scan: {on_disk}"
+    );
+}
+
+#[test]
 fn roots_add_triggers_scan() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("config.toml");

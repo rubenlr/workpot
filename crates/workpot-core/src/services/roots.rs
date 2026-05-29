@@ -23,17 +23,16 @@ pub fn add_root(ctx: &mut AppContext, path: &Path) -> Result<()> {
     }
 
     ctx.config_mut().watch_roots.push(canonical.clone());
+    if let Err(e) = save_config(ctx.config_path(), ctx.config()) {
+        ctx.config_mut().watch_roots.pop();
+        return Err(e);
+    }
+
     match index::run_full(ctx.connection(), ctx.config()) {
-        Ok(_) => match save_config(ctx.config_path(), ctx.config()) {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                ctx.config_mut().watch_roots.pop();
-                prune_scan_repos_under_root(ctx.connection(), &canonical)?;
-                Err(e)
-            }
-        },
+        Ok(_) => Ok(()),
         Err(e) => {
             ctx.config_mut().watch_roots.pop();
+            save_config(ctx.config_path(), ctx.config())?;
             prune_scan_repos_under_root(ctx.connection(), &canonical)?;
             Err(e)
         }
