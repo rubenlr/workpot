@@ -153,7 +153,7 @@ fn ensure_default_config(path: &Path) -> Result<()> {
     let default = default_config(&home);
     let contents = toml::to_string_pretty(&default)
         .map_err(|e| crate::error::WorkpotError::Config(e.to_string()))?;
-    fs::write(path, contents)?;
+    write_atomic(path, &contents)?;
     Ok(())
 }
 
@@ -174,11 +174,24 @@ pub fn save_config(config_path: &Path, config: &Config) -> Result<()> {
     config
         .validate()
         .map_err(WorkpotError::LimitsExceeded)?;
-    if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
     let contents = toml::to_string_pretty(config)
         .map_err(|e| WorkpotError::Config(e.to_string()))?;
-    fs::write(config_path, contents)?;
+    write_atomic(config_path, &contents)?;
+    Ok(())
+}
+
+/// Write `contents` to `path` atomically via temp file + fsync + rename.
+fn write_atomic(path: &Path, contents: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, contents)?;
+    #[cfg(unix)]
+    {
+        let file = std::fs::OpenOptions::new().write(true).open(&tmp)?;
+        file.sync_all()?;
+    }
+    fs::rename(&tmp, path)?;
     Ok(())
 }
