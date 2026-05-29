@@ -177,6 +177,82 @@ fn repo_list_shows_git_state_after_index() {
 }
 
 #[test]
+fn cli_roots_remove_prunes_repos() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let watch = home.path().join("watch");
+    fs::create_dir_all(&watch).expect("watch dir");
+    let repo_path = git_fixture(&watch);
+    let canonical = repo_path.canonicalize().expect("canonicalize");
+    let watch_str = watch.to_str().expect("utf8 path");
+    let canon_str = canonical.to_str().expect("utf8 path");
+
+    workpot_cmd(home.path())
+        .args(["roots", "add", watch_str])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["repo", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(canon_str));
+
+    workpot_cmd(home.path())
+        .args(["roots", "remove", watch_str])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["repo", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+
+    workpot_cmd(home.path())
+        .args(["roots", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+#[test]
+fn cli_repo_remove_stays_absent_after_index() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let watch = home.path().join("watch");
+    fs::create_dir_all(&watch).expect("watch dir");
+    let repo_path = git_fixture(&watch);
+    let canonical = repo_path.canonicalize().expect("canonicalize");
+    let watch_str = watch.to_str().expect("utf8 path");
+    let canon_str = canonical.to_str().expect("utf8 path");
+
+    workpot_cmd(home.path())
+        .args(["roots", "add", watch_str])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["repo", "remove", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .arg("index")
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .arg("index")
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["repo", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(canon_str).not());
+}
+
+#[test]
 fn roots_add_index_list_roundtrip() {
     let home = tempfile::tempdir().expect("tempdir");
     let watch = home.path().join("watch");

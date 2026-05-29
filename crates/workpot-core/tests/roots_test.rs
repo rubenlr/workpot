@@ -81,6 +81,44 @@ fn roots_add_persists_watch_root_on_disk() {
 }
 
 #[test]
+fn roots_add_rolls_back_on_index_cap() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(
+        &config_path,
+        "watch_roots = []\nexcludes = []\n\n[limits]\nmax_repos = 1\nmax_watch_roots = 100\n",
+    )
+    .expect("write config");
+
+    let watch_parent = dir.path().join("roots");
+    fs::create_dir_all(&watch_parent).expect("watch parent");
+    git_worktree(&watch_parent, "repo-one");
+    git_worktree(&watch_parent, "repo-two");
+
+    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+    let err = ctx.roots_add(&watch_parent).expect_err("cap should fail");
+    assert!(
+        matches!(err, WorkpotError::IndexCapExceeded { .. }),
+        "expected IndexCapExceeded, got {err:?}"
+    );
+
+    let on_disk = fs::read_to_string(&config_path).expect("read config");
+    let watch_canon = watch_parent.canonicalize().expect("canonicalize watch");
+    assert!(
+        !on_disk.contains(watch_canon.to_str().expect("utf-8 path")),
+        "watch root must be rolled back from config on cap failure: {on_disk}"
+    );
+
+    let repos = ctx.list_repos().expect("list");
+    assert!(
+        repos.is_empty(),
+        "scan repos from failed roots_add must be pruned, got {:?}",
+        repos
+    );
+}
+
+#[test]
 fn roots_add_triggers_scan() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("config.toml");

@@ -41,6 +41,44 @@ fn open_index_fixture(max_repos: Option<u32>) -> (tempfile::TempDir, rusqlite::C
 }
 
 #[test]
+fn index_purges_orphan_scan_repos() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let watch_root = dir.path().join("watch");
+    fs::create_dir_all(&watch_root).expect("watch root");
+    let orphan_parent = dir.path().join("orphan-parent");
+    let orphan_repo = git_worktree(&orphan_parent, "solo");
+    let orphan_key = orphan_repo
+        .canonicalize()
+        .expect("canonicalize orphan")
+        .display()
+        .to_string();
+
+    let db_path = dir.path().join("workpot.db");
+    let mut config = Config::default();
+    config.watch_roots.push(watch_root);
+    let conn = store::open_connection(&db_path).expect("open db");
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'solo', 0, 'scan', '', 0)",
+        rusqlite::params![orphan_key],
+    )
+    .expect("insert orphan scan row");
+
+    let summary = index::run_full(&conn, &config).expect("run_full");
+    assert_eq!(
+        summary.removed, 1,
+        "scan repo outside configured watch roots must be purged"
+    );
+
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
+            row.get(0)
+        })
+        .expect("count");
+    assert_eq!(count, 0);
+}
+
+#[test]
 fn index_full_rescan() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
