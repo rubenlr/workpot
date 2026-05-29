@@ -134,35 +134,34 @@ pub fn remove_repo_with_exclude(
     config: &mut Config,
     path: &Path,
 ) -> Result<()> {
-    let canonical = path
-        .canonicalize()
-        .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?;
-    let path_key = canonical.display().to_string();
+    let (repo_path, _path_key) = resolve_repo_location(path)?;
 
-    let deleted = conn.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
-    if deleted == 0 {
-        return Err(WorkpotError::NotFound(path_key));
-    }
-
-    let parent = canonical.parent().ok_or_else(|| {
-        WorkpotError::InvalidPath(format!("repo path has no parent: {}", canonical.display()))
+    let parent = repo_path.parent().ok_or_else(|| {
+        WorkpotError::InvalidPath(format!("repo path has no parent: {}", repo_path.display()))
     })?;
-    let name = canonical.file_name().ok_or_else(|| {
-        WorkpotError::InvalidPath(format!("repo path has no directory name: {}", canonical.display()))
+    let name = repo_path.file_name().ok_or_else(|| {
+        WorkpotError::InvalidPath(format!(
+            "repo path has no directory name: {}",
+            repo_path.display()
+        ))
     })?;
     let base = format!("{}/{}", parent.display(), name.to_string_lossy());
     let tree = format!("{base}/**");
+
+    let mut config_to_save = config.clone();
     let mut changed = false;
     for glob in [base, tree] {
-        if !config.excludes.iter().any(|g| g == &glob) {
-            config.excludes.push(glob);
+        if !config_to_save.excludes.iter().any(|g| g == &glob) {
+            config_to_save.excludes.push(glob);
             changed = true;
         }
     }
     if changed {
-        save_config(config_path, config)?;
+        save_config(config_path, &config_to_save)?;
+        *config = config_to_save;
     }
-    Ok(())
+
+    remove_repo(conn, path)
 }
 
 pub(crate) fn is_git_worktree(path: &Path) -> bool {
