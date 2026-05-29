@@ -1,59 +1,57 @@
 ---
 phase: 02-repo-discovery
-fixed_at: 2026-05-30T00:00:00Z
+fixed_at: 2026-05-30T18:00:00Z
 review_path: .planning/phases/02-repo-discovery/02-REVIEW.md
-iteration: 2
-findings_in_scope: 5
-fixed: 5
+iteration: 3
+findings_in_scope: 4
+fixed: 4
 skipped: 0
 status: all_fixed
 ---
 
 # Phase 2: Code Review Fix Report
 
-**Fixed at:** 2026-05-30T00:00:00Z
+**Fixed at:** 2026-05-30T18:00:00Z
 **Source review:** `.planning/phases/02-repo-discovery/02-REVIEW.md`
-**Iteration:** 2
+**Iteration:** 3
 
 **Summary:**
-- Findings in scope: 5
-- Fixed: 5
+- Findings in scope: 4
+- Fixed: 4
 - Skipped: 0
 
 ## Fixed Issues
 
-### CR-01: Skipped watch roots trigger orphan purge of all repos under that root
-
-**Files modified:** `crates/workpot-core/src/services/index.rs`
-**Commit:** 3c43068
-**Applied fix:** Orphan, stale, and manual-outside-root cleanup now checks `config.watch_roots` (configured paths) via `paths::path_under_root`, while stale removal only applies when the repo is under a successfully scanned canonical root. Added unit tests for orphan/stale preservation when canonical roots are empty.
-
-### WR-01: Lexical `str::starts_with` in `path_under_root` when canonicalize fails
-
-**Files modified:** `crates/workpot-core/src/services/paths.rs`
-**Commit:** 9886f29
-**Applied fix:** Replaced `Path::starts_with` fallback with `strip_prefix`-based `path_starts_with_root` for explicit component-boundary matching. Added unit tests for sibling vs child paths.
-
-### WR-02: `roots remove` persists config before prune succeeds
-
-**Files modified:** `crates/workpot-core/src/services/roots.rs`
-**Commit:** 431ea90
-**Applied fix:** `remove_root` prunes scan repos before `save_config` and restores the in-memory watch root on prune or save failure.
-
-### WR-03: `remove_repo_with_exclude` writes excludes before deleting the repo row
+### WR-01: `remove_repo_with_exclude` deletes the row before excludes are persisted
 
 **Files modified:** `crates/workpot-core/src/services/catalog.rs`, `crates/workpot-core/tests/catalog_test.rs`
-**Commit:** 46fcb26
-**Applied fix:** `remove_repo` runs before exclude globs are appended and saved. Added regression test ensuring ambiguous basename removal leaves excludes unchanged.
+**Commit:** 371dc75
+**Applied fix:** Append exclude globs and `save_config` before `remove_repo`; on `remove_repo` failure, remove added globs from config and save again. Regression test `remove_repo_with_exclude_persists_excludes_before_row_removed`.
 
-### WR-04: `roots add` does not compensate DB when `run_full` fails after the index transaction commits
+### WR-02: `roots remove` prunes DB before config save; save failure leaves divergence
 
 **Files modified:** `crates/workpot-core/src/services/roots.rs`
-**Commit:** e00aa38
-**Applied fix:** On `run_full` error, `add_root` pops the in-memory watch root and calls `prune_scan_repos_under_root` for the added root, matching the config-save rollback path.
+**Commit:** 150987f
+**Applied fix:** `save_config` runs before `prune_scan_repos_under_root`; on prune failure, restore the watch root in memory and on disk via `save_config`.
+
+### WR-03: `run_full` returns `Err` after merge commit when git refresh fails
+
+**Files modified:** `crates/workpot-core/src/services/index.rs`
+**Commit:** 7670817
+**Applied fix:** After successful index merge, `git_tx.commit` failure logs a warning, folds unpersisted refresh into `git_errors`, and returns `Ok(summary)` so CLI exits 0 with partial-success counts.
+
+### IN-01: `roots add` crash window drops indexed repos on next index
+
+**Files modified:** `crates/workpot-core/src/services/roots.rs`, `crates/workpot-core/tests/roots_test.rs`
+**Commit:** 83d7497
+**Applied fix:** `save_config` before `run_full`; on scan failure, pop root, save config, and `prune_scan_repos_under_root`. Regression test `roots_add_persists_watch_root_on_disk`.
+
+## Skipped Issues
+
+None — all in-scope findings were fixed.
 
 ---
 
-_Fixed: 2026-05-30T00:00:00Z_
+_Fixed: 2026-05-30T18:00:00Z_
 _Fixer: Claude (gsd-code-fixer)_
-_Iteration: 2_
+_Iteration: 3_
