@@ -1,5 +1,6 @@
 use crate::domain::Config;
 use crate::error::{Result, WorkpotError};
+use crate::infra::git::list_worktree_paths;
 use crate::services::catalog::{is_bare_repo, is_git_worktree};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use ignore::WalkBuilder;
@@ -71,7 +72,12 @@ pub fn scan_root(root: &Path, exclude_set: &GlobSet) -> Result<Vec<PathBuf>> {
                 {
                     if let Ok(canon) = path.canonicalize() {
                         if let Ok(mut list) = candidates.lock() {
-                            list.push(canon);
+                            list.push(canon.clone());
+                            if is_bare_repo(&canon) {
+                                if let Ok(linked) = list_worktree_paths(&canon) {
+                                    list.extend(linked);
+                                }
+                            }
                         }
                     }
                     return false;
