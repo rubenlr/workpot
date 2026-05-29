@@ -214,6 +214,29 @@ fn remove_repo_succeeds_when_directory_deleted() {
 }
 
 #[test]
+fn remove_repo_with_exclude_persists_excludes_before_row_removed() {
+    let (dir, repo_path) = git_fixture();
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("open");
+
+    ctx.register_manual(&repo_path).expect("register");
+    ctx.remove_repo(&repo_path).expect("remove");
+
+    let config_text = fs::read_to_string(&config_path).expect("read config");
+    assert!(
+        config_text.contains("/**"),
+        "exclude tree glob must be on disk when row is removed: {config_text}"
+    );
+
+    let conn = rusqlite::Connection::open(&db_path).expect("open db");
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM repos", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(count, 0, "repo row should be removed after excludes persisted");
+}
+
+#[test]
 fn remove_repo_with_exclude_does_not_persist_excludes_when_remove_fails() {
     let dir = tempfile::tempdir().expect("tempdir");
     let first = dir.path().join("first").join("foo");

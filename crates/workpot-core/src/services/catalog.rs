@@ -207,19 +207,30 @@ pub fn remove_repo_with_exclude(
     let base = path_to_exclude_glob_prefix(&repo_path);
     let tree = format!("{base}/**");
 
-    remove_repo(conn, path)?;
-
     let mut config_to_save = config.clone();
-    let mut changed = false;
+    let mut added_globs: Vec<String> = Vec::new();
     for glob in [base, tree] {
         if !config_to_save.excludes.iter().any(|g| g == &glob) {
-            config_to_save.excludes.push(glob);
-            changed = true;
+            config_to_save.excludes.push(glob.clone());
+            added_globs.push(glob);
         }
     }
-    if changed {
+
+    let persisted_excludes = !added_globs.is_empty();
+    if persisted_excludes {
         save_config(config_path, &config_to_save)?;
-        *config = config_to_save;
+        *config = config_to_save.clone();
+    }
+
+    if let Err(e) = remove_repo(conn, path) {
+        if persisted_excludes {
+            for glob in &added_globs {
+                config_to_save.excludes.retain(|g| g != glob);
+            }
+            save_config(config_path, &config_to_save)?;
+            *config = config_to_save;
+        }
+        return Err(e);
     }
 
     Ok(())
