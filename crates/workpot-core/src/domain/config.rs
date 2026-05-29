@@ -56,6 +56,13 @@ impl Config {
                 self.limits.max_repos
             ));
         }
+        if self.watch_roots.len() > self.limits.max_watch_roots as usize {
+            return Err(format!(
+                "watch_roots count {} exceeds max_watch_roots {}",
+                self.watch_roots.len(),
+                self.limits.max_watch_roots
+            ));
+        }
         Ok(())
     }
 }
