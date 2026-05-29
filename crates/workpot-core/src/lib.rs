@@ -52,6 +52,7 @@ impl AppContext {
 
     /// Open with explicit paths — intended for integration tests; production CLI uses [`Self::open`].
     pub fn open_with_paths(config_path: PathBuf, db_path: PathBuf) -> Result<Self> {
+        remove_stale_config_temp(&config_path);
         ensure_default_config(&config_path)?;
         let config = load_config(&config_path)?;
         let conn = store::open_connection(&db_path)?;
@@ -137,6 +138,14 @@ impl AppContext {
         path: &std::path::Path,
     ) -> crate::error::Result<crate::domain::GitState> {
         crate::services::git_state::refresh_and_persist(&self.conn, path)
+    }
+}
+
+/// Drop orphaned `config.toml.tmp` left by a crash between write and rename.
+fn remove_stale_config_temp(path: &Path) {
+    let tmp = path.with_extension("tmp");
+    if tmp.is_file() {
+        let _ = fs::remove_file(&tmp);
     }
 }
 
