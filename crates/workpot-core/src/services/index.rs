@@ -33,10 +33,10 @@ pub fn run_full(conn: &Connection, config: &Config) -> Result<IndexSummary> {
     let started_at = now_secs();
     match run_full_inner(conn, config, started_at) {
         Ok(summary) => Ok(summary),
-        Err(WorkpotError::IndexCapExceeded { projected, max }) => Err(WorkpotError::IndexCapExceeded {
-            projected,
-            max,
-        }),
+        Err(WorkpotError::IndexCapExceeded { projected, max }) => {
+            let _ = record_cap_exceeded_run(conn, started_at, i64::from(projected), max);
+            Err(WorkpotError::IndexCapExceeded { projected, max })
+        }
         Err(e) => {
             let _ = record_error_run(conn, started_at, &e);
             Err(e)
@@ -94,9 +94,9 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
 
     let projected = projected_repo_count(conn, &removes, &upserts)?;
     if projected > i64::from(max_repos) {
-        record_cap_exceeded_run(conn, started_at, projected, max_repos)?;
+        let projected_u32 = u32::try_from(projected).unwrap_or(u32::MAX);
         return Err(WorkpotError::IndexCapExceeded {
-            projected: projected as u32,
+            projected: projected_u32,
             max: max_repos,
         });
     }
@@ -332,7 +332,7 @@ fn projected_repo_count(
     for (path, _) in upserts {
         paths.insert(path.display().to_string());
     }
-    Ok(paths.len() as i64)
+    Ok(i64::try_from(paths.len()).unwrap_or(i64::MAX))
 }
 
 fn record_error_run(conn: &Connection, started_at: i64, err: &WorkpotError) -> Result<()> {

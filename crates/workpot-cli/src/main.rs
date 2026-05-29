@@ -152,6 +152,9 @@ fn run() -> anyhow::Result<()> {
 
 fn format_age(git_refreshed_at: i64) -> String {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    if git_refreshed_at <= 0 {
+        return "unknown".to_string();
+    }
     let refreshed = UNIX_EPOCH + Duration::from_secs(git_refreshed_at as u64);
     let elapsed = SystemTime::now()
         .duration_since(refreshed)

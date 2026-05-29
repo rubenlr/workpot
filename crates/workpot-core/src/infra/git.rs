@@ -58,16 +58,17 @@ pub fn list_worktree_paths(repo_path: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Open a repository at `path` and query branch, dirty flag, and ahead/behind.
-/// Canonicalizes path before opening (T-03-01).
+///
+/// `path` must already be absolute and canonical (see `refresh_git_state`, T-03-01 / T-03-04).
 /// All git2 errors map to WorkpotError::GitUnavailable — git2::Error is never exposed.
 pub fn open_and_query(path: &Path) -> Result<GitState> {
-    // T-03-01: canonicalize path from DB before passing to Repository::open
-    let canonical = path
-        .canonicalize()
-        .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+    debug_assert!(
+        path.is_absolute(),
+        "open_and_query requires an absolute canonical path"
+    );
 
-    let repo = Repository::open(&canonical)
-        .map_err(|e| WorkpotError::GitUnavailable(format!("{}: {e}", canonical.display()).into()))?;
+    let repo = Repository::open(path)
+        .map_err(|e| WorkpotError::GitUnavailable(format!("{}: {e}", path.display()).into()))?;
 
     // D-13: bare repos skip dirty check; return branch if readable, is_dirty=None
     if repo.is_bare() {
@@ -180,5 +181,8 @@ fn detect_ahead_behind(
         .ok_or_else(|| git2::Error::from_str("no upstream OID"))?;
 
     let (ahead, behind) = repo.graph_ahead_behind(local_oid, upstream_oid)?;
-    Ok((Some(ahead as i64), Some(behind as i64)))
+    Ok((
+        Some(i64::try_from(ahead).unwrap_or(i64::MAX)),
+        Some(i64::try_from(behind).unwrap_or(i64::MAX)),
+    ))
 }
