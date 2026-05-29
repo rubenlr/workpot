@@ -3,61 +3,67 @@
 > **Audit trail only.** Do not use as input to planning, research, or execution agents.
 > Decisions are captured in CONTEXT.md — this log preserves the alternatives considered.
 
-**Date:** 2026-05-28
-**Phase:** 1-Core & persistence
-**Areas discussed:** macOS paths (config vs data)
+**Date:** 2026-05-29
+**Phase:** 01-core-persistence
+**Areas discussed:** Retroactive locks, UAT paths
 
 ---
 
-## macOS paths (config vs data)
-
-### Config file location
+## Retroactive locks
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| ~/.config/workpot/config.toml | XDG-style; dotfile-manageable | ✓ (split) |
-| ~/Library/Application Support/workpot/config.toml | Single Apple-native tree | |
-| Split | Config in ~/.config, DB in Application Support | ✓ |
+| core+CLI only | No Tauri stubs in Phase 1 | ✓ |
+| add stubs now | Empty Tauri/ui in workspace | |
+| minimal CLI | paths + repo add\|list\|remove only | ✓ |
+| expand CLI | More verbs now | |
+| lock schema | path PK, source, excluded for Phase 2 | ✓ |
+| narrow schema | Strip forward columns | |
+| fs git check | .git / bare only, no git2 | ✓ |
+| git2 now | libgit2 in Phase 1 | |
+| empty watch_roots | Minimal default config | |
+| sample ~/code + ~/dev | Seed existing dirs on first run | ✓ |
+| AppContext only | Production entry via open() | ✓ |
+| split APIs | Expose raw store to hosts | |
+| anyhow errors | Human messages, no exit taxonomy yet | ✓ |
+| structured errors | Stable codes now | |
+| CI gate only | DATA-02 via workflow, script optional | ✓ |
+| lock script + CI | Permanent standalone script contract | |
+| canonical path PK | Always canonicalize for DB key | ✓ |
+| user path as stored | No canonicalization | |
+| bare + worktree | Both registration forms | ✓ |
+| worktree only | Reject bare | |
+| hard DELETE remove | Phase 2 adds exclude-on-remove | ✓ |
+| soft exclude now | excluded=1 on remove | |
 
-**User's choice:** Split — config in `~/.config/workpot/`
+**Notes:** Sample watch roots implemented in `default_config()`; aligns with D-09 and UAT test 2.
 
-### Database location
+---
+
+## UAT paths
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| ~/Library/Application Support/workpot/workpot.db | Standard macOS app data | ✓ |
-| ~/.local/share/workpot/workpot.db | XDG data dir | |
-| Same as config | One folder to backup | |
+| fix UAT | Expect ~/.config/workpot/config.toml | ✓ |
+| fix code | Move config to Application Support | |
+| yes DB path | Application Support/workpot.db | ✓ |
+| yes bootstrap | workpot paths creates config+DB+migrations | ✓ |
+| yes offline | Manual + CI sufficient for DATA-02 | ✓ |
+| fix UAT in session | Update 01-UAT.md test 2 now | ✓ |
+| assert seeded roots | UAT checks watch_roots when dirs exist | ✓ |
+| exact path prefixes | Document expected printed paths | ✓ |
+| UAT gate | All 7 tests must pass to close Phase 1 | ✓ |
 
-**User's choice:** `~/Library/Application Support/workpot/workpot.db`
-
-### Environment overrides
-
-| Option | Description | Selected |
-|--------|-------------|----------|
-| Yes — data and optionally config | Override via env for tests/power users | |
-| Yes — data dir only | Config stays fixed | |
-| No in Phase 1 | Fixed paths only | ✓ |
-
-**User's choice:** No env overrides in Phase 1
-
-### First-run behavior
-
-| Option | Description | Selected |
-|--------|-------------|----------|
-| Create defaults | Default config.toml + empty migrated DB | ✓ |
-| Create DB only | Config on first config command | |
-| Require init | Explicit `workpot init` required | |
-
-**User's choice:** Create default config + empty DB on first launch
+**User's choice:** Align UAT with D-01; Phase 1 completion requires UAT pass.
 
 ---
 
 ## Claude's Discretion
 
-Bootstrap layout, CLI surface, and schema width left to planner per ARCHITECTURE.md and ROADMAP success criteria.
+(none in this session)
+
+---
 
 ## Deferred Ideas
 
-- Env path overrides — future phase when tests need them
-- Bootstrap / CLI / schema gray areas — not selected for discussion this session
+- Phase 2 handoff and completion-bar areas were not discussed in this update (user stopped after UAT paths).

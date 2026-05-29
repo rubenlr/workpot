@@ -22,7 +22,7 @@ expected: Fresh install; `workpot paths` exits 0, prints config and database pat
 result: [pending]
 
 ### 2. First-run paths and config
-expected: `workpot paths` shows `config:` under Application Support/Preferences area and `database:` under Application Support/workpot; default config.toml exists after first run
+expected: `workpot paths` prints `config:` with prefix `~/.config/workpot/config.toml` (or expanded home path) and `database:` under `~/Library/Application Support/workpot/workpot.db`; first-run config.toml exists; if `~/code` and/or `~/dev` exist, `watch_roots` lists those paths
 result: [pending]
 
 ### 3. Register a git repository
