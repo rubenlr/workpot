@@ -9,7 +9,7 @@ use crate::domain::{Config, RepoRecord};
 use crate::error::Result;
 use crate::infra::paths;
 use crate::infra::store;
-use crate::services::{catalog, index};
+use crate::services::{catalog, index, roots};
 use rusqlite::Connection;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -88,6 +88,30 @@ impl AppContext {
     pub fn run_index(&self) -> Result<index::IndexSummary> {
         index::run_full(&self.conn, &self.config)
     }
+
+    pub fn config_mut(&mut self) -> &mut Config {
+        &mut self.config
+    }
+
+    pub fn connection(&self) -> &Connection {
+        &self.conn
+    }
+
+    pub fn reload_config(&mut self) -> Result<()> {
+        roots::reload_config(self)
+    }
+
+    pub fn roots_add(&mut self, path: &Path) -> Result<()> {
+        roots::add_root(self, path)
+    }
+
+    pub fn roots_list(&self) -> Vec<PathBuf> {
+        roots::list_roots(self)
+    }
+
+    pub fn roots_remove(&mut self, path: &Path, skip_prune: bool) -> Result<()> {
+        roots::remove_root(self, path, skip_prune)
+    }
 }
 
 fn ensure_default_config(path: &Path) -> Result<()> {
@@ -107,7 +131,7 @@ fn ensure_default_config(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn load_config(path: &Path) -> Result<Config> {
+pub(crate) fn load_config(path: &Path) -> Result<Config> {
     if !path.exists() {
         return Ok(Config::default());
     }

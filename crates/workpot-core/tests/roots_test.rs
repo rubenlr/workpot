@@ -42,8 +42,10 @@ fn limits_reject_over_hard_max() {
     )
     .expect("write config");
 
-    let err = AppContext::open_with_paths(config_path, db_path).unwrap_err();
-    assert!(matches!(err, WorkpotError::LimitsExceeded(_)));
+    assert!(matches!(
+        AppContext::open_with_paths(config_path, db_path),
+        Err(WorkpotError::LimitsExceeded(_))
+    ));
 }
 
 #[test]
