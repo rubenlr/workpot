@@ -185,7 +185,7 @@ fn remove_repo_deletes_and_not_found() {
     let (dir, repo_path) = git_fixture();
     let config_path = dir.path().join("config.toml");
     let db_path = dir.path().join("workpot.db");
-    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
 
     ctx.register_manual(&repo_path).expect("register");
     ctx.remove_repo(&repo_path).expect("remove");

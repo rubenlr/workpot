@@ -1,0 +1,51 @@
+# Manual Sonar on open PRs only. Required for merge (context: sonarcloud).
+#
+# On each PR push the job fails fast. From the PR Checks tab, open this
+# workflow run and choose "Re-run all jobs" to start the Sonar scan.
+name: Sonar
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  sonarcloud:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.85
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          shared-key: llvm-cov
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Fetch dependencies
+        run: cargo fetch
+
+      - name: Test with coverage
+        run: cargo llvm-cov test --offline --workspace --lcov --output-path lcov.info
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
+            -Dsonar.pullrequest.branch=${{ github.event.pull_request.head.ref }}
+            -Dsonar.pullrequest.base=${{ github.event.pull_request.base.ref }}

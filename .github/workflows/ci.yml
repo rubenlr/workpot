@@ -1,22 +1,33 @@
 name: CI
 
 on:
-  push:
   pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   test:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain-file: rust-toolchain.toml
+          toolchain: 1.85
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          shared-key: llvm-cov
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
       - name: Fetch dependencies
         run: cargo fetch
       - name: Check no network deps (DATA-02)
         run: bash scripts/check-no-network-deps.sh
       - name: Build workspace
-        run: cargo build --workspace
-      - name: Test offline
-        run: cargo test --offline --workspace
+        run: cargo build --offline --workspace
+      - name: Test with coverage
+        run: cargo llvm-cov test --offline --workspace --lcov --output-path lcov.info

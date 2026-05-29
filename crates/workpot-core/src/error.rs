@@ -29,6 +29,21 @@ pub enum WorkpotError {
 
     #[error("invalid path: {0}")]
     InvalidPath(String),
+
+    #[error("git unavailable for path: {0}")]
+    GitUnavailable(PathBuf),
+
+    #[error("config limits exceeded: {0}")]
+    LimitsExceeded(String),
+
+    #[error("watch root not found: {0}")]
+    WatchRootNotFound(String),
+
+    #[error("watch root already exists: {0}")]
+    WatchRootAlreadyExists(String),
+
+    #[error("index cap exceeded: projected {projected} repos (max {max})")]
+    IndexCapExceeded { projected: u32, max: u32 },
 }
 
 pub type Result<T> = std::result::Result<T, WorkpotError>;

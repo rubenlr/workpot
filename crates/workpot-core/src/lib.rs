@@ -9,7 +9,7 @@ use crate::domain::{Config, RepoRecord};
 use crate::error::Result;
 use crate::infra::paths;
 use crate::infra::store;
-use crate::services::catalog;
+use crate::services::{catalog, excludes, index, roots};
 use rusqlite::Connection;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -81,8 +81,44 @@ impl AppContext {
         catalog::list_repos(&self.conn)
     }
 
-    pub fn remove_repo(&self, path: &Path) -> Result<()> {
-        catalog::remove_repo(&self.conn, path)
+    pub fn remove_repo(&mut self, path: &Path) -> Result<()> {
+        catalog::remove_repo_with_exclude(&self.conn, &self.config_path, &mut self.config, path)
+    }
+
+    pub fn excludes_list(&self) -> Vec<String> {
+        excludes::list_excludes(&self.config)
+    }
+
+    pub fn excludes_remove(&mut self, glob: &str) -> Result<()> {
+        excludes::remove_exclude(&self.config_path, &mut self.config, glob)
+    }
+
+    pub fn run_index(&self) -> Result<index::IndexSummary> {
+        index::run_full(&self.conn, &self.config)
+    }
+
+    pub fn config_mut(&mut self) -> &mut Config {
+        &mut self.config
+    }
+
+    pub fn connection(&self) -> &Connection {
+        &self.conn
+    }
+
+    pub fn reload_config(&mut self) -> Result<()> {
+        roots::reload_config(self)
+    }
+
+    pub fn roots_add(&mut self, path: &Path) -> Result<()> {
+        roots::add_root(self, path)
+    }
+
+    pub fn roots_list(&self) -> Vec<PathBuf> {
+        roots::list_roots(self)
+    }
+
+    pub fn roots_remove(&mut self, path: &Path, skip_prune: bool) -> Result<()> {
+        roots::remove_root(self, path, skip_prune)
     }
 }
 
@@ -103,10 +139,28 @@ fn ensure_default_config(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn load_config(path: &Path) -> Result<Config> {
+pub(crate) fn load_config(path: &Path) -> Result<Config> {
     if !path.exists() {
         return Ok(Config::default());
     }
     let contents = fs::read_to_string(path)?;
-    toml::from_str(&contents).map_err(|e| WorkpotError::Config(e.to_string()))
+    let config: Config = toml::from_str(&contents).map_err(|e| WorkpotError::Config(e.to_string()))?;
+    config
+        .validate()
+        .map_err(WorkpotError::LimitsExceeded)?;
+    Ok(config)
+}
+
+/// Persist config to disk (D-19).
+pub fn save_config(config_path: &Path, config: &Config) -> Result<()> {
+    config
+        .validate()
+        .map_err(WorkpotError::LimitsExceeded)?;
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let contents = toml::to_string_pretty(config)
+        .map_err(|e| WorkpotError::Config(e.to_string()))?;
+    fs::write(config_path, contents)?;
+    Ok(())
 }

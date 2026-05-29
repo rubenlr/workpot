@@ -7,11 +7,11 @@
 
 ### Indexing (INDEX)
 
-- [ ] **INDEX-01**: User can configure one or more watch roots that are scanned for git repositories
-- [ ] **INDEX-02**: User can manually add a repository path to the index
-- [ ] **INDEX-03**: User can exclude a path from indexing (even under a watch root)
-- [ ] **INDEX-04**: System detects repositories by presence of `.git` (not by folder name alone)
-- [ ] **INDEX-05**: User can trigger a full re-scan of watch roots from CLI or tray
+- [x] **INDEX-01**: User can configure one or more watch roots that are scanned for git repositories
+- [x] **INDEX-02**: User can manually add a repository path to the index
+- [x] **INDEX-03**: User can exclude a path from indexing (even under a watch root)
+- [x] **INDEX-04**: System detects repositories by presence of `.git` (not by folder name alone)
+- [x] **INDEX-05**: User can trigger a full re-scan of watch roots from CLI or tray
 
 ### Git State (GIT)
 
@@ -89,7 +89,9 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INDEX-01..05 | Phase 2 | Pending |
+| INDEX-01 | Phase 2 | Complete |
+| INDEX-02 | Phase 2 | Complete |
+| INDEX-03..05 | Phase 2 | Complete |
 | GIT-01..04 | Phase 3 | Pending |
 | SRCH-01..03 | Phase 4 | Pending |
 | ORG-01..04 | Phase 5 | Pending |
