@@ -214,6 +214,29 @@ fn remove_repo_succeeds_when_directory_deleted() {
 }
 
 #[test]
+fn remove_repo_with_exclude_escapes_glob_metacharacters_in_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("star*repo");
+    fs::create_dir_all(&repo).expect("repo dir");
+    git_init(&repo);
+
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+
+    ctx.register_manual(&repo).expect("register");
+    ctx.remove_repo(&repo).expect("remove");
+
+    let config = std::fs::read_to_string(&config_path).expect("read config");
+    let canon = repo.canonicalize().expect("canonicalize");
+    let escaped_name = "star\\*repo";
+    assert!(
+        config.contains(&format!("{}/{}", canon.parent().expect("parent").display(), escaped_name)),
+        "expected escaped glob segment in config: {config}"
+    );
+}
+
+#[test]
 fn remove_repo_by_basename_does_not_match_similar_directory_name() {
     let dir = tempfile::tempdir().expect("tempdir");
     let parent = dir.path().join("collision-parent");

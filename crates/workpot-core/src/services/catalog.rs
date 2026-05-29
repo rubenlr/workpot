@@ -192,16 +192,13 @@ pub fn remove_repo_with_exclude(
 ) -> Result<()> {
     let (repo_path, _path_key) = resolve_repo_location(conn, path)?;
 
-    let parent = repo_path.parent().ok_or_else(|| {
-        WorkpotError::InvalidPath(format!("repo path has no parent: {}", repo_path.display()))
-    })?;
-    let name = repo_path.file_name().ok_or_else(|| {
-        WorkpotError::InvalidPath(format!(
+    if repo_path.file_name().is_none() {
+        return Err(WorkpotError::InvalidPath(format!(
             "repo path has no directory name: {}",
             repo_path.display()
-        ))
-    })?;
-    let base = format!("{}/{}", parent.display(), name.to_string_lossy());
+        )));
+    }
+    let base = path_to_exclude_glob_prefix(&repo_path);
     let tree = format!("{base}/**");
 
     let mut config_to_save = config.clone();
@@ -218,6 +215,39 @@ pub fn remove_repo_with_exclude(
     }
 
     remove_repo(conn, path)
+}
+
+/// Escape glob metacharacters in one path segment for globset patterns.
+fn escape_glob_literal(segment: &str) -> String {
+    let mut out = String::with_capacity(segment.len());
+    for c in segment.chars() {
+        match c {
+            '\\' | '*' | '?' | '[' | ']' | '{' | '}' => {
+                out.push('\\');
+                out.push(c);
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// Canonical repo path as a literal glob prefix (per-segment escaping).
+fn path_to_exclude_glob_prefix(path: &Path) -> String {
+    let mut out = String::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::RootDir => out.push('/'),
+            std::path::Component::Normal(name) => {
+                if !out.is_empty() && !out.ends_with('/') {
+                    out.push('/');
+                }
+                out.push_str(&escape_glob_literal(&name.to_string_lossy()));
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 pub(crate) fn is_git_worktree(path: &Path) -> bool {
