@@ -453,18 +453,17 @@ workpot repo add|list|remove   # remove gains exclude glob (D-10)
 | A4 | `globset` patterns use `/` on macOS paths when matching | Excludes | User globs with `\` may not match — document POSIX-style |
 | A5 | Tray INDEX-05 satisfied by CLI in Phase 2 only | Requirements | Phase 4 must wire tray to same `IndexService` |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Backfill `git_common_dir` for existing Phase 1 rows**
-   - What we know: Migration adds column with DEFAULT ''.
-   - Recommendation: First `workpot index` or lazy validation fills via `git rev-parse`; planner task in Wave 1.
+1. **Backfill `git_common_dir` for existing Phase 1 rows** — **RESOLVED**
+   - Decision: On first `workpot index` after migration, backfill any row with empty `git_common_dir` via `git rev-parse --git-common-dir` before/during merge (same helper as scan). Planner task in 02-05 (index orchestration).
+   - Migration keeps `DEFAULT ''`; no separate one-off migration script.
 
-2. **`repo_git_id` vs `git_common_dir` column name**
-   - What we know: Discretion allows distinct exposed id.
-   - Recommendation: Single column `git_common_dir` only in Phase 2; alias in API later if needed.
+2. **`repo_git_id` vs `git_common_dir` column name** — **RESOLVED**
+   - Decision: Single SQLite column and API field `git_common_dir` only in Phase 2 (D-05). No `repo_git_id` column; alias in API later if needed.
 
-3. **Exact failure mode when `git rev-parse` fails for one path**
-   - Recommendation: Skip with `skipped` in change log + warning on stderr; do not fail entire index unless all paths fail [ASSUMED — planner may tighten].
+3. **Exact failure mode when `git rev-parse` fails for one path** — **RESOLVED**
+   - Decision: **Skip** the path: log warning to stderr, record `action='skipped'` in `index_changes` (when history wired), increment `skipped` in summary. **Do not** abort the whole index for a single-path git failure. Abort only on cap exceeded (D-18) or fatal errors (DB, config).
 
 ## Environment Availability
 
@@ -565,7 +564,7 @@ workpot repo add|list|remove   # remove gains exclude glob (D-10)
 ### Tertiary (LOW / ASSUMED)
 
 - Built-in exclude list completeness for macOS — tune in execute (A2)
-- Skip-vs-fail policy for single-path `git rev-parse` errors (Open Question 3)
+- Per-path `git rev-parse` failure: skip + skipped in change log (RESOLVED OQ3)
 
 ## Metadata
 
