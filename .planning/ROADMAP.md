@@ -99,7 +99,20 @@ Plans:
 3. Repos with upstream show ahead/behind when available
 4. Refreshing 50+ repos does not block the tray for more than 500ms perceived latency
 
-**Plans:** TBD via `/gsd-plan-phase 3`
+**Plans:** 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Package checkpoint, git2/rayon/humantime deps, migration 003, GitState struct, infra/git.rs rewrite (GIT-01/02/03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 03-02-PLAN.md — RepoRecord extension, services/git_state.rs (refresh_git_state + refresh_all), catalog SELECT, GIT-01/02/03/04 tests (GIT-01/02/03/04)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03-03-PLAN.md — index.rs second pass, CLI output (index stats + repo list git state), end-to-end verify (GIT-01/02/03/04)
 
 ---
 
@@ -188,7 +201,7 @@ Plans:
 |-------|--------|----------------|
 | 1 | Planned | 0/3 |
 | 2 | Planned | 0/4 |
-| 3 | Not started | 0/0 |
+| 3 | Planned | 0/3 |
 | 4 | Not started | 0/0 |
 | 5 | Not started | 0/0 |
 | 6 | Not started | 0/0 |
