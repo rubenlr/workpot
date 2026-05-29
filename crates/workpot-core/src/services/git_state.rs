@@ -26,7 +26,7 @@ pub fn persist_git_state(conn: &Connection, path_key: &str, state: &GitState) ->
          WHERE path=?7",
         params![
             state.branch,
-            state.is_dirty.map(|b| i64::from(b)),
+            state.is_dirty.map(i64::from),
             state.ahead,
             state.behind,
             now_secs(),
