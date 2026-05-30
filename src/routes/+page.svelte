@@ -271,24 +271,26 @@
     {:else}
       <ul class="space-y-0.5" role="listbox">
         {#each displayRepos as repo, i (repo.path)}
-          <li
-            data-row-index={i}
-            role="option"
-            aria-selected={i === selectedIndex}
-            class="cursor-pointer rounded-md px-2 py-1.5 {i === selectedIndex
-              ? 'bg-blue-600 text-white dark:bg-blue-500'
-              : 'hover:bg-black/5 dark:hover:bg-white/10'}"
-            onclick={(e) => {
-              selectedIndex = i;
-              if (e.metaKey) {
-                void openSelected(true);
-              }
-            }}
-            ondblclick={() => {
-              selectedIndex = i;
-              void openSelected(false);
-            }}
-          >
+          <li role="presentation">
+            <button
+              type="button"
+              data-row-index={i}
+              role="option"
+              aria-selected={i === selectedIndex}
+              class="w-full cursor-pointer rounded-md px-2 py-1.5 text-left {i === selectedIndex
+                ? 'bg-blue-600 text-white dark:bg-blue-500'
+                : 'hover:bg-black/5 dark:hover:bg-white/10'}"
+              onclick={(e) => {
+                selectedIndex = i;
+                if (e.metaKey) {
+                  void openSelected(true);
+                }
+              }}
+              ondblclick={() => {
+                selectedIndex = i;
+                void openSelected(false);
+              }}
+            >
             <div class="flex items-center gap-2">
               <span
                 class="h-2 w-2 shrink-0 rounded-full {dirtyDotClass(repo)}"
@@ -312,6 +314,7 @@
                 {repo.parent_dir}
               </div>
             {/if}
+            </button>
           </li>
         {/each}
       </ul>

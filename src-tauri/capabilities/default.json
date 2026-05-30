@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "core:window:default",
+    "core:window:allow-hide",
     "core:tray:default",
     "core:event:default",
     "allow-list-repos",

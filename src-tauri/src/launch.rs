@@ -1,6 +1,45 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use workpot_core::AppContext;
+
+/// Default template uses bare `cursor`; on macOS the tray resolves to Cursor.app's bundled CLI when it is not on PATH.
+/// Set `launch_cmd` to an absolute program path in config to override.
+
+fn is_unqualified_program(program: &str) -> bool {
+    !program.contains('/') && !program.contains('\\')
+}
+
+/// macOS Cursor.app bundled CLI locations (bare `cursor` is often missing from GUI PATH).
+#[cfg(target_os = "macos")]
+fn cursor_bundled_candidates() -> Vec<PathBuf> {
+    let mut paths = vec![PathBuf::from(
+        "/Applications/Cursor.app/Contents/Resources/app/bin/cursor",
+    )];
+    if let Some(home) = std::env::var_os("HOME") {
+        paths.push(
+            PathBuf::from(home).join(
+                "Applications/Cursor.app/Contents/Resources/app/bin/cursor",
+            ),
+        );
+    }
+    paths
+}
+
+/// Resolve bare `cursor` to an installed Cursor.app binary on macOS; honor absolute paths and other programs.
+pub fn resolve_launch_program(program: &str) -> String {
+    if program != "cursor" || !is_unqualified_program(program) {
+        return program.to_string();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        for candidate in cursor_bundled_candidates() {
+            if candidate.is_file() {
+                return candidate.display().to_string();
+            }
+        }
+    }
+    program.to_string()
+}
 
 /// Split `launch_cmd` template into program + args after substituting `{path}`.
 pub fn build_command(template: &str, repo_path: &Path) -> Result<(String, Vec<String>), String> {
@@ -35,6 +74,7 @@ pub fn launch_repo(ctx: &AppContext, path: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let template = ctx.config().launch_cmd.clone();
     let (program, args) = build_command(&template, &repo_path)?;
+    let program = resolve_launch_program(&program);
     Command::new(&program)
         .args(&args)
         .spawn()
@@ -92,6 +132,32 @@ mod tests {
         )
         .expect_err("newline");
         assert!(err.contains("newline"));
+    }
+
+    #[test]
+    fn resolve_launch_program_leaves_absolute_path_unchanged() {
+        let abs = "/Applications/Cursor.app/Contents/Resources/app/bin/cursor";
+        assert_eq!(resolve_launch_program(abs), abs);
+        assert_eq!(resolve_launch_program("/opt/cursor"), "/opt/cursor");
+    }
+
+    #[test]
+    fn resolve_launch_program_leaves_non_cursor_unchanged() {
+        assert_eq!(resolve_launch_program("code"), "code");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn resolve_launch_program_finds_bundled_cursor_when_installed() {
+        let system = PathBuf::from(
+            "/Applications/Cursor.app/Contents/Resources/app/bin/cursor",
+        );
+        let resolved = resolve_launch_program("cursor");
+        if system.is_file() {
+            assert_eq!(resolved, system.display().to_string());
+        } else {
+            assert_eq!(resolved, "cursor");
+        }
     }
 
     #[test]
