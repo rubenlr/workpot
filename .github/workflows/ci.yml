@@ -68,6 +68,9 @@ jobs:
       - name: Fetch dependencies (macOS D-12)
         if: matrix.os == 'macos-latest'
         run: cargo fetch
+      - name: Clippy tray crate
+        if: matrix.os == 'macos-latest'
+        run: cargo clippy -p workpot-tray --all-targets -- -D warnings
       - name: Check no network deps (DATA-02)
         if: matrix.os == 'macos-latest'
         run: bash scripts/check-no-network-deps.sh
