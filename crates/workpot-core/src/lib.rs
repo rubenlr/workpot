@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 pub use crate::domain::GitState;
 pub use crate::domain::RepoRecord;
 pub use crate::error::WorkpotError;
+pub use crate::services::git_state::GitRefreshSummary;
 
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
@@ -145,6 +146,45 @@ impl AppContext {
         path: &std::path::Path,
     ) -> crate::error::Result<crate::domain::GitState> {
         crate::services::git_state::refresh_and_persist(&self.conn, path)
+    }
+
+    /// Refresh git state for all non-excluded repos (rayon batch off lock, then single tx persist).
+    pub fn refresh_all_git_state(&self) -> Result<GitRefreshSummary> {
+        let paths: Vec<PathBuf> = {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT path FROM repos WHERE excluded = 0")?;
+            stmt.query_map([], |row| row.get::<_, String>(0))?
+                .filter_map(|r| r.ok())
+                .map(PathBuf::from)
+                .collect()
+        };
+
+        let git_results = crate::services::git_state::refresh_all(paths);
+
+        let mut refreshed = 0u32;
+        let mut errors = 0u32;
+        let mut any_dirty = false;
+
+        let tx = self.conn.unchecked_transaction()?;
+        for r in &git_results {
+            if r.state.error.is_some() {
+                errors += 1;
+            } else {
+                refreshed += 1;
+            }
+            if r.state.is_dirty == Some(true) {
+                any_dirty = true;
+            }
+            crate::services::git_state::persist_git_state(&tx, &r.path, &r.state)?;
+        }
+        tx.commit()?;
+
+        Ok(GitRefreshSummary {
+            refreshed,
+            errors,
+            any_dirty,
+        })
     }
 }
 

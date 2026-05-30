@@ -2,8 +2,17 @@ use crate::domain::GitState;
 use crate::error::Result;
 use rayon::prelude::*;
 use rusqlite::{Connection, params};
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Summary returned after batch git refresh (tray background refresh).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct GitRefreshSummary {
+    pub refreshed: u32,
+    pub errors: u32,
+    pub any_dirty: bool,
+}
 
 /// Result of a single-repo git refresh, returned from batch refresh_all.
 pub struct GitRefreshResult {
