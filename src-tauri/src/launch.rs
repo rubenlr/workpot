@@ -13,7 +13,12 @@ pub fn build_command(template: &str, repo_path: &Path) -> Result<(String, Vec<St
     if !template.contains("{path}") {
         return Err("launch_cmd must contain {path} placeholder".to_string());
     }
-    let expanded = template.replace("{path}", path_str);
+    let path_token = if path_str.contains(char::is_whitespace) {
+        format!("\"{path_str}\"")
+    } else {
+        path_str.to_string()
+    };
+    let expanded = template.replace("{path}", &path_token);
     let parts = shell_words::split(&expanded).map_err(|e| format!("invalid launch_cmd: {e}"))?;
     if parts.is_empty() {
         return Err("launch_cmd is empty after parsing".to_string());
@@ -66,6 +71,17 @@ mod tests {
         let err = build_command("cursor --new-window", Path::new("/tmp/foo"))
             .expect_err("missing placeholder");
         assert!(err.contains("{path}"));
+    }
+
+    #[test]
+    fn build_command_handles_spaces_in_repo_path() {
+        let (program, args) = build_command(
+            "cursor --new-window {path}",
+            Path::new("/tmp/my repos/foo"),
+        )
+        .expect("parse");
+        assert_eq!(program, "cursor");
+        assert!(args.iter().any(|a| a == "/tmp/my repos/foo"));
     }
 
     #[test]

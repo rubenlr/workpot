@@ -3,13 +3,16 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import {
+    gitRefreshErrorMessage,
+    shouldClearListErrorOnRefreshLoad,
+  } from "$lib/gitRefresh";
+  import { selectionIndexAfterBackgroundOpen } from "$lib/openSelection";
+  import { trayListMaxHeightPx } from "$lib/panelLayout";
   import { moveSelectionIndex } from "$lib/selection";
   import { dirtyDotClass } from "$lib/repoRow";
   import { filterAndSortRepos } from "$lib/trayList";
   import type { GitRefreshSummary, RepoDto, TrayConfigDto } from "$lib/types";
-
-  const ROW_HEIGHT_PX = 44;
-  const FILTER_BAR_HEIGHT_PX = 52;
 
   let repos = $state<RepoDto[]>([]);
   let error = $state<string | null>(null);
@@ -20,9 +23,7 @@
   let launchError = $state<string | null>(null);
   let refreshing = $state(false);
 
-  let listMaxHeightPx = $derived(
-    maxVisibleRows * ROW_HEIGHT_PX + FILTER_BAR_HEIGHT_PX,
-  );
+  let listMaxHeightPx = $derived(trayListMaxHeightPx(maxVisibleRows));
 
   let displayRepos = $derived(filterAndSortRepos(repos, filterQuery));
 
@@ -70,10 +71,11 @@
       } else {
         const openedPath = repo.path;
         await loadRepos(false);
-        const idx = filterAndSortRepos(repos, filterQuery).findIndex(
-          (r) => r.path === openedPath,
+        selectedIndex = selectionIndexAfterBackgroundOpen(
+          repos,
+          filterQuery,
+          openedPath,
         );
-        selectedIndex = idx >= 0 ? idx : 0;
       }
     } catch (e) {
       launchError = String(e);
@@ -187,15 +189,8 @@
         refreshing = false;
         selectedIndex = 0;
         const summary = event.payload;
-        const refreshFailed =
-          summary.errors > 0 && summary.refreshed === 0;
-        const refreshPartial = summary.errors > 0 && summary.refreshed > 0;
-        void loadRepos(!(refreshFailed || refreshPartial)).then(() => {
-          if (refreshFailed) {
-            error = "Git refresh failed for all repositories.";
-          } else if (refreshPartial) {
-            error = `Git refresh completed with ${summary.errors} error(s).`;
-          }
+        void loadRepos(shouldClearListErrorOnRefreshLoad(summary)).then(() => {
+          error = gitRefreshErrorMessage(summary);
         });
       },
     );

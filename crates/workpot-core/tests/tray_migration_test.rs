@@ -115,6 +115,17 @@ fn indexed_launch_path_resolves_non_excluded_repo() {
 }
 
 #[test]
+fn indexed_launch_path_rejects_unknown_repo() {
+    let (_dir, conn) = temp_db();
+    let err = catalog::indexed_launch_path(&conn, Path::new("/tmp/not-indexed"))
+        .expect_err("missing");
+    match &err {
+        WorkpotError::NotFound(key) => assert_eq!(key.as_str(), "/tmp/not-indexed"),
+        other => panic!("expected NotFound, got: {other:?}"),
+    }
+}
+
+#[test]
 fn indexed_launch_path_rejects_excluded_repo() {
     let (_dir, conn) = temp_db();
     let path_key = "/tmp/tray-indexed-launch-excluded";
