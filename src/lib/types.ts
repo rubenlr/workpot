@@ -1,3 +1,7 @@
+export interface TrayConfigDto {
+  max_visible_rows: number;
+}
+
 export interface RepoDto {
   path: string;
   name: string;
