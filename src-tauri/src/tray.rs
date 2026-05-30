@@ -37,7 +37,12 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let icon = app
         .default_window_icon()
         .cloned()
-        .expect("bundled default window icon");
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "bundled default window icon missing from app bundle",
+            )
+        })?;
 
     let _tray = TrayIconBuilder::with_id("main")
         .icon(icon)
