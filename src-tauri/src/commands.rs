@@ -50,6 +50,25 @@ fn parent_dir_display(path: &Path) -> String {
     parent.display().to_string()
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TrayConfigDto {
+    pub max_visible_rows: u32,
+}
+
+pub fn tray_config_from(ctx: &AppContext) -> TrayConfigDto {
+    TrayConfigDto {
+        max_visible_rows: ctx.config().max_visible_rows,
+    }
+}
+
+#[tauri::command]
+pub fn get_tray_config(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<TrayConfigDto, String> {
+    let ctx = state
+        .lock()
+        .map_err(|_| "AppContext lock poisoned".to_string())?;
+    Ok(tray_config_from(&ctx))
+}
+
 #[tauri::command]
 pub fn list_repos(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<Vec<RepoDto>, String> {
     let ctx = state
@@ -88,6 +107,16 @@ mod tests {
         assert_eq!(dto.parent_dir, "~/c/workpot");
         assert_eq!(dto.branch, Some("main".to_string()));
         assert_eq!(dto.is_dirty, Some(false));
+    }
+
+    #[test]
+    fn tray_config_from_default_max_visible_rows() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("config.toml");
+        let db_path = dir.path().join("workpot.db");
+        let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+        let cfg = tray_config_from(&ctx);
+        assert_eq!(cfg.max_visible_rows, 15);
     }
 
     #[test]

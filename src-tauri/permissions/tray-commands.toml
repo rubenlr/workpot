@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-list-repos"
+description = "Allows list_repos IPC."
+commands.allow = ["list_repos"]
+
+[[permission]]
+identifier = "allow-get-tray-config"
+description = "Allows get_tray_config IPC."
+commands.allow = ["get_tray_config"]

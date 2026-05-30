@@ -18,12 +18,21 @@ pub fn run() {
             if window.label() != "panel" {
                 return;
             }
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+            match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                WindowEvent::Focused(false) => {
+                    let _ = window.hide();
+                }
+                _ => {}
             }
         })
-        .invoke_handler(tauri::generate_handler![commands::list_repos])
+        .invoke_handler(tauri::generate_handler![
+            commands::list_repos,
+            commands::get_tray_config
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -177,6 +177,18 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Allows get_tray_config IPC.",
+          "type": "string",
+          "const": "allow-get-tray-config",
+          "markdownDescription": "Allows get_tray_config IPC."
+        },
+        {
+          "description": "Allows list_repos IPC.",
+          "type": "string",
+          "const": "allow-list-repos",
+          "markdownDescription": "Allows list_repos IPC."
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",

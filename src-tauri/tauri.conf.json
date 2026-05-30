@@ -17,6 +17,7 @@
         "width": 400,
         "height": 500,
         "decorations": false,
+        "transparent": true,
         "visible": false,
         "skipTaskbar": true
       }

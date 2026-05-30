@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Workpot tray panel","local":true,"windows":["panel"],"permissions":["core:default","core:window:default","core:tray:default","core:event:default"]}}
+{"default":{"identifier":"default","description":"Workpot tray panel","local":true,"windows":["panel"],"permissions":["core:default","core:window:default","core:tray:default","core:event:default","allow-list-repos","allow-get-tray-config"]}}
