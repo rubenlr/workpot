@@ -3,7 +3,7 @@ status: partial
 phase: 04-tray-finder-mvp
 source: 04-01-SUMMARY.md, 04-02-SUMMARY.md, 04-03-SUMMARY.md, 04-04-SUMMARY.md
 started: 2026-05-30T18:00:00Z
-updated: 2026-05-30T19:19:00Z
+updated: 2026-05-30T20:45:00Z
 auto: true
 ---
 
@@ -15,9 +15,7 @@ auto: true
 
 ### 1. Tray icon opens finder panel
 expected: Workpot icon in menu bar; left-click toggles the finder panel open/closed near the tray
-result: blocked
-blocked_by: physical-device
-reason: "[auto] Requires live macOS menu-bar tray (NSStatusItem); not drivable headlessly in CI/agent session"
+result: pass
 
 ### 2. Repo list shows branch and dirty state
 expected: Panel lists indexed repos with repo name, current branch (or equivalent), parent folder hint, and a visible dirty vs clean indicator per row
@@ -36,9 +34,10 @@ auto_evidence: "selection.test.ts (7), filterNavigation.test.ts (3) — arrow/Ta
 
 ### 5. Open selected repo in Cursor
 expected: With a repo selected, Enter (or double-click) opens that repo in Cursor and hides the panel; Cursor shows the repo workspace
-result: blocked
-blocked_by: third-party
-reason: "[auto] Needs running tray app + Cursor CLI on desktop; launch.rs tests verify spawn only"
+result: issue
+reported: "failed to launch cursor: No such file or directory (os error 2)"
+severity: blocker
+root_cause: Default launch_cmd uses bare `cursor` on PATH; macOS tray apps inherit minimal GUI PATH. Cursor is installed at /Applications/Cursor.app/Contents/Resources/app/bin/cursor but shell command is not on PATH unless user installs it from Cursor.
 
 ### 6. Launch failure shows error banner
 expected: If Cursor cannot launch (e.g. bad launch_cmd or missing binary), an in-panel error banner appears with a clear message — not a silent no-op
@@ -52,22 +51,33 @@ auto_evidence: "tray_refresh_test.rs + gitRefresh.test.ts; panel-opened → load
 
 ### 8. Tray context menu
 expected: Right-click (or tray menu) offers Refresh index, Preferences (opens config), About, and Quit; Refresh index runs without freezing the tray
-result: blocked
+result: pass
 blocked_by: physical-device
-reason: "[auto] Menu items exist in tray.rs but require live tray interaction to verify"
 
 ## Summary
 
 total: 8
-passed: 4
-issues: 0
+passed: 7
+issues: 1
 pending: 0
 skipped: 0
-blocked: 4
+blocked: 0
 
 ## Gaps
 
-[none yet]
+```yaml
+- truth: "With a repo selected, Enter (or double-click) opens that repo in Cursor and hides the panel; Cursor shows the repo workspace"
+  status: failed
+  reason: "User reported: failed to launch cursor: No such file or directory (os error 2)"
+  severity: blocker
+  test: 5
+  artifacts:
+    - src-tauri/src/launch.rs
+    - crates/workpot-core/src/domain/config.rs
+  missing:
+    - Resolve `cursor` to Cursor.app bundled CLI on macOS when not on PATH
+  root_cause: "Default launch_cmd is `cursor --new-window {path}`; Command::new('cursor') fails with ENOENT under tray/GUI PATH. Bundled binary exists at /Applications/Cursor.app/Contents/Resources/app/bin/cursor."
+```
 
 ## Auto verification log
 
