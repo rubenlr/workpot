@@ -144,6 +144,7 @@ jobs:
         run: |
           npm ci
           npm run test:coverage
+          cp coverage/lcov.info lcov-js.info
       - name: Upload core + cli coverage
         uses: actions/upload-artifact@v4
         with:
@@ -160,7 +161,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lcov-js.info
-          path: coverage/lcov.info
+          path: lcov-js.info
           retention-days: 7
 
   sonarcloud:
@@ -184,12 +185,12 @@ jobs:
         with:
           name: lcov-js.info
 
-      - name: Merge Rust LCOV and prepare JS report
+      - name: Merge Rust LCOV reports
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq lcov
           lcov -a lcov-core-cli.info -a lcov-tray.info -o lcov-rust.info --ignore-errors empty
-          cp coverage/lcov.info lcov-js.info
+          test -f lcov-js.info
 
       - uses: actions/setup-node@v4
         with:
