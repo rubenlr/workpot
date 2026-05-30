@@ -6,9 +6,9 @@ on:
   pull_request:
     branches: [master]
     paths:
-      - '.github/workflows/release*.yml'
-      - 'Cargo.toml'
-      - 'crates/**'
+      - ".github/workflows/release*.yml"
+      - "Cargo.toml"
+      - "crates/**"
 
 permissions:
   contents: read

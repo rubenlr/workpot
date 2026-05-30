@@ -119,10 +119,7 @@
   }
 
   function onPanelKeydown(e: KeyboardEvent) {
-    if (
-      e.target instanceof HTMLInputElement &&
-      e.target.id === "repo-filter"
-    ) {
+    if (e.target instanceof HTMLInputElement && e.target.id === "repo-filter") {
       return;
     }
     if (e.metaKey && (e.key === "r" || e.key === "R")) {
@@ -199,10 +196,13 @@
       },
     );
 
-    const unlistenRefreshFailed = listen<string>("git-refresh-failed", (event) => {
-      refreshing = false;
-      error = event.payload;
-    });
+    const unlistenRefreshFailed = listen<string>(
+      "git-refresh-failed",
+      (event) => {
+        refreshing = false;
+        error = event.payload;
+      },
+    );
 
     focusFilter();
 
@@ -277,7 +277,8 @@
               data-row-index={i}
               role="option"
               aria-selected={i === selectedIndex}
-              class="w-full cursor-pointer rounded-md px-2 py-1.5 text-left {i === selectedIndex
+              class="w-full cursor-pointer rounded-md px-2 py-1.5 text-left {i ===
+              selectedIndex
                 ? 'bg-blue-600 text-white dark:bg-blue-500'
                 : 'hover:bg-black/5 dark:hover:bg-white/10'}"
               onclick={(e) => {
@@ -291,29 +292,29 @@
                 void openSelected(false);
               }}
             >
-            <div class="flex items-center gap-2">
-              <span
-                class="h-2 w-2 shrink-0 rounded-full {dirtyDotClass(repo)}"
-                aria-hidden="true"
-              ></span>
-              <span class="truncate font-medium">{repo.name}</span>
-              <span
-                class="ml-auto truncate text-xs {i === selectedIndex
-                  ? 'text-blue-100'
-                  : 'text-neutral-500'}"
-              >
-                {repo.branch ?? "—"}
-              </span>
-            </div>
-            {#if repo.parent_dir}
-              <div
-                class="mt-0.5 truncate pl-4 text-xs {i === selectedIndex
-                  ? 'text-blue-100/90'
-                  : 'text-neutral-500'}"
-              >
-                {repo.parent_dir}
+              <div class="flex items-center gap-2">
+                <span
+                  class="h-2 w-2 shrink-0 rounded-full {dirtyDotClass(repo)}"
+                  aria-hidden="true"
+                ></span>
+                <span class="truncate font-medium">{repo.name}</span>
+                <span
+                  class="ml-auto truncate text-xs {i === selectedIndex
+                    ? 'text-blue-100'
+                    : 'text-neutral-500'}"
+                >
+                  {repo.branch ?? "—"}
+                </span>
               </div>
-            {/if}
+              {#if repo.parent_dir}
+                <div
+                  class="mt-0.5 truncate pl-4 text-xs {i === selectedIndex
+                    ? 'text-blue-100/90'
+                    : 'text-neutral-500'}"
+                >
+                  {repo.parent_dir}
+                </div>
+              {/if}
             </button>
           </li>
         {/each}

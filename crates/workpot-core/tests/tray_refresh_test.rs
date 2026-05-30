@@ -1,7 +1,9 @@
+#![allow(clippy::disallowed_methods)]
+
 use std::path::PathBuf;
+use workpot_core::AppContext;
 use workpot_core::domain::GitState;
 use workpot_core::services::git_state::GitRefreshResult;
-use workpot_core::AppContext;
 
 /// Initialize a git repo using git2 (same pattern as git_state_test).
 fn init_git_repo(parent: &std::path::Path, name: &str) -> (git2::Repository, PathBuf) {
@@ -51,7 +53,11 @@ fn tray_refresh_all_git_state_refreshes_indexed_repos() {
     ctx.register_manual(&path_b).expect("register b");
 
     let summary = ctx.refresh_all_git_state().expect("refresh");
-    assert!(summary.refreshed >= 1, "expected refreshed >= 1, got {:?}", summary);
+    assert!(
+        summary.refreshed >= 1,
+        "expected refreshed >= 1, got {:?}",
+        summary
+    );
     assert_eq!(summary.errors, 0);
 
     let repos = ctx.list_repos().expect("list");

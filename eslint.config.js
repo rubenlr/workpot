@@ -1,0 +1,53 @@
+import js from "@eslint/js";
+import svelte from "eslint-plugin-svelte";
+import globals from "globals";
+import ts from "typescript-eslint";
+import svelteConfig from "./svelte.config.js";
+
+export default ts.config(
+  js.configs.recommended,
+  ...ts.configs.recommended,
+  ...svelte.configs["flat/recommended"],
+  {
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
+  },
+  {
+    files: ["**/*.svelte"],
+    languageOptions: {
+      parserOptions: {
+        parser: ts.parser,
+        extraFileExtensions: [".svelte"],
+        svelteConfig,
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-unused-expressions": "off",
+    },
+  },
+  {
+    rules: {
+      "prefer-const": "off",
+      "svelte/prefer-const": [
+        "error",
+        {
+          destructuring: "all",
+          excludedRunes: ["$props", "$derived", "$state"],
+        },
+      ],
+    },
+  },
+  {
+    ignores: [
+      ".svelte-kit/**",
+      "build/**",
+      "src-tauri/gen/**",
+      "node_modules/**",
+      "target/**",
+    ],
+  },
+);

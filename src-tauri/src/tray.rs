@@ -61,10 +61,7 @@ fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
         && let (tauri::Position::Physical(pos), tauri::Size::Physical(size)) =
             (rect.position, rect.size)
     {
-        let _ = panel.set_position(PhysicalPosition::new(
-            pos.x,
-            pos.y + size.height as i32,
-        ));
+        let _ = panel.set_position(PhysicalPosition::new(pos.x, pos.y + size.height as i32));
     }
 
     #[cfg(target_os = "macos")]
@@ -121,48 +118,41 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         dirty: dirty_icon,
     });
 
-    let refresh_index = MenuItem::with_id(app, "refresh_index", "Refresh index", true, None::<&str>)?;
+    let refresh_index =
+        MenuItem::with_id(app, "refresh_index", "Refresh index", true, None::<&str>)?;
     let preferences = MenuItem::with_id(app, "preferences", "Preferences…", true, None::<&str>)?;
     let about = MenuItem::with_id(app, "about", "About Workpot", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Workpot", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
-        &[
-            &refresh_index,
-            &preferences,
-            &about,
-            &separator,
-            &quit,
-        ],
+        &[&refresh_index, &preferences, &about, &separator, &quit],
     )?;
 
     let _tray = TrayIconBuilder::with_id("main")
         .icon(tray_icon)
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| {
-            match event.id.as_ref() {
-                "refresh_index" => {
-                    if let Some(state) = app.try_state::<Arc<Mutex<AppContext>>>() {
-                        spawn_background_index(app.clone(), state.inner().clone());
-                    }
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "refresh_index" => {
+                if let Some(state) = app.try_state::<Arc<Mutex<AppContext>>>() {
+                    spawn_background_index(app.clone(), state.inner().clone());
                 }
-                "preferences" => {
-                    if let Some(state) = app.try_state::<Arc<Mutex<AppContext>>>() {
-                        if let Ok(ctx) = state.lock() {
-                            open_path_in_default_app(ctx.config_path());
-                        }
-                    }
-                }
-                "about" => {
-                    show_about_dialog(workpot_core::version());
-                }
-                "quit" => {
-                    app.exit(0);
-                }
-                _ => {}
             }
+            "preferences" => {
+                if let Some(state) = app.try_state::<Arc<Mutex<AppContext>>>()
+                    && let Ok(ctx) = state.lock()
+                {
+                    open_path_in_default_app(ctx.config_path());
+                }
+            }
+            "about" => {
+                show_about_dialog(workpot_core::version());
+            }
+            "quit" => {
+                app.exit(0);
+            }
+            _ => {}
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {

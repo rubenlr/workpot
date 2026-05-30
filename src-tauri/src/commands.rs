@@ -94,10 +94,7 @@ pub(crate) fn update_tray_dirty_icon(app: &AppHandle, any_dirty: bool) {
 }
 
 /// Spawn rayon git refresh off the UI thread; emit `git-refresh-complete` when done.
-pub(crate) fn spawn_background_git_refresh(
-    app: AppHandle,
-    state: Arc<Mutex<AppContext>>,
-) {
+pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<Mutex<AppContext>>) {
     tauri::async_runtime::spawn(async move {
         let paths = match state.lock() {
             Ok(ctx) => ctx.git_refresh_paths().map_err(|e| e.to_string()),
@@ -161,8 +158,8 @@ pub fn open_in_cursor(
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    use workpot_core::domain::SOURCE_MANUAL;
     use workpot_core::RepoRecord;
+    use workpot_core::domain::SOURCE_MANUAL;
 
     #[test]
     fn repo_dto_shortens_parent_under_home() {

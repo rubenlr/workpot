@@ -14,8 +14,7 @@ function subsequenceMatch(query: string, field: string): boolean {
 
 function scoreField(query: string, field: string, nameBonus: boolean): number {
   const f = field.toLowerCase();
-  const matches =
-    f.includes(query) || subsequenceMatch(query, f);
+  const matches = f.includes(query) || subsequenceMatch(query, f);
   if (!matches) {
     return 0;
   }

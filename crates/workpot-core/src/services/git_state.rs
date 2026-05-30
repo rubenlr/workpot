@@ -33,11 +33,7 @@ pub fn is_hard_refresh_failure(state: &GitState) -> bool {
 }
 
 /// Update only error + timestamp; preserve prior branch/dirty/ahead/behind (CR-01).
-pub fn persist_git_state_error_only(
-    conn: &Connection,
-    path_key: &str,
-    error: &str,
-) -> Result<()> {
+pub fn persist_git_state_error_only(conn: &Connection, path_key: &str, error: &str) -> Result<()> {
     conn.execute(
         "UPDATE repos SET git_state_error=?1, git_refreshed_at=?2 WHERE path=?3",
         params![error, now_secs(), path_key],

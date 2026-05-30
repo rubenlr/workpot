@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 use rusqlite::Connection;
 use std::fs;
 use std::path::PathBuf;

@@ -1,0 +1,6 @@
+.svelte-kit/
+build/
+src-tauri/gen/
+node_modules/
+target/
+.planning/

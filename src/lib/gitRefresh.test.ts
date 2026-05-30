@@ -5,9 +5,7 @@ import {
 } from "./gitRefresh";
 import type { GitRefreshSummary } from "./types";
 
-function summary(
-  partial: Partial<GitRefreshSummary>,
-): GitRefreshSummary {
+function summary(partial: Partial<GitRefreshSummary>): GitRefreshSummary {
   return {
     refreshed: 0,
     errors: 0,
@@ -22,15 +20,15 @@ describe("gitRefreshErrorMessage", () => {
   });
 
   it("reports total failure", () => {
-    expect(
-      gitRefreshErrorMessage(summary({ refreshed: 0, errors: 2 })),
-    ).toBe("Git refresh failed for all repositories.");
+    expect(gitRefreshErrorMessage(summary({ refreshed: 0, errors: 2 }))).toBe(
+      "Git refresh failed for all repositories.",
+    );
   });
 
   it("reports partial failure", () => {
-    expect(
-      gitRefreshErrorMessage(summary({ refreshed: 1, errors: 1 })),
-    ).toBe("Git refresh completed with 1 error(s).");
+    expect(gitRefreshErrorMessage(summary({ refreshed: 1, errors: 1 }))).toBe(
+      "Git refresh completed with 1 error(s).",
+    );
   });
 });
 

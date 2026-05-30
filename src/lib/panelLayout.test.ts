@@ -7,7 +7,9 @@ import {
 
 describe("trayListMaxHeightPx", () => {
   it("uses default 15 rows plus filter bar", () => {
-    expect(trayListMaxHeightPx(15)).toBe(15 * ROW_HEIGHT_PX + FILTER_BAR_HEIGHT_PX);
+    expect(trayListMaxHeightPx(15)).toBe(
+      15 * ROW_HEIGHT_PX + FILTER_BAR_HEIGHT_PX,
+    );
   });
 
   it("scales with configured max_visible_rows", () => {

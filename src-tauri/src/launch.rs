@@ -4,7 +4,6 @@ use workpot_core::AppContext;
 
 /// Default template uses bare `cursor`; on macOS the tray resolves to Cursor.app's bundled CLI when it is not on PATH.
 /// Set `launch_cmd` to an absolute program path in config to override.
-
 fn is_unqualified_program(program: &str) -> bool {
     !program.contains('/') && !program.contains('\\')
 }
@@ -17,9 +16,7 @@ fn cursor_bundled_candidates() -> Vec<PathBuf> {
     )];
     if let Some(home) = std::env::var_os("HOME") {
         paths.push(
-            PathBuf::from(home).join(
-                "Applications/Cursor.app/Contents/Resources/app/bin/cursor",
-            ),
+            PathBuf::from(home).join("Applications/Cursor.app/Contents/Resources/app/bin/cursor"),
         );
     }
     paths
@@ -115,22 +112,17 @@ mod tests {
 
     #[test]
     fn build_command_handles_spaces_in_repo_path() {
-        let (program, args) = build_command(
-            "cursor --new-window {path}",
-            Path::new("/tmp/my repos/foo"),
-        )
-        .expect("parse");
+        let (program, args) =
+            build_command("cursor --new-window {path}", Path::new("/tmp/my repos/foo"))
+                .expect("parse");
         assert_eq!(program, "cursor");
         assert!(args.iter().any(|a| a == "/tmp/my repos/foo"));
     }
 
     #[test]
     fn build_command_rejects_newline_in_repo_path() {
-        let err = build_command(
-            "cursor --new-window {path}",
-            Path::new("/tmp/foo\nbar"),
-        )
-        .expect_err("newline");
+        let err = build_command("cursor --new-window {path}", Path::new("/tmp/foo\nbar"))
+            .expect_err("newline");
         assert!(err.contains("newline"));
     }
 
@@ -149,9 +141,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn resolve_launch_program_finds_bundled_cursor_when_installed() {
-        let system = PathBuf::from(
-            "/Applications/Cursor.app/Contents/Resources/app/bin/cursor",
-        );
+        let system = PathBuf::from("/Applications/Cursor.app/Contents/Resources/app/bin/cursor");
         let resolved = resolve_launch_program("cursor");
         if system.is_file() {
             assert_eq!(resolved, system.display().to_string());

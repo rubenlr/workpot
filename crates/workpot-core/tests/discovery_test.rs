@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 use globset::GlobSet;
 use std::fs;
 #[cfg(unix)]

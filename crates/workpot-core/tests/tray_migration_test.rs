@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 use workpot_core::domain::Config;
@@ -47,14 +49,19 @@ fn config_defaults_launch_cmd_and_max_visible_rows() {
 
 #[test]
 fn config_rejects_invalid_launch_cmd() {
-    let mut config = Config::default();
-    config.launch_cmd = "   ".to_string();
+    let config = Config {
+        launch_cmd: "   ".to_string(),
+        ..Default::default()
+    };
     assert_eq!(
         config.validate().unwrap_err(),
         "launch_cmd must not be empty"
     );
 
-    config.launch_cmd = "cursor".to_string();
+    let config = Config {
+        launch_cmd: "cursor".to_string(),
+        ..Default::default()
+    };
     assert_eq!(
         config.validate().unwrap_err(),
         "launch_cmd must contain {path} placeholder"
@@ -63,14 +70,19 @@ fn config_rejects_invalid_launch_cmd() {
 
 #[test]
 fn config_rejects_max_visible_rows_out_of_range() {
-    let mut config = Config::default();
-    config.max_visible_rows = 0;
+    let config = Config {
+        max_visible_rows: 0,
+        ..Default::default()
+    };
     assert_eq!(
         config.validate().unwrap_err(),
         "max_visible_rows 0 must be between 1 and 100"
     );
 
-    config.max_visible_rows = 101;
+    let config = Config {
+        max_visible_rows: 101,
+        ..Default::default()
+    };
     assert_eq!(
         config.validate().unwrap_err(),
         "max_visible_rows 101 must be between 1 and 100"
@@ -117,8 +129,8 @@ fn indexed_launch_path_resolves_non_excluded_repo() {
 #[test]
 fn indexed_launch_path_rejects_unknown_repo() {
     let (_dir, conn) = temp_db();
-    let err = catalog::indexed_launch_path(&conn, Path::new("/tmp/not-indexed"))
-        .expect_err("missing");
+    let err =
+        catalog::indexed_launch_path(&conn, Path::new("/tmp/not-indexed")).expect_err("missing");
     match &err {
         WorkpotError::NotFound(key) => assert_eq!(key.as_str(), "/tmp/not-indexed"),
         other => panic!("expected NotFound, got: {other:?}"),

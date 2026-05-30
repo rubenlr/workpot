@@ -1,5 +1,8 @@
 //! Workpot shared core — persistence, catalog, and path resolution.
 
+#![deny(clippy::disallowed_methods)]
+#![cfg_attr(test, allow(clippy::disallowed_methods))]
+
 pub mod domain;
 pub mod error;
 pub mod infra;
