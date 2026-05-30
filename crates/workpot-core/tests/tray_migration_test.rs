@@ -45,6 +45,22 @@ fn config_defaults_launch_cmd_and_max_visible_rows() {
 }
 
 #[test]
+fn config_rejects_invalid_launch_cmd() {
+    let mut config = Config::default();
+    config.launch_cmd = "   ".to_string();
+    assert_eq!(
+        config.validate().unwrap_err(),
+        "launch_cmd must not be empty"
+    );
+
+    config.launch_cmd = "cursor".to_string();
+    assert_eq!(
+        config.validate().unwrap_err(),
+        "launch_cmd must contain {path} placeholder"
+    );
+}
+
+#[test]
 fn touch_last_opened_at_updates_row() {
     let (_dir, conn) = temp_db();
     let path = PathBuf::from("/tmp/tray-touch-repo");

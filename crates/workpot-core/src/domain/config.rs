@@ -95,6 +95,12 @@ impl Config {
                 self.max_visible_rows
             ));
         }
+        if self.launch_cmd.trim().is_empty() {
+            return Err("launch_cmd must not be empty".into());
+        }
+        if !self.launch_cmd.contains("{path}") {
+            return Err("launch_cmd must contain {path} placeholder".into());
+        }
         Ok(())
     }
 }
