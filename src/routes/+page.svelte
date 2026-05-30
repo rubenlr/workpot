@@ -159,7 +159,8 @@
       .then((cfg) => {
         maxVisibleRows = cfg.max_visible_rows;
       })
-      .catch(() => {
+      .catch((e) => {
+        console.warn("get_tray_config failed", e);
         maxVisibleRows = 15;
       });
 
