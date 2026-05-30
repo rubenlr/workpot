@@ -2,6 +2,7 @@
 phase: 4
 reviewers: [codex-fallback]
 review_cycles: 3
+replan_cycles: 3
 reviewed_at: 2026-05-30T18:00:00Z
 plans_reviewed:
   - 04-01-PLAN.md
@@ -11,7 +12,7 @@ plans_reviewed:
 replan_commits: [adaf3b2, 5cb5fb7]
 codex_cli: unavailable
 fallback_reviewer: independent-plan-review
-cycle_3_current_high: 2
+cycle_3_current_high: 0
 ---
 
 # Cross-AI Plan Review — Phase 4
@@ -318,7 +319,13 @@ Justification: Prior structural HIGHs are closed in plan text. Remaining HIGHs a
 | Concern | Status |
 |---------|--------|
 | Cycle 2 HIGH — Node.js setup | **Resolved in plans** (`5cb5fb7`) — do not re-count |
-| Cycle 3 HIGH — 04-01 Task 2/3 CI ordering | **Open** — amend 04-01 |
-| Cycle 3 HIGH — package-lock for `npm ci` | **Open** — amend 04-01 Task 2 |
+| Cycle 3 HIGH — 04-01 Task 2/3 CI ordering | **Resolved** — `04-01` Task 2 owns workspace + `ci.yml` + lockfiles + DATA-02 in one commit; `executor_commit_rules` forbids split pushes; Task 3 is tray/UI only |
+| Cycle 3 HIGH — package-lock for `npm ci` | **Resolved** — `package-lock.json` in `files_modified`; Task 2 AC requires `npm install` + committed lockfile |
+| Cycle 3 MEDIUM — DATA-02 tray member | **Resolved** — Task 2 extends `check-no-network-deps.sh` with `workpot-tray` |
+| Cycle 3 MEDIUM — `get_tray_config` vs `list_repos` | **Resolved** — `04-02` Task 1 commits to `get_tray_config` IPC only |
+| Cycle 3 MEDIUM — `Cargo.lock` | **Resolved** — Task 2 AC commits `Cargo.lock` after first tray build |
+| Cycle 3 LOW — `04-VALIDATION.md` T4 | **Resolved** — task map aligned to three 04-01 tasks |
 
-**Next:** `/gsd-plan-phase 4 --reviews` then `/gsd-review --phase 4 --codex` when CLI available.
+**Status:** Cycle-3 HIGHs closed in plan docs (extended replan) — re-run `/gsd-review --phase 4` for adversarial confirmation.
+
+**Next:** `/gsd-review --phase 4 --codex` when CLI available.

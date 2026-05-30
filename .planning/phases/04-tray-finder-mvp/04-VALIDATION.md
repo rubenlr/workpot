@@ -38,10 +38,9 @@ created: 2026-05-30
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | Status |
 |---------|------|------|-------------|-----------|-------------------|--------|
-| 04-01-T1 | 01 | 1 | D-25 | unit | `cargo test -p workpot-core migration_004` | ⬜ pending |
-| 04-01-T2 | 01 | 1 | D-33 | unit | `cargo test -p workpot-core config_tray_defaults` | ⬜ pending |
-| 04-01-T3 | 01 | 1 | UI-01 | build | `cargo build -p workpot-tray` | ⬜ pending |
-| 04-01-T4 | 01 | 1 | UI-02 | unit | `cargo test -p workpot-tray list_repos_command` | ⬜ pending |
+| 04-01-T1 | 01 | 1 | D-25 | unit | `cargo test -p workpot-core tray_migration` | ⬜ pending |
+| 04-01-T2 | 01 | 1 | UI-01 | build | `cargo build -p workpot-tray`; `bash scripts/check-no-network-deps.sh`; Linux: `cargo test -p workpot-core -p workpot-cli` | ⬜ pending |
+| 04-01-T3 | 01 | 1 | UI-02 | manual | tray toggle + `invoke('list_repos')` list UI | ⬜ pending |
 | 04-02-T1 | 02 | 2 | SRCH-01 | unit | `npm test -- fuzzy` | ⬜ pending |
 | 04-02-T2 | 02 | 2 | UI-03 | unit | `npm test -- filter` | ⬜ pending |
 | 04-02-T3 | 02 | 2 | D-22 | unit | `npm test -- sort` | ⬜ pending |
