@@ -85,6 +85,7 @@ jobs:
         run: |
           cargo build -p workpot-tray
           npm ci
+          npm test
           npm run build
       - name: Test
         if: matrix.os != 'macos-latest'
