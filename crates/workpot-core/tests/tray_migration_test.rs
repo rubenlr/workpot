@@ -1,6 +1,7 @@
 use rusqlite::Connection;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use workpot_core::domain::Config;
+use workpot_core::error::WorkpotError;
 use workpot_core::infra::migrations;
 use workpot_core::services::catalog;
 
@@ -96,4 +97,37 @@ fn touch_last_opened_at_updates_row() {
         )
         .expect("select");
     assert!(updated.is_some());
+}
+
+#[test]
+fn indexed_launch_path_resolves_non_excluded_repo() {
+    let (_dir, conn) = temp_db();
+    let path_key = "/tmp/tray-indexed-launch-ok";
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'ok', 1, 'manual', '/tmp/.git', 0)",
+        rusqlite::params![path_key],
+    )
+    .expect("insert");
+
+    let resolved = catalog::indexed_launch_path(&conn, Path::new(path_key)).expect("resolve");
+    assert_eq!(resolved.display().to_string(), path_key);
+}
+
+#[test]
+fn indexed_launch_path_rejects_excluded_repo() {
+    let (_dir, conn) = temp_db();
+    let path_key = "/tmp/tray-indexed-launch-excluded";
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'excluded', 1, 'manual', '/tmp/.git', 1)",
+        rusqlite::params![path_key],
+    )
+    .expect("insert");
+
+    let err = catalog::indexed_launch_path(&conn, Path::new(path_key)).expect_err("excluded");
+    match &err {
+        WorkpotError::NotFound(key) => assert_eq!(key.as_str(), path_key),
+        other => panic!("expected NotFound, got: {other:?}"),
+    }
 }

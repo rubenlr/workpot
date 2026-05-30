@@ -4,6 +4,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { moveSelectionIndex } from "$lib/selection";
+  import { dirtyDotClass } from "$lib/repoRow";
   import { filterAndSortRepos } from "$lib/trayList";
   import type { GitRefreshSummary, RepoDto, TrayConfigDto } from "$lib/types";
 
@@ -39,19 +40,6 @@
         ?.scrollIntoView({ block: "nearest" });
     });
   });
-
-  function dirtyDotClass(repo: RepoDto): string {
-    if (repo.git_state_error) {
-      return "bg-neutral-400";
-    }
-    if (repo.is_dirty === true) {
-      return "bg-amber-500";
-    }
-    if (repo.is_dirty === false) {
-      return "bg-emerald-500";
-    }
-    return "bg-neutral-400";
-  }
 
   function focusFilter() {
     filterInput?.focus();

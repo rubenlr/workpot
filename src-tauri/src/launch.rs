@@ -62,6 +62,23 @@ mod tests {
     }
 
     #[test]
+    fn build_command_rejects_template_without_path_placeholder() {
+        let err = build_command("cursor --new-window", Path::new("/tmp/foo"))
+            .expect_err("missing placeholder");
+        assert!(err.contains("{path}"));
+    }
+
+    #[test]
+    fn build_command_rejects_newline_in_repo_path() {
+        let err = build_command(
+            "cursor --new-window {path}",
+            Path::new("/tmp/foo\nbar"),
+        )
+        .expect_err("newline");
+        assert!(err.contains("newline"));
+    }
+
+    #[test]
     fn launch_repo_rejects_unindexed_path() {
         let dir = tempfile::tempdir().expect("tempdir");
         let config_path = dir.path().join("config.toml");
