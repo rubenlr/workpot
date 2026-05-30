@@ -14,7 +14,7 @@
 | 1 | Core & persistence | Runnable Rust core with local DB and config | DATA-01, DATA-02 | 3 |
 | 2 | Repo discovery | 5/5 | Complete |
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
-| 4 | Tray finder MVP | Daily driver: list, filter, open in Cursor | UI-01..04, SRCH-01..03, LAUNCH-01 | 5 |
+| 4 | Tray finder MVP | 1/4 | In Progress|  |
 | 5 | Tags & prioritization | Pins, tags, notes, signal ranking | ORG-01..04 | 4 |
 | 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
 | 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
@@ -134,12 +134,12 @@ Plans:
 
 **UI hint:** yes
 
-**Plans:** 4 plans in 3 waves
+**Plans:** 1/4 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 04-01-PLAN.md — Tauri scaffold, migration 004, tray toggle, cached repo list (UI-01, UI-02)
+- [x] 04-01-PLAN.md — Tauri scaffold, migration 004, tray toggle, cached repo list (UI-01, UI-02)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

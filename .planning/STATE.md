@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to execute
-last_updated: "2026-05-30T15:11:29.282Z"
+status: Executing
+last_updated: "2026-05-30T18:30:00.000Z"
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 15
-  completed_plans: 11
-  percent: 43
+  completed_plans: 12
+  percent: 47
 ---
 
 # Project State
@@ -20,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 04 — tray finder MVP
+**Current focus:** Phase 04 — tray-finder-mvp
 
 ## Phase Status
 
@@ -29,13 +29,14 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 1 | Core & persistence | Complete (2026-05-28) |
 | 2 | Repo discovery | Complete — 5/5 plans (2026-05-29) |
 | 3 | Git state | Complete — 3/3 plans, UAT 10/10 (2026-05-30) |
-| 4 | Tray finder MVP | Not started |
+| 4 | Tray finder MVP | In progress — 1/4 plans (04-01 complete) |
 | 5 | Tags & prioritization | Not started |
 | 6 | CLI parity | Not started |
 | 7 | Recipes | Not started |
 
 ## Session Notes
 
+- Phase 4 plan 04-01 (2026-05-30): Tauri tray scaffold, migration 005 `last_opened_at`, `list_repos` IPC, tray toggle + list UI; commits `de7ef67`, `a14e353`, `97d680c`
 - Phase 3 shipped (2026-05-30): PR https://github.com/rubenlr/workpot/pull/2 — branch `feature/03-git-state` → `master`
 - Phase 3 UAT `/gsd-verify-work 3 --fix --all` (2026-05-30): 10/10 automated checks; CR-01/02 + WR-01/02/03 fixes from code review
 - Phase 3 executed 03-01..03-03 (2026-05-29): git2 substrate, refresh_all, index second pass + CLI columns
@@ -50,6 +51,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 - Cap pre-check before transaction; cap_exceeded audit only in `run_full` outer match (03-UAT / CR-01)
 - Git refresh: rayon batch outside DB tx; `open_and_query` expects pre-canonicalized path (03-02/03)
 - Cap pre-check before transaction; cap_exceeded records index_runs without repo mutations (02-05)
+- Migration 005 for `last_opened_at` (004 slot used by `004_repos_source_index.sql`) (04-01)
+- Ubuntu CI builds core+cli only; macOS CI builds tray + `npm ci` (04-01)
 
 ## Blockers
 

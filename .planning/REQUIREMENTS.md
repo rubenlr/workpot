@@ -35,8 +35,8 @@
 
 ### Tray UI (UI)
 
-- [ ] **UI-01**: User can open Workpot from the macOS menu bar / tray icon
-- [ ] **UI-02**: Tray shows a prioritized list of repositories with git status summary
+- [x] **UI-01**: User can open Workpot from the macOS menu bar / tray icon
+- [x] **UI-02**: Tray shows a prioritized list of repositories with git status summary
 - [ ] **UI-03**: User can filter the list instantly while typing
 - [ ] **UI-04**: User can select a repository and open it in Cursor with one action (Enter / click)
 
