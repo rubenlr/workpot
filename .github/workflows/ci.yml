@@ -22,7 +22,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96
-          components: rustfmt
+          components: rustfmt, clippy
       - name: Restore Rust cache
         uses: ./.github/actions/rust-cache
         with:
