@@ -101,9 +101,14 @@
         e.preventDefault();
         moveSelection(1);
       }
-    } else if (e.key === "ArrowUp" && filterQuery.length === 0) {
-      e.preventDefault();
-      moveSelection(-1);
+    } else if (e.key === "ArrowUp") {
+      const input = e.currentTarget as HTMLInputElement;
+      const atStart =
+        input.selectionStart === 0 && input.selectionEnd === 0;
+      if (atStart || filterQuery.length === 0) {
+        e.preventDefault();
+        moveSelection(-1);
+      }
     } else if (e.key === "Escape") {
       e.preventDefault();
       void hidePanel();
