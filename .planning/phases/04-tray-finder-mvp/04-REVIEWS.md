@@ -1,16 +1,17 @@
 ---
 phase: 4
 reviewers: [codex-fallback]
-review_cycles: 2
-reviewed_at: 2026-05-30T12:00:00Z
+review_cycles: 3
+reviewed_at: 2026-05-30T18:00:00Z
 plans_reviewed:
   - 04-01-PLAN.md
   - 04-02-PLAN.md
   - 04-03-PLAN.md
   - 04-04-PLAN.md
+replan_commits: [adaf3b2, 5cb5fb7]
 codex_cli: unavailable
 fallback_reviewer: independent-plan-review
-cycle_2_current_high: 0
+cycle_3_current_high: 2
 ---
 
 # Cross-AI Plan Review — Phase 4
@@ -221,3 +222,103 @@ Justification: Structural risks (CI workspace, Svelte merge, SRCH traceability) 
 | **MEDIUM — `04-03` wave vs Wave 2b** | Frontmatter `wave: 2b` aligned with ROADMAP. |
 
 **Status:** Cycle-2 HIGH closed in plan docs — re-run `/gsd-review --phase 4` for adversarial confirmation.
+
+---
+
+## Cycle 3 — Post-replan `5cb5fb7` (2026-05-30)
+
+> **Reviewer:** Independent structured review (Codex CLI still missing on PATH). Scope: verify cycle-2 HIGH closure after replan `5cb5fb7`; hunt for new gaps only.
+
+### Prior-cycle HIGH resolution status (do not re-count)
+
+| Prior HIGH | Status | Evidence |
+|------------|--------|----------|
+| Cycle 1 — Linux CI / workspace | **FULLY RESOLVED** | Unchanged from cycle 2; `04-01` Task 2–3 AC + verification §1. |
+| Cycle 1 — Wave 2 `+page.svelte` conflict | **FULLY RESOLVED** | `04-03` `depends_on: [04-01, 04-02]`; `wave: 2b`; scoped Task 3 edits. |
+| Cycle 1 — SRCH-01 traceability | **FULLY RESOLVED** | `04-02` `requirement_traceability`; `REQUIREMENTS.md` partial note. |
+| Cycle 2 — macOS CI missing Node.js | **FULLY RESOLVED** | `04-01` Task 2: `engines.node` `>=20`. Task 3 action + AC (lines 246–260): `actions/setup-node@v4`, `node-version: '22'`, `cache: npm` on macos `test` + `release-build` before first `npm` step. `04-02` Task 4 AC mirrors setup-node ordering. `04-VALIDATION.md` documents setup-node@22. |
+
+### 1. Summary
+
+Replan `5cb5fb7` closes the cycle-2 Node.js HIGH with testable CI acceptance criteria (not narrative-only). Phase 4 plans are execution-ready on architecture, wave order, and requirement traceability. Two new execution gaps remain: **intra-plan 04-01 task ordering** can break Linux CI between Task 2 and Task 3, and **lockfile artifacts** required by `npm ci` are absent from plan `files_modified` / AC.
+
+### 2. Strengths
+
+- Node toolchain fix is duplicated in plan action, AC, and `04-VALIDATION.md` — low risk of “forgot setup-node” on macOS only.
+- Linux-safe workspace strategy remains explicit (`default-members`, ubuntu `-p` package set).
+- Wave 2b serialization and SRCH-01 partial traceability hold after second replan.
+- Async menu `run_index` + `index-complete` (04-04) and git refresh spawn pattern (04-03) are consistent.
+
+### 3. Concerns
+
+| Severity | Concern |
+|----------|---------|
+| **HIGH** | **04-01 Task 2 before Task 3 breaks Linux CI:** Task 2 adds `src-tauri` to root `members` and runs `cargo build -p workpot-tray` (macOS-oriented verify). Task 3 alone edits `ci.yml` to use `-p workpot-core -p workpot-cli` on ubuntu and fix clippy/coverage. GSD per-task commits between Task 2 and Task 3 will hit ubuntu `cargo clippy --workspace` / `cargo test --workspace` / coverage `--workspace` (current workflow shape) and fail until Task 3 lands. Plans do not require atomic Task 2+3 or CI edits in Task 2. |
+| **HIGH** | **`npm ci` without `package-lock.json`:** `04-01` Task 3 and `04-02` Task 4 AC require `npm ci` on macOS CI. Task 2 scaffolds `package.json` but neither plan lists `package-lock.json` in `files_modified`, nor AC to generate/commit the lockfile after `npm install`. `npm ci` fails without a committed lockfile — macOS frontend CI cannot run. |
+| **MEDIUM** | **`scripts/check-no-network-deps.sh` still checks only `workpot-core` / `workpot-cli`:** After macOS `cargo test --offline --workspace` includes `workpot-tray`, DATA-02 gate does not scan the tray crate tree for banned network deps. |
+| **MEDIUM** | **`get_tray_config` vs `list_repos` still unresolved** in `04-02` Task 1 (carried from cycle 2). |
+| **MEDIUM** | **`Cargo.lock` update not explicit:** Adding `src-tauri` requires lockfile refresh before macOS offline `--workspace` test; no AC to commit `Cargo.lock` alongside scaffold (executor may omit on macOS-only local verify). |
+| **LOW** | **`04-VALIDATION.md` task IDs** reference `04-01-T4` but plan 01 has three tasks only. |
+| **LOW** | **`index-complete` event** has no Svelte listener (acceptable MVP for menu-only refresh). |
+
+### 4. Suggestions
+
+1. **04-01:** Merge CI/workspace edits into Task 2, or add frontmatter note “Tasks 2–3 single commit / no push between,” or move `ci.yml` changes before `members` includes `src-tauri`.
+2. **04-01 Task 2:** After `npm install`, commit `package-lock.json`; add to `files_modified` and AC (“lockfile committed at repo root”).
+3. **04-01 Task 2:** AC: `Cargo.lock` updated and committed after first `cargo build -p workpot-tray`.
+4. **DATA-02:** Extend `check-no-network-deps.sh` with `check_crate workpot-tray` once crate exists.
+5. **04-02 Task 1:** Pick `get_tray_config` **or** extend `RepoDto` / `list_repos` — remove “OR”.
+
+### 5. Risk Assessment
+
+**Overall: LOW** (down from cycle-2 LOW-MEDIUM)
+
+Justification: Prior structural HIGHs are closed in plan text. Remaining HIGHs are procedural (task ordering, lockfiles), cheap to fix before execute-phase, not architectural rework.
+
+---
+
+## Codex Review (cycle 3)
+
+> **CLI status:** `codex` still missing (`command -v codex` → missing). Independent review substituting for Codex output on post-`5cb5fb7` plans.
+
+*(Substance in **Cycle 3 — Post-replan `5cb5fb7`** above.)*
+
+---
+
+## Consensus Summary (cycle 3)
+
+*Single reviewer (Codex unavailable). Prior HIGHs closed; two new HIGHs remain.*
+
+### Agreed Strengths
+
+- Cycle-2 Node/setup-node fix is explicit in 04-01/04-02 AC and validation doc.
+- Linux workspace + Wave 2b + SRCH partial traceability remain solid.
+
+### Agreed Concerns (highest priority)
+
+1. 04-01 Task 2/3 ordering can break ubuntu CI mid-wave (**HIGH**, new).
+2. `npm ci` without committed `package-lock.json` (**HIGH**, new).
+
+### Divergent Views
+
+- None (single reviewer). Task 2/3 atomicity might be judged MEDIUM if team always lands full plan 01 in one PR — verify against GSD executor commit granularity.
+
+---
+
+## Action Items for `/gsd-plan-phase 4 --reviews` (cycle 3)
+
+1. Atomic CI + workspace membership in 04-01 (merge Task 2/3 CI edits or enforce single commit).
+2. Add `package-lock.json` (and explicit `Cargo.lock` commit) to 04-01 scaffold AC / `files_modified`.
+3. Optional: extend DATA-02 script for `workpot-tray`; resolve `get_tray_config` in 04-02.
+
+---
+
+## Replan Resolution (cycle 3)
+
+| Concern | Status |
+|---------|--------|
+| Cycle 2 HIGH — Node.js setup | **Resolved in plans** (`5cb5fb7`) — do not re-count |
+| Cycle 3 HIGH — 04-01 Task 2/3 CI ordering | **Open** — amend 04-01 |
+| Cycle 3 HIGH — package-lock for `npm ci` | **Open** — amend 04-01 Task 2 |
+
+**Next:** `/gsd-plan-phase 4 --reviews` then `/gsd-review --phase 4 --codex` when CLI available.
