@@ -22,7 +22,7 @@
 
 ### Search & Filter (SRCH)
 
-- [ ] **SRCH-01**: User can fuzzy-search repositories by name, path, tags, branch, and notes
+- [ ] **SRCH-01**: User can fuzzy-search repositories by name, path, tags, branch, and notes *(Phase 4: partial — name, path, branch only; tags/notes complete in Phase 5)*
 - [ ] **SRCH-02**: Search results update as the user types (filter-as-you-type)
 - [ ] **SRCH-03**: Search operates on indexed metadata only (no cross-repo code search in v1)
 
@@ -93,7 +93,8 @@
 | INDEX-02 | Phase 2 | Complete |
 | INDEX-03..05 | Phase 2 | Complete |
 | GIT-01..04 | Phase 3 | Pending |
-| SRCH-01..03 | Phase 4 | Pending |
+| SRCH-01 | Phase 4 (partial) / Phase 5 (tags+notes) | Pending |
+| SRCH-02..03 | Phase 4 | Pending |
 | ORG-01..04 | Phase 5 | Pending |
 | UI-01..04 | Phase 4 | Pending |
 | LAUNCH-01 | Phase 4 | Pending |

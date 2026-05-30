@@ -1,7 +1,7 @@
 ---
 phase: 4
 reviewers: [codex-fallback]
-reviewed_at: 2026-05-30T12:00:00Z
+reviewed_at: 2026-05-30T00:00:00Z
 plans_reviewed:
   - 04-01-PLAN.md
   - 04-02-PLAN.md
@@ -102,3 +102,21 @@ Justification: Architecture and security design are sound and grounded in existi
 1. Amend 04-01 CI/workspace tasks for Linux-safe workspace membership.
 2. Serialize Wave 2 plans 02 and 03 or add integration plan for `+page.svelte`.
 3. Document SRCH-01 partial coverage vs REQUIREMENTS.md tags/notes.
+
+---
+
+## Replan Resolution (cycle 1, 2026-05-30)
+
+| Concern | Resolution |
+|---------|------------|
+| **HIGH — Linux CI / workspace** | `04-01` Task 2: `default-members` = core + cli only; `src-tauri` in `members`. Task 3: ubuntu jobs use `-p workpot-core -p workpot-cli` (no `--workspace` on Linux); macos adds `workpot-tray` + `npm` build. |
+| **HIGH — Wave 2 `+page.svelte` conflict** | `04-03` `depends_on` adds `04-02`; ROADMAP Wave 2b serializes 03 after 02; Task 3 scopes refresh-only Svelte edits. |
+| **HIGH — SRCH-01 traceability** | `04-02` `requirement_traceability` frontmatter + objective note; `REQUIREMENTS.md` SRCH-01 partial annotation + trace table split. |
+| **MEDIUM — 04-01-SUMMARY ref** | `04-02` context → `04-01-PLAN.md`. |
+| **MEDIUM — Frontend CI** | `04-02` Task 4: `npm test` + `npm run build` on macos CI job. |
+| **MEDIUM — blocking run_index** | `04-04` Task 3: async spawn + `index-complete` event. |
+| **LOW — 04-04 vs 04-03** | `04-04` `depends_on` includes `04-03`. |
+| **LOW — dirty dot colors** | `04-01` Task 3 aligned with D-10 (green clean; amber/red dirty). |
+| **LOW — PATTERNS state.rs** | Deferred (no code change in replan; executor uses existing `lib.rs` only). |
+
+**Status:** Addressed in plan docs — re-run `/gsd-review --phase 4` for adversarial confirmation.
