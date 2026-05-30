@@ -2,8 +2,17 @@ use crate::domain::GitState;
 use crate::error::Result;
 use rayon::prelude::*;
 use rusqlite::{Connection, params};
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Summary returned after batch git refresh (tray background refresh).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct GitRefreshSummary {
+    pub refreshed: u32,
+    pub errors: u32,
+    pub any_dirty: bool,
+}
 
 /// Result of a single-repo git refresh, returned from batch refresh_all.
 pub struct GitRefreshResult {
@@ -16,6 +25,20 @@ fn now_secs() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+/// Hard failure from `refresh_git_state` `Err` path — no git fields, only error message.
+pub fn is_hard_refresh_failure(state: &GitState) -> bool {
+    state.error.is_some() && state.branch.is_none() && state.is_dirty.is_none()
+}
+
+/// Update only error + timestamp; preserve prior branch/dirty/ahead/behind (CR-01).
+pub fn persist_git_state_error_only(conn: &Connection, path_key: &str, error: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE repos SET git_state_error=?1, git_refreshed_at=?2 WHERE path=?3",
+        params![error, now_secs(), path_key],
+    )?;
+    Ok(())
 }
 
 /// Write git state fields back to the repos row for `path_key`.
@@ -81,4 +104,46 @@ pub fn refresh_all(paths: Vec<PathBuf>) -> Vec<GitRefreshResult> {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_hard_refresh_failure;
+    use crate::domain::GitState;
+
+    #[test]
+    fn hard_failure_when_error_without_git_fields() {
+        let state = GitState {
+            branch: None,
+            is_dirty: None,
+            ahead: None,
+            behind: None,
+            error: Some("git unavailable".to_string()),
+        };
+        assert!(is_hard_refresh_failure(&state));
+    }
+
+    #[test]
+    fn not_hard_failure_when_branch_present_with_error() {
+        let state = GitState {
+            branch: Some("main".to_string()),
+            is_dirty: Some(true),
+            ahead: None,
+            behind: None,
+            error: Some("stale".to_string()),
+        };
+        assert!(!is_hard_refresh_failure(&state));
+    }
+
+    #[test]
+    fn not_hard_failure_on_success() {
+        let state = GitState {
+            branch: Some("main".to_string()),
+            is_dirty: Some(false),
+            ahead: Some(0),
+            behind: Some(0),
+            error: None,
+        };
+        assert!(!is_hard_refresh_failure(&state));
+    }
 }

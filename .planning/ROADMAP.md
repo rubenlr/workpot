@@ -14,7 +14,7 @@
 | 1 | Core & persistence | Runnable Rust core with local DB and config | DATA-01, DATA-02 | 3 |
 | 2 | Repo discovery | 5/5 | Complete |
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
-| 4 | Tray finder MVP | Daily driver: list, filter, open in Cursor | UI-01..04, SRCH-01..03, LAUNCH-01 | 5 |
+| 4 | 4/4 | Complete |
 | 5 | Tags & prioritization | Pins, tags, notes, signal ranking | ORG-01..04 | 4 |
 | 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
 | 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
@@ -134,7 +134,28 @@ Plans:
 
 **UI hint:** yes
 
-**Plans:** TBD via `/gsd-plan-phase 4`
+**Plans:** 4/5 plans executed (1 gap-closure pending)
+
+Plans:
+**Wave 1**
+
+- [x] 04-01-PLAN.md — Tauri scaffold, migration 004, tray toggle, cached repo list (UI-01, UI-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 04-02-PLAN.md — Panel chrome, fuzzy filter, sort, keyboard nav (UI-02, UI-03, SRCH-01 partial, SRCH-02..03) (2026-05-30)
+
+**Wave 2b** *(blocked on 04-02 — serializes `+page.svelte` ownership)*
+
+- [x] 04-03-PLAN.md — Background git refresh, spinner, dirty tray icon (D-26..D-28, D-31, GIT-04)
+
+**Wave 3** *(blocked on Wave 2b completion)*
+
+- [x] 04-04-PLAN.md — Cursor launch, error banner, context menu (UI-04, LAUNCH-01) (2026-05-30)
+
+**Wave 4** *(gap closure — UAT test 5)*
+
+- [ ] 04-05-PLAN.md — macOS resolve bare `cursor` to Cursor.app CLI (LAUNCH-01, UI-04)
 
 ---
 

@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 use rusqlite::Connection;
 use std::fs;
 use std::path::PathBuf;
@@ -82,7 +84,7 @@ fn migrations_apply() {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("user_version");
-    assert_eq!(version, 4);
+    assert_eq!(version, 5);
 
     let table_exists: i32 = conn
         .query_row(

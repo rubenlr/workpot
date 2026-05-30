@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Workpot tray panel",
+  "windows": ["panel"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-hide",
+    "core:tray:default",
+    "core:event:default",
+    "allow-list-repos",
+    "allow-get-tray-config",
+    "allow-refresh-all-git-state",
+    "allow-open-in-cursor"
+  ]
+}

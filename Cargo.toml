@@ -1,5 +1,6 @@
 [workspace]
-members = ["crates/workpot-core", "crates/workpot-cli"]
+members = ["crates/workpot-core", "crates/workpot-cli", "src-tauri"]
+default-members = ["crates/workpot-core", "crates/workpot-cli"]
 resolver = "2"
 
 [workspace.package]
@@ -7,6 +8,9 @@ edition = "2024"
 rust-version = "1.96"
 version = "0.0.1"
 license = "Unlicense"
+
+[workspace.dependencies]
+directories = "6.0.0"
 
 [profile.release]
 lto = "thin"

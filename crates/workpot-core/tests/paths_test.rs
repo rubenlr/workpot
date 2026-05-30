@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 #[cfg(target_os = "macos")]
 #[test]
 fn default_paths_match_locked_decisions() {

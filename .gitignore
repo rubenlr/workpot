@@ -1,3 +1,10 @@
 /target/
 **/*.rs.bk
 .DS_Store
+/node_modules/
+/build/
+.svelte-kit/
+
+# Tauri CLI generated (regenerated on build; $schema in capabilities/ is IDE-only)
+src-tauri/gen/
+coverage/
