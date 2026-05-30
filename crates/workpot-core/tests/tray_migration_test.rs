@@ -61,6 +61,22 @@ fn config_rejects_invalid_launch_cmd() {
 }
 
 #[test]
+fn config_rejects_max_visible_rows_out_of_range() {
+    let mut config = Config::default();
+    config.max_visible_rows = 0;
+    assert_eq!(
+        config.validate().unwrap_err(),
+        "max_visible_rows 0 must be between 1 and 100"
+    );
+
+    config.max_visible_rows = 101;
+    assert_eq!(
+        config.validate().unwrap_err(),
+        "max_visible_rows 101 must be between 1 and 100"
+    );
+}
+
+#[test]
 fn touch_last_opened_at_updates_row() {
     let (_dir, conn) = temp_db();
     let path = PathBuf::from("/tmp/tray-touch-repo");

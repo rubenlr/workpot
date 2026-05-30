@@ -32,4 +32,16 @@ describe("traySort", () => {
     const b = repo({ name: "beta", is_dirty: null, last_opened_at: null });
     expect(traySort(a, b)).toBeLessThan(0);
   });
+
+  it("ranks unknown dirty below clean within non-dirty tier", () => {
+    const clean = repo({ name: "a", is_dirty: false });
+    const unknown = repo({ name: "b", is_dirty: null });
+    expect(traySort(clean, unknown)).toBeLessThan(0);
+  });
+
+  it("ranks repos with last_opened_at above never-opened in same tier", () => {
+    const opened = repo({ name: "b", is_dirty: null, last_opened_at: 1 });
+    const never = repo({ name: "a", is_dirty: null, last_opened_at: null });
+    expect(traySort(opened, never)).toBeLessThan(0);
+  });
 });

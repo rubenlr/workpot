@@ -4,6 +4,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { fuzzyMatch } from "$lib/fuzzy";
+  import { moveSelectionIndex } from "$lib/selection";
   import { traySort } from "$lib/sort";
   import type { RepoDto, TrayConfigDto } from "$lib/types";
 
@@ -58,25 +59,12 @@
     filterInput?.focus();
   }
 
-  function clampSelection() {
-    if (displayRepos.length === 0) {
-      selectedIndex = 0;
-      return;
-    }
-    if (selectedIndex >= displayRepos.length) {
-      selectedIndex = displayRepos.length - 1;
-    }
-    if (selectedIndex < 0) {
-      selectedIndex = 0;
-    }
-  }
-
   function moveSelection(delta: number) {
-    if (displayRepos.length === 0) {
-      return;
-    }
-    clampSelection();
-    selectedIndex = (selectedIndex + delta + displayRepos.length) % displayRepos.length;
+    selectedIndex = moveSelectionIndex(
+      selectedIndex,
+      delta,
+      displayRepos.length,
+    );
   }
 
   async function hidePanel() {

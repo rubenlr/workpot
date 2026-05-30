@@ -120,6 +120,26 @@ mod tests {
     }
 
     #[test]
+    fn repo_dto_parent_dir_outside_home_uses_absolute_path() {
+        let record = RepoRecord {
+            path: PathBuf::from("/var/tmp/myrepo"),
+            name: "myrepo".to_string(),
+            registered_at: 0,
+            source: SOURCE_MANUAL.to_string(),
+            git_common_dir: String::new(),
+            branch: None,
+            is_dirty: None,
+            ahead: None,
+            behind: None,
+            git_refreshed_at: None,
+            git_state_error: None,
+            last_opened_at: None,
+        };
+        let dto = record_to_dto(record);
+        assert_eq!(dto.parent_dir, "/var/tmp");
+    }
+
+    #[test]
     fn repo_records_to_dtos_preserves_git_fields() {
         let record = RepoRecord {
             path: PathBuf::from("/tmp/x"),

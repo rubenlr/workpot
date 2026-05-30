@@ -35,4 +35,33 @@ describe("fuzzyMatch", () => {
     const r = repo({ name: "workpot" });
     expect(fuzzyMatch("x".repeat(257), r)).toBe(false);
   });
+
+  it("matches path segment", () => {
+    const r = repo({
+      name: "other",
+      path: "/Users/me/c/workpot",
+    });
+    expect(fuzzyMatch("workpot", r)).toBe(true);
+  });
+
+  it("trims query whitespace", () => {
+    const r = repo({ name: "workpot" });
+    expect(fuzzyMatch("  wp  ", r)).toBe(true);
+  });
+
+  it("returns false when no field matches", () => {
+    const r = repo({ name: "alpha", branch: "main" });
+    expect(fuzzyMatch("zzz", r)).toBe(false);
+  });
+
+  it("scores name prefix higher than path-only subsequence", () => {
+    const byName = repo({ name: "workpot", path: "/tmp/x" });
+    const byPath = repo({
+      name: "x",
+      path: "/tmp/workpot-extra",
+    });
+    expect(fuzzyScore("work", byName)).toBeGreaterThan(
+      fuzzyScore("work", byPath),
+    );
+  });
 });
