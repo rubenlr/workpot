@@ -14,7 +14,7 @@
 | 1 | Core & persistence | Runnable Rust core with local DB and config | DATA-01, DATA-02 | 3 |
 | 2 | Repo discovery | 5/5 | Complete |
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
-| 4 | Tray finder MVP | 2/4 | In Progress |
+| 4 | 3/4 | In Progress|  |
 | 5 | Tags & prioritization | Pins, tags, notes, signal ranking | ORG-01..04 | 4 |
 | 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
 | 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
@@ -134,7 +134,7 @@ Plans:
 
 **UI hint:** yes
 
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 **Wave 1**
@@ -147,7 +147,7 @@ Plans:
 
 **Wave 2b** *(blocked on 04-02 — serializes `+page.svelte` ownership)*
 
-- [ ] 04-03-PLAN.md — Background git refresh, spinner, dirty tray icon (D-26..D-28, D-31, GIT-04)
+- [x] 04-03-PLAN.md — Background git refresh, spinner, dirty tray icon (D-26..D-28, D-31, GIT-04)
 
 **Wave 3** *(blocked on Wave 2b completion)*
 
