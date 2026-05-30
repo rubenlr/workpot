@@ -36,6 +36,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 ## Session Notes
 
+- Phase 4 shipped (2026-05-30): PR https://github.com/rubenlr/workpot/pull/3 — branch `feat/4-tray-finder` → `master`
 - Phase 4 plan 04-04 (2026-05-30): Cursor launch via `launch_cmd`, error banner, tray context menu (UI-04, LAUNCH-01)
 - Phase 4 plan 04-03 (2026-05-30): background git refresh, dirty tray icon, Cmd+R
 - Phase 4 plan 04-02 (2026-05-30): panel chrome, `get_tray_config`, fuzzy/sort, keyboard nav, Vitest + macOS CI; commits `d417a95`, `55a913c`, `ace0bd4`, `d9767f2`
