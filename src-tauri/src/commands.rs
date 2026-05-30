@@ -99,9 +99,22 @@ pub(crate) fn spawn_background_git_refresh(
     state: Arc<Mutex<AppContext>>,
 ) {
     tauri::async_runtime::spawn(async move {
-        let summary = match state.lock() {
-            Ok(ctx) => ctx.refresh_all_git_state().map_err(|e| e.to_string()),
+        let paths = match state.lock() {
+            Ok(ctx) => ctx.git_refresh_paths().map_err(|e| e.to_string()),
             Err(_) => Err("AppContext lock poisoned".to_string()),
+        };
+
+        let summary = match paths {
+            Ok(paths) => {
+                let git_results = workpot_core::services::git_state::refresh_all(paths);
+                match state.lock() {
+                    Ok(ctx) => ctx
+                        .persist_git_refresh_results(git_results)
+                        .map_err(|e| e.to_string()),
+                    Err(_) => Err("AppContext lock poisoned".to_string()),
+                }
+            }
+            Err(e) => Err(e),
         };
 
         match summary {
@@ -116,6 +129,7 @@ pub(crate) fn spawn_background_git_refresh(
                     errors: 1,
                     any_dirty: false,
                 };
+                let _ = app.emit("git-refresh-failed", &e);
                 let _ = app.emit("git-refresh-complete", &fallback);
             }
         }
