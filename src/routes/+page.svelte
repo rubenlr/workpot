@@ -146,10 +146,12 @@
     }
   }
 
-  async function loadRepos() {
+  async function loadRepos(clearError = true) {
     try {
       repos = await invoke<RepoDto[]>("list_repos");
-      error = null;
+      if (clearError) {
+        error = null;
+      }
     } catch (e) {
       error = String(e);
     }
@@ -185,17 +187,34 @@
 
     const unlistenRefresh = listen<GitRefreshSummary>(
       "git-refresh-complete",
-      () => {
+      (event) => {
         refreshing = false;
-        void loadRepos();
+        selectedIndex = 0;
+        const summary = event.payload;
+        const refreshFailed =
+          summary.errors > 0 && summary.refreshed === 0;
+        const refreshPartial = summary.errors > 0 && summary.refreshed > 0;
+        void loadRepos(!(refreshFailed || refreshPartial)).then(() => {
+          if (refreshFailed) {
+            error = "Git refresh failed for all repositories.";
+          } else if (refreshPartial) {
+            error = `Git refresh completed with ${summary.errors} error(s).`;
+          }
+        });
       },
     );
+
+    const unlistenRefreshFailed = listen<string>("git-refresh-failed", (event) => {
+      refreshing = false;
+      error = event.payload;
+    });
 
     focusFilter();
 
     return () => {
       void unlistenPanel.then((fn) => fn());
       void unlistenRefresh.then((fn) => fn());
+      void unlistenRefreshFailed.then((fn) => fn());
     };
   });
 </script>
