@@ -148,7 +148,7 @@ pub async fn refresh_all_git_state(
 #[tauri::command]
 pub fn open_in_cursor(
     path: String,
-    #[allow(unused)] background: bool,
+    _background: bool,
     state: State<'_, Arc<Mutex<AppContext>>>,
 ) -> Result<(), String> {
     let ctx = state

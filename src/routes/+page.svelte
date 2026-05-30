@@ -80,7 +80,12 @@
       if (!background) {
         await hidePanel();
       } else {
-        void loadRepos(false);
+        const openedPath = repo.path;
+        await loadRepos(false);
+        const idx = filterAndSortRepos(repos, filterQuery).findIndex(
+          (r) => r.path === openedPath,
+        );
+        selectedIndex = idx >= 0 ? idx : 0;
       }
     } catch (e) {
       launchError = String(e);
