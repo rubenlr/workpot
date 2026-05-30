@@ -31,7 +31,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_repos,
-            commands::get_tray_config
+            commands::get_tray_config,
+            commands::refresh_all_git_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

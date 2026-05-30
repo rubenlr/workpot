@@ -9,6 +9,7 @@
     "core:tray:default",
     "core:event:default",
     "allow-list-repos",
-    "allow-get-tray-config"
+    "allow-get-tray-config",
+    "allow-refresh-all-git-state"
   ]
 }

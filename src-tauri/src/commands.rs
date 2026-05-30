@@ -1,8 +1,8 @@
 use serde::Serialize;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use tauri::State;
-use workpot_core::{AppContext, RepoRecord};
+use tauri::{AppHandle, Emitter, Manager, State};
+use workpot_core::{AppContext, GitRefreshSummary, RepoRecord};
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct RepoDto {
@@ -76,6 +76,59 @@ pub fn list_repos(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<Vec<RepoDt
         .map_err(|_| "AppContext lock poisoned".to_string())?;
     let records = ctx.list_repos().map_err(|e| e.to_string())?;
     Ok(repo_records_to_dtos(records))
+}
+
+pub(crate) fn update_tray_dirty_icon(app: &AppHandle, any_dirty: bool) {
+    let Some(tray) = app.tray_by_id("main") else {
+        return;
+    };
+    let Some(icons) = app.try_state::<crate::tray::TrayIcons>() else {
+        return;
+    };
+    let icon = if any_dirty {
+        icons.dirty.clone()
+    } else {
+        icons.default.clone()
+    };
+    let _ = tray.set_icon(Some(icon));
+}
+
+/// Spawn rayon git refresh off the UI thread; emit `git-refresh-complete` when done.
+pub(crate) fn spawn_background_git_refresh(
+    app: AppHandle,
+    state: Arc<Mutex<AppContext>>,
+) {
+    tauri::async_runtime::spawn(async move {
+        let summary = match state.lock() {
+            Ok(ctx) => ctx.refresh_all_git_state().map_err(|e| e.to_string()),
+            Err(_) => Err("AppContext lock poisoned".to_string()),
+        };
+
+        match summary {
+            Ok(s) => {
+                update_tray_dirty_icon(&app, s.any_dirty);
+                let _ = app.emit("git-refresh-complete", &s);
+            }
+            Err(e) => {
+                log::warn!("refresh_all_git_state failed: {e}");
+                let fallback = GitRefreshSummary {
+                    refreshed: 0,
+                    errors: 1,
+                    any_dirty: false,
+                };
+                let _ = app.emit("git-refresh-complete", &fallback);
+            }
+        }
+    });
+}
+
+#[tauri::command]
+pub async fn refresh_all_git_state(
+    app: AppHandle,
+    state: State<'_, Arc<Mutex<AppContext>>>,
+) -> Result<(), String> {
+    spawn_background_git_refresh(app, state.inner().clone());
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1,7 +1,19 @@
+use std::sync::{Arc, Mutex};
 use tauri::{
     Emitter, Manager, PhysicalPosition,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
+use workpot_core::AppContext;
+
+/// Tray status icons loaded at setup (default vs any-repo-dirty).
+pub struct TrayIcons {
+    pub default: tauri::image::Image<'static>,
+    pub dirty: tauri::image::Image<'static>,
+}
+
+fn embedded_tray_icon(bytes: &'static [u8]) -> tauri::image::Image<'static> {
+    tauri::image::Image::from_bytes(bytes).expect("tray icon bytes")
+}
 
 #[cfg(target_os = "macos")]
 fn apply_panel_vibrancy(window: &tauri::WebviewWindow) {
@@ -30,21 +42,22 @@ fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
     let _ = panel.show();
     let _ = panel.set_focus();
     let _ = app.emit("panel-opened", ());
+    if let Some(state) = app.try_state::<Arc<Mutex<AppContext>>>() {
+        crate::commands::spawn_background_git_refresh(app.clone(), state.inner().clone());
+    }
 }
 
 pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "bundled default window icon missing from app bundle",
-            )
-        })?;
+    let default_icon = embedded_tray_icon(include_bytes!("../icons/tray-default.png"));
+    let dirty_icon = embedded_tray_icon(include_bytes!("../icons/tray-dirty.png"));
+    let tray_icon = default_icon.clone();
+    app.manage(TrayIcons {
+        default: default_icon,
+        dirty: dirty_icon,
+    });
 
     let _tray = TrayIconBuilder::with_id("main")
-        .icon(icon)
+        .icon(tray_icon)
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
