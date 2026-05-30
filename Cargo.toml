@@ -9,6 +9,9 @@ rust-version = "1.96"
 version = "0.0.1"
 license = "Unlicense"
 
+[workspace.dependencies]
+directories = "6.0.0"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
