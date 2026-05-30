@@ -89,6 +89,10 @@ impl AppContext {
         catalog::touch_last_opened_at(&self.conn, path)
     }
 
+    pub fn indexed_launch_path(&self, path: &Path) -> Result<PathBuf> {
+        catalog::indexed_launch_path(&self.conn, path)
+    }
+
     pub fn remove_repo(&mut self, path: &Path) -> Result<()> {
         catalog::remove_repo_with_exclude(&self.conn, &self.config_path, &mut self.config, path)
     }

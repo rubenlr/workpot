@@ -111,6 +111,20 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
         .map_err(WorkpotError::Database)
 }
 
+/// Absolute path for an indexed repo launch, after validating it is in the catalog.
+pub fn indexed_launch_path(conn: &Connection, path: &Path) -> Result<PathBuf> {
+    let (repo_path, path_key) = resolve_repo_location(conn, path)?;
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM repos WHERE path = ?1 AND excluded = 0",
+        params![path_key],
+        |row| row.get(0),
+    )?;
+    if count == 0 {
+        return Err(WorkpotError::NotFound(path_key));
+    }
+    Ok(repo_path)
+}
+
 /// Record that a repo was opened from the tray (D-25).
 pub fn touch_last_opened_at(conn: &Connection, path: &Path) -> Result<()> {
     let path_key = resolve_repo_path_key(conn, path)?;

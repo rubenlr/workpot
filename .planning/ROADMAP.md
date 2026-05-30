@@ -14,7 +14,7 @@
 | 1 | Core & persistence | Runnable Rust core with local DB and config | DATA-01, DATA-02 | 3 |
 | 2 | Repo discovery | 5/5 | Complete |
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
-| 4 | 3/4 | In Progress|  |
+| 4 | 4/4 | Complete |
 | 5 | Tags & prioritization | Pins, tags, notes, signal ranking | ORG-01..04 | 4 |
 | 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
 | 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
@@ -134,7 +134,7 @@ Plans:
 
 **UI hint:** yes
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans executed
 
 Plans:
 **Wave 1**
@@ -151,7 +151,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2b completion)*
 
-- [ ] 04-04-PLAN.md — Cursor launch, error banner, context menu (UI-04, LAUNCH-01)
+- [x] 04-04-PLAN.md — Cursor launch, error banner, context menu (UI-04, LAUNCH-01) (2026-05-30)
 
 ---
 

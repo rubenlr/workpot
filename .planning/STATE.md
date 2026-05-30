@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Executing
-last_updated: "2026-05-30T15:42:28.455Z"
+last_updated: "2026-05-30T18:57:00.000Z"
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 15
-  completed_plans: 14
-  percent: 43
+  completed_plans: 15
+  percent: 57
 ---
 
 # Project State
@@ -29,13 +29,15 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 1 | Core & persistence | Complete (2026-05-28) |
 | 2 | Repo discovery | Complete — 5/5 plans (2026-05-29) |
 | 3 | Git state | Complete — 3/3 plans, UAT 10/10 (2026-05-30) |
-| 4 | Tray finder MVP | In progress — 2/4 plans (04-02 complete) |
+| 4 | Tray finder MVP | Complete — 4/4 plans (2026-05-30) |
 | 5 | Tags & prioritization | Not started |
 | 6 | CLI parity | Not started |
 | 7 | Recipes | Not started |
 
 ## Session Notes
 
+- Phase 4 plan 04-04 (2026-05-30): Cursor launch via `launch_cmd`, error banner, tray context menu (UI-04, LAUNCH-01)
+- Phase 4 plan 04-03 (2026-05-30): background git refresh, dirty tray icon, Cmd+R
 - Phase 4 plan 04-02 (2026-05-30): panel chrome, `get_tray_config`, fuzzy/sort, keyboard nav, Vitest + macOS CI; commits `d417a95`, `55a913c`, `ace0bd4`, `d9767f2`
 - Phase 4 plan 04-01 (2026-05-30): Tauri tray scaffold, migration 005 `last_opened_at`, `list_repos` IPC, tray toggle + list UI; commits `de7ef67`, `a14e353`, `97d680c`
 - Phase 3 shipped (2026-05-30): PR https://github.com/rubenlr/workpot/pull/2 — branch `feature/03-git-state` → `master`

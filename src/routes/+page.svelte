@@ -16,7 +16,7 @@
   let selectedIndex = $state(0);
   let maxVisibleRows = $state(15);
   let filterInput = $state<HTMLInputElement | null>(null);
-  let openHint = $state<string | null>(null);
+  let launchError = $state<string | null>(null);
   let refreshing = $state(false);
 
   let listMaxHeightPx = $derived(
@@ -69,16 +69,22 @@
     await getCurrentWindow().hide();
   }
 
-  /** Placeholder for plan 04-04 Cursor launch. */
-  async function openSelected() {
+  async function openSelected(background: boolean) {
     const repo = displayRepos[selectedIndex];
     if (!repo) {
       return;
     }
-    openHint = `Launch in Cursor (${repo.name}) — coming soon`;
-    setTimeout(() => {
-      openHint = null;
-    }, 2500);
+    launchError = null;
+    try {
+      await invoke("open_in_cursor", { path: repo.path, background });
+      if (!background) {
+        await hidePanel();
+      } else {
+        void loadRepos(false);
+      }
+    } catch (e) {
+      launchError = String(e);
+    }
   }
 
   function onFilterKeydown(e: KeyboardEvent) {
@@ -109,7 +115,7 @@
       void hidePanel();
     } else if (e.key === "Enter") {
       e.preventDefault();
-      void openSelected();
+      void openSelected(e.metaKey);
     }
   }
 
@@ -139,7 +145,7 @@
       void hidePanel();
     } else if (e.key === "Enter") {
       e.preventDefault();
-      void openSelected();
+      void openSelected(e.metaKey);
     }
   }
 
@@ -222,6 +228,23 @@
   class="panel-shell flex h-screen flex-col overflow-hidden rounded-xl text-neutral-900 shadow-2xl dark:text-neutral-100"
   style="max-height: {listMaxHeightPx}px"
 >
+  {#if launchError}
+    <div
+      class="flex items-start gap-2 border-b border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/80 dark:text-red-200"
+      role="alert"
+    >
+      <span class="min-w-0 flex-1 break-words">{launchError}</span>
+      <button
+        type="button"
+        class="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium hover:bg-red-100 dark:hover:bg-red-900"
+        onclick={() => {
+          launchError = null;
+        }}
+      >
+        Dismiss
+      </button>
+    </div>
+  {/if}
   <div
     class="border-b border-neutral-200/80 bg-white/80 px-3 py-2 backdrop-blur-md dark:border-neutral-700/80 dark:bg-neutral-900/80"
   >
@@ -244,11 +267,6 @@
         ></span>
       {/if}
     </div>
-    {#if openHint}
-      <p class="mt-1 text-xs text-amber-700 dark:text-amber-400" role="status">
-        {openHint}
-      </p>
-    {/if}
   </div>
 
   <div class="min-h-0 flex-1 overflow-y-auto p-2">
@@ -268,12 +286,15 @@
             class="cursor-pointer rounded-md px-2 py-1.5 {i === selectedIndex
               ? 'bg-blue-600 text-white dark:bg-blue-500'
               : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}"
-            onclick={() => {
+            onclick={(e) => {
               selectedIndex = i;
+              if (e.metaKey) {
+                void openSelected(true);
+              }
             }}
             ondblclick={() => {
               selectedIndex = i;
-              void openSelected();
+              void openSelected(false);
             }}
           >
             <div class="flex items-center gap-2">

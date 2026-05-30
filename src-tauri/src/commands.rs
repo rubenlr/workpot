@@ -145,6 +145,18 @@ pub async fn refresh_all_git_state(
     Ok(())
 }
 
+#[tauri::command]
+pub fn open_in_cursor(
+    path: String,
+    #[allow(unused)] background: bool,
+    state: State<'_, Arc<Mutex<AppContext>>>,
+) -> Result<(), String> {
+    let ctx = state
+        .lock()
+        .map_err(|_| "AppContext lock poisoned".to_string())?;
+    crate::launch::launch_repo(&ctx, &path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -10,6 +10,7 @@
     "core:event:default",
     "allow-list-repos",
     "allow-get-tray-config",
-    "allow-refresh-all-git-state"
+    "allow-refresh-all-git-state",
+    "allow-open-in-cursor"
   ]
 }
