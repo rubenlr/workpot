@@ -148,23 +148,26 @@ impl AppContext {
         crate::services::git_state::refresh_and_persist(&self.conn, path)
     }
 
-    /// Refresh git state for all non-excluded repos (rayon batch off lock, then single tx persist).
-    pub fn refresh_all_git_state(&self) -> Result<GitRefreshSummary> {
-        let paths: Vec<PathBuf> = {
-            let mut stmt = self
-                .conn
-                .prepare("SELECT path FROM repos WHERE excluded = 0")?;
-            stmt.query_map([], |row| row.get::<_, String>(0))?
-                .filter_map(|r| r.ok())
-                .map(PathBuf::from)
-                .collect()
-        };
+    /// Paths of non-excluded repos for batch git refresh (short lock in tray layer).
+    pub fn git_refresh_paths(&self) -> Result<Vec<PathBuf>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT path FROM repos WHERE excluded = 0")?;
+        let paths = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .filter_map(|r| r.ok())
+            .map(PathBuf::from)
+            .collect();
+        Ok(paths)
+    }
 
-        let git_results = crate::services::git_state::refresh_all(paths);
-
+    /// Persist batch git refresh results and return summary (`any_dirty` from DB).
+    pub fn persist_git_refresh_results(
+        &self,
+        git_results: Vec<crate::services::git_state::GitRefreshResult>,
+    ) -> Result<GitRefreshSummary> {
         let mut refreshed = 0u32;
         let mut errors = 0u32;
-        let mut any_dirty = false;
 
         let tx = self.conn.unchecked_transaction()?;
         for r in &git_results {
@@ -173,18 +176,33 @@ impl AppContext {
             } else {
                 refreshed += 1;
             }
-            if r.state.is_dirty == Some(true) {
-                any_dirty = true;
+            if crate::services::git_state::is_hard_refresh_failure(&r.state) {
+                let err = r.state.error.as_deref().unwrap_or("unknown");
+                crate::services::git_state::persist_git_state_error_only(&tx, &r.path, err)?;
+            } else {
+                crate::services::git_state::persist_git_state(&tx, &r.path, &r.state)?;
             }
-            crate::services::git_state::persist_git_state(&tx, &r.path, &r.state)?;
         }
         tx.commit()?;
+
+        let any_dirty: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM repos WHERE excluded = 0 AND is_dirty = 1)",
+            [],
+            |row| row.get(0),
+        )?;
 
         Ok(GitRefreshSummary {
             refreshed,
             errors,
             any_dirty,
         })
+    }
+
+    /// Refresh git state for all non-excluded repos (rayon batch, then single tx persist).
+    pub fn refresh_all_git_state(&self) -> Result<GitRefreshSummary> {
+        let paths = self.git_refresh_paths()?;
+        let git_results = crate::services::git_state::refresh_all(paths);
+        self.persist_git_refresh_results(git_results)
     }
 }
 

@@ -27,6 +27,24 @@ fn now_secs() -> i64 {
         .unwrap_or(0)
 }
 
+/// Hard failure from `refresh_git_state` `Err` path — no git fields, only error message.
+pub fn is_hard_refresh_failure(state: &GitState) -> bool {
+    state.error.is_some() && state.branch.is_none() && state.is_dirty.is_none()
+}
+
+/// Update only error + timestamp; preserve prior branch/dirty/ahead/behind (CR-01).
+pub fn persist_git_state_error_only(
+    conn: &Connection,
+    path_key: &str,
+    error: &str,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE repos SET git_state_error=?1, git_refreshed_at=?2 WHERE path=?3",
+        params![error, now_secs(), path_key],
+    )?;
+    Ok(())
+}
+
 /// Write git state fields back to the repos row for `path_key`.
 pub fn persist_git_state(conn: &Connection, path_key: &str, state: &GitState) -> Result<()> {
     conn.execute(

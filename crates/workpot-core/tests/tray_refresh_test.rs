@@ -59,3 +59,39 @@ fn tray_refresh_all_git_state_refreshes_indexed_repos() {
         "expected branch populated after refresh"
     );
 }
+
+#[test]
+fn tray_refresh_preserves_git_snapshot_on_hard_failure() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+
+    let (repo, path) = init_git_repo(dir.path(), "repo-preserve");
+    make_commit(&repo, "init");
+    ctx.register_manual(&path).expect("register");
+    let path_canon = path.canonicalize().expect("canonicalize");
+
+    ctx.refresh_all_git_state().expect("initial refresh");
+    let branch_before = ctx
+        .list_repos()
+        .expect("list")
+        .into_iter()
+        .find(|r| r.path == path_canon)
+        .and_then(|r| r.branch)
+        .expect("branch after initial refresh");
+
+    std::fs::remove_dir_all(path_canon.join(".git")).expect("remove .git");
+
+    let summary = ctx.refresh_all_git_state().expect("refresh after break");
+    assert_eq!(summary.errors, 1);
+
+    let record = ctx
+        .list_repos()
+        .expect("list")
+        .into_iter()
+        .find(|r| r.path == path_canon)
+        .expect("repo row");
+    assert_eq!(record.branch, Some(branch_before));
+    assert!(record.git_state_error.is_some());
+}
