@@ -132,7 +132,10 @@ jobs:
         with:
           toolchain: 1.96
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/rust-cache
+        with:
+          shared-key: release
+          key: ${{ matrix.arch }}
 
       - name: Build release binary
         run: cargo build --release -p workpot-cli

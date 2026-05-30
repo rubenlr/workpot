@@ -22,6 +22,10 @@ jobs:
         with:
           toolchain: 1.96
           components: rustfmt
+      - uses: ./.github/actions/rust-cache
+        with:
+          shared-key: ci
+          key: ${{ runner.os }}
       - run: cargo fmt --all -- --check
 
   clippy:
@@ -33,7 +37,10 @@ jobs:
         with:
           toolchain: 1.96
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/rust-cache
+        with:
+          shared-key: ci
+          key: ${{ runner.os }}
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
@@ -48,7 +55,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96
-      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/rust-cache
+        with:
+          shared-key: ci
+          key: ${{ matrix.os }}
       - name: Fetch dependencies (macOS D-12)
         if: matrix.os == 'macos-latest'
         run: cargo fetch
@@ -70,13 +80,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96
-      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/rust-cache
         with:
-          workspaces: .
-          shared-key: llvm-cov
+          shared-key: ci
+          key: ${{ runner.os }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
+          fallback: none
       - name: Fetch dependencies
         run: cargo fetch
       - name: Check no network deps (DATA-02)
@@ -99,7 +110,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96
-      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/rust-cache
+        with:
+          shared-key: ci
+          key: ${{ runner.os }}
       - run: cargo build --release -p workpot-cli
       - run: ./target/release/workpot --version
       - uses: actions/upload-artifact@v4
@@ -112,11 +126,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: dtolnay/rust-toolchain@master
         with:
-          log-level: warn
-          command: check
-          arguments: --config .github/ci-assist/deny.toml --all-features
+          toolchain: 1.96
+      - uses: ./.github/actions/rust-cache
+        with:
+          shared-key: ci
+          key: ${{ runner.os }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+          fallback: none
+      - run: cargo deny check --config .github/ci-assist/deny.toml
 
   audit:
     name: cargo-audit
@@ -126,6 +147,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo install cargo-audit --locked
+      - uses: ./.github/actions/rust-cache
+        with:
+          shared-key: ci
+          key: ${{ runner.os }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+          fallback: none
       - run: cargo audit
