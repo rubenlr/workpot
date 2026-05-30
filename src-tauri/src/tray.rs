@@ -14,15 +14,14 @@ fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
         return;
     };
 
-    if let Some(rect) = rect {
-        if let (tauri::Position::Physical(pos), tauri::Size::Physical(size)) =
+    if let Some(rect) = rect
+        && let (tauri::Position::Physical(pos), tauri::Size::Physical(size)) =
             (rect.position, rect.size)
-        {
-            let _ = panel.set_position(PhysicalPosition::new(
-                pos.x,
-                pos.y + size.height as i32,
-            ));
-        }
+    {
+        let _ = panel.set_position(PhysicalPosition::new(
+            pos.x,
+            pos.y + size.height as i32,
+        ));
     }
 
     #[cfg(target_os = "macos")]
@@ -59,7 +58,7 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                     if panel.is_visible().unwrap_or(false) {
                         let _ = panel.hide();
                     } else {
-                        show_panel(&app, Some(rect));
+                        show_panel(app, Some(rect));
                     }
                 }
             }

@@ -36,16 +36,16 @@ fn parent_dir_display(path: &Path) -> String {
     if parent.as_os_str().is_empty() {
         return String::new();
     }
-    if let Some(home) = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf()) {
-        if parent.starts_with(&home) {
-            let rel = parent.strip_prefix(&home).unwrap_or(&parent);
-            let suffix = rel.display().to_string();
-            return if suffix.is_empty() {
-                "~".to_string()
-            } else {
-                format!("~/{suffix}")
-            };
-        }
+    if let Some(home) = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf())
+        && parent.starts_with(&home)
+    {
+        let rel = parent.strip_prefix(&home).unwrap_or(&parent);
+        let suffix = rel.display().to_string();
+        return if suffix.is_empty() {
+            "~".to_string()
+        } else {
+            format!("~/{suffix}")
+        };
     }
     parent.display().to_string()
 }
