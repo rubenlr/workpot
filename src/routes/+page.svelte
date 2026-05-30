@@ -16,6 +16,7 @@
   let selectedIndex = $state(0);
   let maxVisibleRows = $state(15);
   let filterInput = $state<HTMLInputElement | null>(null);
+  let openHint = $state<string | null>(null);
 
   let listMaxHeightPx = $derived(
     maxVisibleRows * ROW_HEIGHT_PX + FILTER_BAR_HEIGHT_PX,
@@ -88,7 +89,10 @@
     if (!repo) {
       return;
     }
-    console.debug("openSelected (stub)", repo.path);
+    openHint = `Launch in Cursor (${repo.name}) — coming soon`;
+    setTimeout(() => {
+      openHint = null;
+    }, 2500);
   }
 
   function onFilterKeydown(e: KeyboardEvent) {
@@ -196,6 +200,11 @@
       bind:value={filterQuery}
       onkeydown={onFilterKeydown}
     />
+    {#if openHint}
+      <p class="mt-1 text-xs text-amber-700 dark:text-amber-400" role="status">
+        {openHint}
+      </p>
+    {/if}
   </div>
 
   <div class="min-h-0 flex-1 overflow-y-auto p-2">
