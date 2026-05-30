@@ -138,15 +138,17 @@
     }
   }
 
+  async function loadRepos() {
+    try {
+      repos = await invoke<RepoDto[]>("list_repos");
+      error = null;
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
   onMount(() => {
-    invoke<RepoDto[]>("list_repos")
-      .then((rows) => {
-        repos = rows;
-        error = null;
-      })
-      .catch((e) => {
-        error = String(e);
-      });
+    void loadRepos();
 
     invoke<TrayConfigDto>("get_tray_config")
       .then((cfg) => {
@@ -157,6 +159,7 @@
       });
 
     const unlisten = listen("panel-opened", () => {
+      void loadRepos();
       focusFilter();
     });
 
