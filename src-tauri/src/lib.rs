@@ -12,6 +12,10 @@ pub fn run() {
         .setup(|app| {
             let ctx = AppContext::open().map_err(|e| e.to_string())?;
             app.manage(Arc::new(Mutex::new(ctx)));
+            #[cfg(target_os = "macos")]
+            if let Some(panel) = app.get_webview_window("panel") {
+                tray::configure_panel_window(&panel);
+            }
             tray::setup_tray(app)?;
             Ok(())
         })

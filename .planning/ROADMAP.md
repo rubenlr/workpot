@@ -134,7 +134,7 @@ Plans:
 
 **UI hint:** yes
 
-**Plans:** 4/4 plans executed
+**Plans:** 4/5 plans executed (1 gap-closure pending)
 
 Plans:
 **Wave 1**
@@ -152,6 +152,10 @@ Plans:
 **Wave 3** *(blocked on Wave 2b completion)*
 
 - [x] 04-04-PLAN.md — Cursor launch, error banner, context menu (UI-04, LAUNCH-01) (2026-05-30)
+
+**Wave 4** *(gap closure — UAT test 5)*
+
+- [ ] 04-05-PLAN.md — macOS resolve bare `cursor` to Cursor.app CLI (LAUNCH-01, UI-04)
 
 ---
 

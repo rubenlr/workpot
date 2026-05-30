@@ -238,7 +238,7 @@
     </div>
   {/if}
   <div
-    class="border-b border-neutral-200/80 bg-white/80 px-3 py-2 backdrop-blur-md dark:border-neutral-700/80 dark:bg-neutral-900/80"
+    class="border-b border-neutral-500/20 px-3 py-2 dark:border-neutral-400/15"
   >
     <div class="flex items-center gap-2">
       <input
@@ -247,7 +247,7 @@
         type="search"
         placeholder="Filter repos…"
         maxlength="256"
-        class="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-sm outline-none ring-blue-500 focus:ring-2 dark:border-neutral-600 dark:bg-neutral-800"
+        class="min-w-0 flex-1 rounded-md border border-neutral-500/25 bg-white/40 px-2 py-1.5 text-sm outline-none ring-blue-500 backdrop-blur-sm focus:ring-2 dark:border-neutral-400/20 dark:bg-black/25"
         bind:value={filterQuery}
         onkeydown={onFilterKeydown}
       />
@@ -277,7 +277,7 @@
             aria-selected={i === selectedIndex}
             class="cursor-pointer rounded-md px-2 py-1.5 {i === selectedIndex
               ? 'bg-blue-600 text-white dark:bg-blue-500'
-              : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}"
+              : 'hover:bg-black/5 dark:hover:bg-white/10'}"
             onclick={(e) => {
               selectedIndex = i;
               if (e.metaKey) {

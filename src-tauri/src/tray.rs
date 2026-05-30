@@ -39,9 +39,17 @@ fn embedded_tray_icon(bytes: &'static [u8]) -> tauri::image::Image<'static> {
 }
 
 #[cfg(target_os = "macos")]
-fn apply_panel_vibrancy(window: &tauri::WebviewWindow) {
-    use window_vibrancy::{NSVisualEffectMaterial, apply_vibrancy};
-    let _ = apply_vibrancy(window, NSVisualEffectMaterial::HudWindow, None, None);
+pub(crate) fn configure_panel_window(window: &tauri::WebviewWindow) {
+    use tauri::window::Color;
+    use window_vibrancy::{NSVisualEffectMaterial, NSVisualEffectState, apply_vibrancy};
+
+    let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
+    let _ = apply_vibrancy(
+        window,
+        NSVisualEffectMaterial::HudWindow,
+        Some(NSVisualEffectState::Active),
+        None,
+    );
 }
 
 fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
@@ -60,7 +68,7 @@ fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
     }
 
     #[cfg(target_os = "macos")]
-    apply_panel_vibrancy(&panel);
+    configure_panel_window(&panel);
 
     let _ = panel.show();
     let _ = panel.set_focus();
