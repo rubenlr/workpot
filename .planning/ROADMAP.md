@@ -134,7 +134,21 @@ Plans:
 
 **UI hint:** yes
 
-**Plans:** TBD via `/gsd-plan-phase 4`
+**Plans:** 4 plans in 3 waves
+
+Plans:
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — Tauri scaffold, migration 004, tray toggle, cached repo list (UI-01, UI-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04-02-PLAN.md — Panel chrome, fuzzy filter, sort, keyboard nav (UI-02, UI-03, SRCH-01..03)
+- [ ] 04-03-PLAN.md — Background git refresh, spinner, dirty tray icon (D-26..D-28, D-31, GIT-04)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 04-04-PLAN.md — Cursor launch, error banner, context menu (UI-04, LAUNCH-01)
 
 ---
 
