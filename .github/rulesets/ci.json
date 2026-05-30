@@ -37,8 +37,7 @@
           { "context": "rustfmt (macos-latest)" },
           { "context": "test (ubuntu-latest)" },
           { "context": "test (macos-latest)" },
-          { "context": "coverage (ubuntu-latest)" },
-          { "context": "coverage (macos-latest)" },
+          { "context": "coverage" },
           { "context": "cargo build --release" },
           { "context": "sonarcloud" },
           { "context": "semantic-pr" }

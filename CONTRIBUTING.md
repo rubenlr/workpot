@@ -75,6 +75,30 @@ Expect informational unmaintained/advisory warnings until upstream fixes land.
 
 References: [Tauri #11928](https://github.com/tauri-apps/tauri/issues/11928), [Tauri GTK4 PR #14684](https://github.com/tauri-apps/tauri/pull/14684).
 
+## SonarCloud (zero-issues gate)
+
+Analysis targets [SonarCloud project `workpot`](https://sonarcloud.io/project/configuration?id=workpot) (`rubenlr` org). Config: `.github/ci-assist/sonar-project.properties`; CI job `sonarcloud` in `.github/workflows/ci.yml` (runs after `coverage`, fails if the quality gate fails).
+
+### One-time setup (repo admin)
+
+1. **GitHub ↔ SonarCloud** — In [project configuration](https://sonarcloud.io/project/configuration?id=workpot), bind this repository (`rubenlr/workpot`) so PR decoration and analysis run under `workpot` (not the duplicate `rubenlr_workpot` project).
+2. **`SONAR_TOKEN`** — [Account → Security](https://sonarcloud.io/account/security) → generate token → GitHub repo **Settings → Secrets → Actions** → `SONAR_TOKEN`.
+3. **Quality gate “zero issues”** — Default [Sonar way](https://sonarcloud.io/organizations/rubenlr/quality_gates) allows ratings/coverage slack, not a hard zero. Create a custom gate and assign it to `workpot`:
+
+   | Scope | Metric | Operator | Threshold |
+   | --- | --- | --- | --- |
+   | Overall Code | Issues | is greater than | 0 |
+   | New Code | Issues | is greater than | 0 |
+   | Overall Code | Vulnerabilities | is greater than | 0 |
+   | New Code | Vulnerabilities | is greater than | 0 |
+   | New Code | Security Hotspots Reviewed | is less than | 100 |
+
+   Assign: [Quality Gate for workpot](https://sonarcloud.io/project/quality_gate?id=workpot) → your custom gate.
+
+4. **Branch protection** — Ruleset `.github/rulesets/ci.json` already requires the `sonarcloud` status check on `master` PRs.
+
+Until the first successful PR analysis, SonarCloud shows no quality gate; after that, any open issue fails CI.
+
 ## Pull requests and releases
 
 - **Squash merge only** into `master` (branch ruleset).
