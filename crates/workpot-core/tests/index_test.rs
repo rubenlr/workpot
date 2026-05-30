@@ -1,10 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use workpot_core::WorkpotError;
 use workpot_core::domain::Config;
 use workpot_core::infra::store;
 use workpot_core::services::{catalog, index};
-use workpot_core::WorkpotError;
 
 fn git_worktree(parent: &Path, name: &str) -> PathBuf {
     let repo = parent.join(name);
@@ -38,6 +38,44 @@ fn open_index_fixture(max_repos: Option<u32>) -> (tempfile::TempDir, rusqlite::C
     }
     let conn = store::open_connection(&db_path).expect("open db");
     (dir, conn, config)
+}
+
+#[test]
+fn index_purges_orphan_scan_repos() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let watch_root = dir.path().join("watch");
+    fs::create_dir_all(&watch_root).expect("watch root");
+    let orphan_parent = dir.path().join("orphan-parent");
+    let orphan_repo = git_worktree(&orphan_parent, "solo");
+    let orphan_key = orphan_repo
+        .canonicalize()
+        .expect("canonicalize orphan")
+        .display()
+        .to_string();
+
+    let db_path = dir.path().join("workpot.db");
+    let mut config = Config::default();
+    config.watch_roots.push(watch_root);
+    let conn = store::open_connection(&db_path).expect("open db");
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'solo', 0, 'scan', '', 0)",
+        rusqlite::params![orphan_key],
+    )
+    .expect("insert orphan scan row");
+
+    let summary = index::run_full(&conn, &config).expect("run_full");
+    assert_eq!(
+        summary.removed, 1,
+        "scan repo outside configured watch roots must be purged"
+    );
+
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
+            row.get(0)
+        })
+        .expect("count");
+    assert_eq!(count, 0);
 }
 
 #[test]
@@ -113,7 +151,7 @@ fn index_preserves_manual_source() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     let repo = git_worktree(&watch_root, "manual-repo");
-    catalog::register_manual(&conn, &repo).expect("manual register");
+    catalog::register_manual(&conn, &config, &repo).expect("manual register");
 
     index::run_full(&conn, &config).expect("run_full");
 
@@ -139,6 +177,18 @@ fn index_removes_stale_path() {
     let summary = index::run_full(&conn, &config).expect("second index");
     assert_eq!(summary.removed, 1);
 
+    let removed_changes: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM index_changes WHERE action = 'removed'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("removed changes");
+    assert_eq!(
+        removed_changes, 1,
+        "stale path must appear in index_changes"
+    );
+
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
             row.get(0)
@@ -161,7 +211,7 @@ fn index_validates_manual_outside_roots() {
     config.watch_roots.push(watch_root);
     let conn = store::open_connection(&db_path).expect("open");
 
-    catalog::register_manual(&conn, &repo).expect("manual outside roots");
+    catalog::register_manual(&conn, &config, &repo).expect("manual outside roots");
     index::run_full(&conn, &config).expect("index keeps valid manual");
 
     let count: i64 = conn
@@ -221,6 +271,110 @@ fn index_writes_history() {
         .query_row("SELECT COUNT(*) FROM index_changes", [], |row| row.get(0))
         .expect("changes");
     assert!(changes >= 1);
+}
+
+#[test]
+fn index_git_summary_accounts_for_all_non_excluded_repos() {
+    let (_dir, conn, config) = open_index_fixture(None);
+    let watch_root = config.watch_roots[0].clone();
+    git_worktree(&watch_root, "repo-a");
+    git_worktree(&watch_root, "repo-b");
+
+    let summary = index::run_full(&conn, &config).expect("run_full");
+
+    let non_excluded: i64 = conn
+        .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
+            row.get(0)
+        })
+        .expect("count");
+    assert_eq!(non_excluded, 2);
+
+    let accounted = summary.git_refreshed + summary.git_errors;
+    assert_eq!(
+        accounted, non_excluded as u32,
+        "git pass must classify every indexed repo (D-16/D-17): {summary:?}"
+    );
+    assert_eq!(
+        summary.git_refreshed, 2,
+        "both repos should refresh cleanly"
+    );
+    assert_eq!(summary.git_errors, 0);
+}
+
+#[test]
+fn index_second_pass_persists_git_state() {
+    let (_dir, conn, config) = open_index_fixture(None);
+    let watch_root = config.watch_roots[0].clone();
+    let repo_path = git_worktree(&watch_root, "git-state-repo");
+    let path_key = repo_path
+        .canonicalize()
+        .expect("canonical")
+        .display()
+        .to_string();
+
+    let summary = index::run_full(&conn, &config).expect("run_full");
+    assert!(
+        summary.git_refreshed >= 1,
+        "expected at least one successful git refresh, got {:?}",
+        summary
+    );
+
+    let (branch, refreshed_at, git_err): (Option<String>, Option<i64>, Option<String>) = conn
+        .query_row(
+            "SELECT branch, git_refreshed_at, git_state_error FROM repos WHERE path = ?1",
+            rusqlite::params![path_key],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("repo git columns");
+    assert!(branch.is_some(), "branch set after index git pass");
+    assert!(refreshed_at.is_some(), "git_refreshed_at set after index");
+    assert!(git_err.is_none(), "healthy repo has no git_state_error");
+}
+
+#[test]
+fn index_git_pass_counts_refresh_errors() {
+    let (_dir, conn, config) = open_index_fixture(None);
+    let watch_root = config.watch_roots[0].clone();
+    git_worktree(&watch_root, "good");
+
+    let plain = watch_root.join("not-git");
+    fs::create_dir_all(&plain).expect("plain dir");
+
+    index::run_full(&conn, &config).expect("first index");
+
+    let plain_key = plain
+        .canonicalize()
+        .expect("canonical")
+        .display()
+        .to_string();
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'not-git', 0, 'manual', '', 0)",
+        rusqlite::params![plain_key],
+    )
+    .expect("seed non-git row for git pass");
+
+    let summary = index::run_full(&conn, &config).expect("second index");
+    assert!(
+        summary.git_refreshed >= 1,
+        "healthy repo should refresh: {summary:?}"
+    );
+    assert!(
+        summary.git_errors >= 1,
+        "non-git row should count as git error (D-16/D-17): {summary:?}"
+    );
+
+    let git_err: Option<String> = conn
+        .query_row(
+            "SELECT git_state_error FROM repos WHERE path = ?1",
+            rusqlite::params![plain_key],
+            |row| row.get(0),
+        )
+        .expect("git_state_error column");
+    assert!(
+        git_err.is_some(),
+        "failed refresh must persist git_state_error (D-09)"
+    );
 }
 
 #[test]

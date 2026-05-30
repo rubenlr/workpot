@@ -1,33 +1,160 @@
-name: CI
+name: ci
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
 
 permissions:
   contents: read
   pull-requests: write
 
 jobs:
-  test:
+  fmt:
+    name: rustfmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.85
-      - uses: Swatinem/rust-cache@v2
+          toolchain: 1.96
+          components: rustfmt, clippy
+      - name: Restore Rust cache
+        uses: ./.github/actions/rust-cache
         with:
-          workspaces: .
-          shared-key: llvm-cov
-      - uses: taiki-e/install-action@v2
+          shared-key: ci
+          key: ${{ runner.os }}
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov
+          tool: cargo-deny
+          fallback: none
+      - name: Run cargo deny
+        run: cargo deny check --config .github/ci-assist/deny.toml
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+          fallback: none
+      - name: Run cargo audit
+        run: cargo audit
+
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96
+      - name: Restore Rust cache
+        uses: ./.github/actions/rust-cache
+        with:
+          shared-key: ci
+          key: ${{ matrix.os }}
+      - name: Fetch dependencies (macOS D-12)
+        if: matrix.os == 'macos-latest'
+        run: cargo fetch
+      - name: Check no network deps (DATA-02)
+        if: matrix.os == 'macos-latest'
+        run: bash scripts/check-no-network-deps.sh
+      - name: Test offline (macOS D-12)
+        if: matrix.os == 'macos-latest'
+        run: cargo test --offline --workspace --all-targets
+      - name: Test
+        if: matrix.os != 'macos-latest'
+        run: cargo test --workspace --all-targets
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96
+      - name: Restore Rust cache
+        uses: ./.github/actions/rust-cache
+        with:
+          shared-key: ci
+          key: ${{ runner.os }}
       - name: Fetch dependencies
         run: cargo fetch
       - name: Check no network deps (DATA-02)
         run: bash scripts/check-no-network-deps.sh
-      - name: Build workspace
+      - name: Build workspace offline
         run: cargo build --offline --workspace
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+          fallback: none
       - name: Test with coverage
         run: cargo llvm-cov test --offline --workspace --lcov --output-path lcov.info
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lcov.info
+          path: lcov.info
+          retention-days: 7
+
+  sonarcloud:
+    name: sonarcloud
+    needs: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: lcov.info
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dproject.settings=.github/ci-assist/sonar-project.properties
+            -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
+            -Dsonar.pullrequest.branch=${{ github.event.pull_request.head.ref }}
+            -Dsonar.pullrequest.base=${{ github.event.pull_request.base.ref }}
+
+  release-build:
+    name: cargo build --release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96
+      - name: Restore Rust cache
+        uses: ./.github/actions/rust-cache
+        with:
+          shared-key: ci
+          key: ${{ runner.os }}
+      - name: Build release CLI
+        run: cargo build --release -p workpot-cli
+      - name: Verify CLI version
+        run: ./target/release/workpot --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-workpot-macos-aarch64
+          path: target/release/workpot

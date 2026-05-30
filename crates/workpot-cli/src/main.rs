@@ -1,8 +1,12 @@
+mod git_display;
+
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use workpot_core::{AppContext, WorkpotError};
+
+use git_display::format_git_state;
 
 #[derive(Parser)]
 #[command(name = "workpot", about = "Local git repo workspace launcher", version)]
@@ -59,12 +63,15 @@ enum RootsCommands {
 }
 
 fn main() -> ExitCode {
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+        .try_init();
     match run() {
         Ok(()) => ExitCode::SUCCESS,
-        Err(e) if matches!(
-            e.downcast_ref::<WorkpotError>(),
-            Some(WorkpotError::IndexCapExceeded { .. })
-        ) =>
+        Err(e)
+            if matches!(
+                e.downcast_ref::<WorkpotError>(),
+                Some(WorkpotError::IndexCapExceeded { .. })
+            ) =>
         {
             eprintln!("{e:#}");
             ExitCode::from(1)
@@ -83,13 +90,28 @@ fn run() -> anyhow::Result<()> {
             let ctx = AppContext::open().context("failed to open workpot")?;
             println!("config: {}", ctx.config_path().display());
             println!("database: {}", ctx.database_path().display());
+            let roots = ctx.roots_list();
+            if roots.is_empty() {
+                println!("watch_roots: (none)");
+            } else {
+                println!(
+                    "watch_roots: (first-run config may seed ~/code and ~/dev when those dirs exist)"
+                );
+                for root in roots {
+                    println!("  {}", root.display());
+                }
+            }
         }
         Commands::Index => {
             let ctx = AppContext::open().context("failed to open workpot")?;
             let summary = ctx.run_index()?;
             println!(
-                "index: +{} -{} skipped {}",
-                summary.added, summary.removed, summary.skipped
+                "index: +{} -{} skipped {} / git: {} refreshed, {} errors",
+                summary.added,
+                summary.removed,
+                summary.skipped,
+                summary.git_refreshed,
+                summary.git_errors
             );
         }
         Commands::Repo(sub) => match sub {
@@ -102,7 +124,12 @@ fn run() -> anyhow::Result<()> {
                 let ctx = AppContext::open().context("failed to open workpot")?;
                 let repos = ctx.list_repos().context("repo list failed")?;
                 for repo in repos {
-                    println!("{}  {}", repo.name, repo.path.display());
+                    println!(
+                        "{}  {}  {}",
+                        repo.name,
+                        repo.path.display(),
+                        format_git_state(&repo)
+                    );
                 }
             }
             RepoCommands::Remove { path } => {
@@ -125,7 +152,7 @@ fn run() -> anyhow::Result<()> {
                     println!("removed exclude: {glob}");
                 }
             }
-        },
+        }
         Commands::Roots(sub) => {
             let mut ctx = AppContext::open().context("failed to open workpot")?;
             match sub {

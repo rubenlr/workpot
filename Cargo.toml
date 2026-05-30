@@ -4,6 +4,11 @@ resolver = "2"
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
-version = "0.1.0"
-license = "MIT"
+rust-version = "1.96"
+version = "0.0.1"
+license = "Unlicense"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

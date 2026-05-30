@@ -13,7 +13,7 @@
 |---|-------|------|--------------|------------------|
 | 1 | Core & persistence | Runnable Rust core with local DB and config | DATA-01, DATA-02 | 3 |
 | 2 | Repo discovery | 5/5 | Complete |
-| 3 | Git state | Fresh branch/dirty/ahead-behind per repo | GIT-01..04 | 4 |
+| 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
 | 4 | Tray finder MVP | Daily driver: list, filter, open in Cursor | UI-01..04, SRCH-01..03, LAUNCH-01 | 5 |
 | 5 | Tags & prioritization | Pins, tags, notes, signal ranking | ORG-01..04 | 4 |
 | 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
@@ -99,7 +99,20 @@ Plans:
 3. Repos with upstream show ahead/behind when available
 4. Refreshing 50+ repos does not block the tray for more than 500ms perceived latency
 
-**Plans:** TBD via `/gsd-plan-phase 3`
+**Plans:** 3/3 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 03-01-PLAN.md — Package checkpoint, git2/rayon/humantime deps, migration 003, GitState struct, infra/git.rs rewrite (GIT-01/02/03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 03-02-PLAN.md — RepoRecord extension, services/git_state.rs (refresh_git_state + refresh_all), catalog SELECT, GIT-01/02/03/04 tests (GIT-01/02/03/04)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 03-03-PLAN.md — index.rs second pass, CLI output (index stats + repo list git state), end-to-end verify (GIT-01/02/03/04)
 
 ---
 
@@ -188,7 +201,7 @@ Plans:
 |-------|--------|----------------|
 | 1 | Planned | 0/3 |
 | 2 | Planned | 0/4 |
-| 3 | Not started | 0/0 |
+| 3 | Planned | 0/3 |
 | 4 | Not started | 0/0 |
 | 5 | Not started | 0/0 |
 | 6 | Not started | 0/0 |

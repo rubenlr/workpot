@@ -1,10 +1,10 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use workpot_core::AppContext;
 use workpot_core::domain::Config;
 use workpot_core::save_config;
-use workpot_core::services::{discovery, excludes, index};
-use workpot_core::AppContext;
+use workpot_core::services::{discovery, excludes};
 
 fn git_worktree(parent: &Path, name: &str) -> std::path::PathBuf {
     let repo = parent.join(name);
@@ -75,7 +75,9 @@ fn manual_add_ignores_exclude_glob() {
     let repo = git_worktree(&blocked_parent, "repo");
 
     let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
-    let record = ctx.register_manual(&repo).expect("manual add despite exclude");
+    let record = ctx
+        .register_manual(&repo)
+        .expect("manual add despite exclude");
     assert_eq!(record.path, repo.canonicalize().expect("canonicalize"));
 }
 
@@ -134,7 +136,7 @@ fn remove_then_index_skips() {
     );
 
     ctx.remove_repo(&repo).expect("remove with exclude");
-    index::run_full(ctx.connection(), ctx.config()).expect("rescan");
+    ctx.run_index().expect("rescan");
 
     assert!(
         !ctx.list_repos()
@@ -143,6 +145,18 @@ fn remove_then_index_skips() {
             .any(|r| r.path == repo_canon),
         "removed repo must not reappear after index"
     );
+}
+
+#[test]
+fn excludes_remove_not_found() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(&config_path, empty_config_marker()).expect("write config");
+
+    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let err = ctx.excludes_remove("/no-such-glob/**").unwrap_err();
+    assert!(matches!(err, workpot_core::WorkpotError::NotFound(_)));
 }
 
 #[test]

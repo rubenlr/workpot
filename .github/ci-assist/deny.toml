@@ -1,0 +1,38 @@
+# cargo-deny configuration.
+# Goal: reject GPL/AGPL transitive deps and pin to the official crates.io registry.
+
+[graph]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+[advisories]
+version = 2
+ignore = []
+
+[licenses]
+version = 2
+# Permissive licenses present in the current dependency tree (see: cargo metadata).
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "Unlicense",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+]
+confidence-threshold = 0.9
+exceptions = []
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

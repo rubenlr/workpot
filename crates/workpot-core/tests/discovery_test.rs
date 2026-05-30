@@ -1,13 +1,13 @@
 use globset::GlobSet;
 use std::fs;
-use std::path::Path;
-use std::process::Command;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use workpot_core::WorkpotError;
 use workpot_core::domain::Config;
 use workpot_core::infra::git::resolve_git_common_dir;
 use workpot_core::services::discovery;
-use workpot_core::WorkpotError;
 
 fn empty_excludes() -> GlobSet {
     globset::GlobSetBuilder::new()
@@ -20,6 +20,18 @@ fn git_worktree(parent: &Path, name: &str) -> std::path::PathBuf {
     let git_dir = repo.join(".git");
     fs::create_dir_all(git_dir.join("objects")).expect("objects");
     fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    repo
+}
+
+fn git_init_worktree(parent: &Path, name: &str) -> std::path::PathBuf {
+    let repo = parent.join(name);
+    fs::create_dir_all(&repo).expect("repo dir");
+    let status = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&repo)
+        .status()
+        .expect("git init");
+    assert!(status.success(), "git init failed for {}", repo.display());
     repo
 }
 
@@ -143,6 +155,27 @@ fn built_in_exclude_blocks_node_modules() {
 }
 
 #[test]
+fn build_exclude_set_merges_user_glob_with_builtins() {
+    let mut config = Config::default();
+    config
+        .excludes
+        .push("**/workpot-custom-exclude-dir/**".to_string());
+    let exclude_set = discovery::build_exclude_set(&config).expect("exclude set");
+
+    let custom = PathBuf::from("/tmp/workpot-custom-exclude-dir/nested/repo");
+    assert!(
+        exclude_set.is_match(&custom),
+        "user exclude glob must be honored alongside built-ins"
+    );
+    assert!(
+        discovery::built_in_defaults()
+            .iter()
+            .any(|g| g.contains("node_modules")),
+        "built-in defaults remain available"
+    );
+}
+
+#[test]
 fn build_exclude_set_rejects_invalid_glob() {
     let mut config = Config::default();
     config.excludes.push("[invalid".to_string());
@@ -166,6 +199,37 @@ fn discovery_skips_symlink() {
     assert!(
         !candidates.iter().any(|p| p == &real_canon),
         "symlinked repo must not be discovered when follow_links is false"
+    );
+}
+
+#[test]
+fn scan_root_returns_empty_for_missing_path() {
+    let missing = PathBuf::from("/tmp/workpot-discovery-missing-root-nope");
+    let candidates = discovery::scan_root(&missing, &empty_excludes()).expect("scan missing root");
+    assert!(
+        candidates.is_empty(),
+        "missing watch root must yield no candidates"
+    );
+}
+
+#[test]
+fn resolve_git_common_dir_errors_on_plain_directory() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let plain = root.path().join("plain");
+    fs::create_dir_all(&plain).expect("plain dir");
+    let err = resolve_git_common_dir(&plain).unwrap_err();
+    assert!(matches!(err, WorkpotError::GitUnavailable(_)));
+}
+
+#[test]
+fn list_worktree_paths_empty_without_linked_worktrees() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let repo = git_init_worktree(root.path(), "normal");
+    let canon = repo.canonicalize().expect("canonicalize");
+    let linked = workpot_core::infra::git::list_worktree_paths(&canon).expect("list worktrees");
+    assert!(
+        linked.is_empty(),
+        "repo with no extra worktrees should yield an empty linked list (D-04)"
     );
 }
 

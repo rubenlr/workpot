@@ -5,7 +5,7 @@ pub mod error;
 pub mod infra;
 pub mod services;
 
-use crate::domain::{Config, RepoRecord};
+use crate::domain::Config;
 use crate::error::Result;
 use crate::infra::paths;
 use crate::infra::store;
@@ -14,6 +14,8 @@ use rusqlite::Connection;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+pub use crate::domain::GitState;
+pub use crate::domain::RepoRecord;
 pub use crate::error::WorkpotError;
 
 pub fn version() -> &'static str {
@@ -50,6 +52,7 @@ impl AppContext {
 
     /// Open with explicit paths — intended for integration tests; production CLI uses [`Self::open`].
     pub fn open_with_paths(config_path: PathBuf, db_path: PathBuf) -> Result<Self> {
+        remove_stale_config_temp(&config_path);
         ensure_default_config(&config_path)?;
         let config = load_config(&config_path)?;
         let conn = store::open_connection(&db_path)?;
@@ -74,7 +77,7 @@ impl AppContext {
     }
 
     pub fn register_manual(&self, path: &Path) -> Result<RepoRecord> {
-        catalog::register_manual(&self.conn, path)
+        catalog::register_manual(&self.conn, &self.config, path)
     }
 
     pub fn list_repos(&self) -> Result<Vec<RepoRecord>> {
@@ -101,7 +104,7 @@ impl AppContext {
         &mut self.config
     }
 
-    pub fn connection(&self) -> &Connection {
+    pub(crate) fn connection(&self) -> &Connection {
         &self.conn
     }
 
@@ -120,6 +123,33 @@ impl AppContext {
     pub fn roots_remove(&mut self, path: &Path, skip_prune: bool) -> Result<()> {
         roots::remove_root(self, path, skip_prune)
     }
+
+    /// Refresh git state for a single repository. Public API for Phase 4 tray (D-18).
+    ///
+    /// Read-only: does not persist to SQLite. Use [`Self::refresh_and_persist_git_state`]
+    /// when the DB row must be updated (clears stale `git_state_error` on success).
+    pub fn refresh_git_state(
+        &self,
+        path: &std::path::Path,
+    ) -> crate::error::Result<crate::domain::GitState> {
+        crate::services::git_state::refresh_git_state(path)
+    }
+
+    /// Refresh git state for a single repository and persist the result to SQLite.
+    pub fn refresh_and_persist_git_state(
+        &self,
+        path: &std::path::Path,
+    ) -> crate::error::Result<crate::domain::GitState> {
+        crate::services::git_state::refresh_and_persist(&self.conn, path)
+    }
+}
+
+/// Drop orphaned `config.toml.tmp` left by a crash between write and rename.
+fn remove_stale_config_temp(path: &Path) {
+    let tmp = path.with_extension("tmp");
+    if tmp.is_file() {
+        let _ = fs::remove_file(&tmp);
+    }
 }
 
 fn ensure_default_config(path: &Path) -> Result<()> {
@@ -135,7 +165,7 @@ fn ensure_default_config(path: &Path) -> Result<()> {
     let default = default_config(&home);
     let contents = toml::to_string_pretty(&default)
         .map_err(|e| crate::error::WorkpotError::Config(e.to_string()))?;
-    fs::write(path, contents)?;
+    write_atomic(path, &contents)?;
     Ok(())
 }
 
@@ -144,23 +174,33 @@ pub(crate) fn load_config(path: &Path) -> Result<Config> {
         return Ok(Config::default());
     }
     let contents = fs::read_to_string(path)?;
-    let config: Config = toml::from_str(&contents).map_err(|e| WorkpotError::Config(e.to_string()))?;
-    config
-        .validate()
-        .map_err(WorkpotError::LimitsExceeded)?;
+    let config: Config =
+        toml::from_str(&contents).map_err(|e| WorkpotError::Config(e.to_string()))?;
+    config.validate().map_err(WorkpotError::Config)?;
     Ok(config)
 }
 
 /// Persist config to disk (D-19).
 pub fn save_config(config_path: &Path, config: &Config) -> Result<()> {
-    config
-        .validate()
-        .map_err(WorkpotError::LimitsExceeded)?;
-    if let Some(parent) = config_path.parent() {
+    config.validate().map_err(WorkpotError::Config)?;
+    let contents =
+        toml::to_string_pretty(config).map_err(|e| WorkpotError::Config(e.to_string()))?;
+    write_atomic(config_path, &contents)?;
+    Ok(())
+}
+
+/// Write `contents` to `path` atomically via temp file + fsync + rename.
+fn write_atomic(path: &Path, contents: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let contents = toml::to_string_pretty(config)
-        .map_err(|e| WorkpotError::Config(e.to_string()))?;
-    fs::write(config_path, contents)?;
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, contents)?;
+    #[cfg(unix)]
+    {
+        let file = std::fs::OpenOptions::new().write(true).open(&tmp)?;
+        file.sync_all()?;
+    }
+    fs::rename(&tmp, path)?;
     Ok(())
 }

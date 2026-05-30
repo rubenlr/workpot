@@ -1,14 +1,20 @@
+use crate::AppContext;
+use crate::domain::SOURCE_SCAN;
 use crate::error::{Result, WorkpotError};
 use crate::save_config;
-use crate::services::index;
-use crate::AppContext;
-use rusqlite::{params, Connection};
+use crate::services::{index, paths};
+use rusqlite::{Connection, params};
 use std::path::{Path, PathBuf};
 
 pub fn add_root(ctx: &mut AppContext, path: &Path) -> Result<()> {
     let canonical = canonicalize_watch_root(path)?;
 
-    if ctx.config().watch_roots.iter().any(|r| roots_equal(r, &canonical)) {
+    if ctx
+        .config()
+        .watch_roots
+        .iter()
+        .any(|r| roots_equal(r, &canonical))
+    {
         return Err(WorkpotError::WatchRootAlreadyExists(
             canonical.display().to_string(),
         ));
@@ -22,13 +28,17 @@ pub fn add_root(ctx: &mut AppContext, path: &Path) -> Result<()> {
     }
 
     ctx.config_mut().watch_roots.push(canonical.clone());
+    if let Err(e) = save_config(ctx.config_path(), ctx.config()) {
+        ctx.config_mut().watch_roots.pop();
+        return Err(e);
+    }
+
     match index::run_full(ctx.connection(), ctx.config()) {
-        Ok(_) => {
-            save_config(ctx.config_path(), ctx.config())?;
-            Ok(())
-        }
+        Ok(_) => Ok(()),
         Err(e) => {
             ctx.config_mut().watch_roots.pop();
+            save_config(ctx.config_path(), ctx.config())?;
+            prune_scan_repos_under_root(ctx.connection(), &canonical)?;
             Err(e)
         }
     }
@@ -40,19 +50,32 @@ pub fn list_roots(ctx: &AppContext) -> Vec<PathBuf> {
 
 pub fn remove_root(ctx: &mut AppContext, path: &Path, skip_prune: bool) -> Result<()> {
     let canonical = canonicalize_watch_root(path)?;
-    let roots = &mut ctx.config_mut().watch_roots;
-    let pos = roots
+    let config_path = ctx.config_path().to_path_buf();
+    let pos = ctx
+        .config()
+        .watch_roots
         .iter()
         .position(|r| roots_equal(r, &canonical))
         .ok_or_else(|| WorkpotError::WatchRootNotFound(canonical.display().to_string()))?;
-    roots.remove(pos);
+    let removed = ctx.config_mut().watch_roots.remove(pos);
 
-    save_config(ctx.config_path(), ctx.config())?;
-
-    if !skip_prune {
-        prune_scan_repos_under_root(ctx.connection(), &canonical)?;
+    if let Err(e) = save_config(&config_path, ctx.config()) {
+        ctx.config_mut().watch_roots.insert(pos, removed);
+        return Err(e);
     }
-    Ok(())
+
+    if skip_prune {
+        return Ok(());
+    }
+
+    match prune_scan_repos_under_root(ctx.connection(), &canonical) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            ctx.config_mut().watch_roots.insert(pos, removed);
+            save_config(&config_path, ctx.config())?;
+            Err(e)
+        }
+    }
 }
 
 /// Reload config from disk (D-19).
@@ -68,9 +91,9 @@ fn prune_scan_repos_under_root(conn: &Connection, root: &Path) -> Result<u32> {
         .canonicalize()
         .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", root.display())))?;
 
-    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = 'scan'")?;
+    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1")?;
     let paths: Vec<String> = stmt
-        .query_map([], |row| row.get(0))?
+        .query_map(params![SOURCE_SCAN], |row| row.get(0))?
         .collect::<std::result::Result<_, _>>()?;
 
     let mut removed = 0u32;
@@ -85,10 +108,7 @@ fn prune_scan_repos_under_root(conn: &Connection, root: &Path) -> Result<u32> {
 }
 
 fn repo_under_root(repo_path: &Path, root_canon: &Path) -> Result<bool> {
-    let Ok(repo_canon) = repo_path.canonicalize() else {
-        return Ok(false);
-    };
-    Ok(repo_canon.starts_with(root_canon))
+    Ok(paths::path_under_root(repo_path, root_canon))
 }
 
 fn canonicalize_watch_root(path: &Path) -> Result<PathBuf> {

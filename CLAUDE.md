@@ -31,7 +31,7 @@ Built on Tauri with a CLI and menu-bar tray. v1 is a prioritized fuzzy finder wi
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
 | Tauri | 2.x | macOS tray app + native APIs | Official path for menu-bar apps; shares Rust core with CLI |
-| Rust | 1.85+ (2024 edition) | Indexer, git orchestration, shared library | One core crate used by Tauri + CLI; avoids duplicating git logic |
+| Rust | 1.96+ (2024 edition) | Indexer, git orchestration, shared library | One core crate used by Tauri + CLI; avoids duplicating git logic |
 | SQLite (rusqlite) | 0.32+ | Local repo index, tags, recipes, settings | Embedded, fast, backup-friendly; fits local-only constraint |
 | git2 (libgit2) | 0.19+ | Read git state without shelling out | Stable ahead/behind, dirty detection; batch-friendly for many repos |
 | notify / notify-debouncer-full | 5.x / 0.4+ | Filesystem watch on roots | Debounced events; re-index on clone/pull outside Workpot |
