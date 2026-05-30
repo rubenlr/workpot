@@ -31,7 +31,7 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy -p workpot-core -p workpot-cli --all-targets -- -D warnings
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
         with:
@@ -73,10 +73,22 @@ jobs:
         run: bash scripts/check-no-network-deps.sh
       - name: Test offline (macOS D-12)
         if: matrix.os == 'macos-latest'
-        run: cargo test --offline --workspace --all-targets
+        run: cargo test --offline -p workpot-core -p workpot-cli --all-targets
+      - name: Setup Node.js
+        if: matrix.os == 'macos-latest'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Build tray (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          cargo build -p workpot-tray
+          npm ci
+          npm run build
       - name: Test
         if: matrix.os != 'macos-latest'
-        run: cargo test --workspace --all-targets
+        run: cargo test -p workpot-core -p workpot-cli --all-targets
 
   coverage:
     name: coverage
@@ -97,14 +109,14 @@ jobs:
       - name: Check no network deps (DATA-02)
         run: bash scripts/check-no-network-deps.sh
       - name: Build workspace offline
-        run: cargo build --offline --workspace
+        run: cargo build --offline -p workpot-core -p workpot-cli
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
           fallback: none
       - name: Test with coverage
-        run: cargo llvm-cov test --offline --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov test --offline -p workpot-core -p workpot-cli --lcov --output-path lcov.info
       - uses: actions/upload-artifact@v4
         with:
           name: lcov.info
@@ -154,6 +166,16 @@ jobs:
         run: cargo build --release -p workpot-cli
       - name: Verify CLI version
         run: ./target/release/workpot --version
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Build tray release
+        run: |
+          cargo build -p workpot-tray
+          npm ci
+          npm run build
       - uses: actions/upload-artifact@v4
         with:
           name: ci-workpot-macos-aarch64

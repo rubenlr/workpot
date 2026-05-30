@@ -1,5 +1,6 @@
 [workspace]
-members = ["crates/workpot-core", "crates/workpot-cli"]
+members = ["crates/workpot-core", "crates/workpot-cli", "src-tauri"]
+default-members = ["crates/workpot-core", "crates/workpot-cli"]
 resolver = "2"
 
 [workspace.package]

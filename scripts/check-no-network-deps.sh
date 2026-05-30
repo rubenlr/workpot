@@ -14,4 +14,5 @@ check_crate() {
 
 check_crate workpot-core
 check_crate workpot-cli
-echo "OK: no banned network crates in workpot-core or workpot-cli dependency trees"
+check_crate workpot-tray
+echo "OK: no banned network crates in workpot-core, workpot-cli, or workpot-tray dependency trees"
