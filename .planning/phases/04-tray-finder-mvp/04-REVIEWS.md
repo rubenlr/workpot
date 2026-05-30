@@ -1,9 +1,9 @@
 ---
 phase: 4
 reviewers: [codex-fallback]
-review_cycles: 4
+review_cycles: 5
 replan_cycles: 4
-reviewed_at: 2026-05-30T20:00:00Z
+reviewed_at: 2026-05-30T21:00:00Z
 plans_reviewed:
   - 04-01-PLAN.md
   - 04-02-PLAN.md
@@ -425,3 +425,83 @@ Justification: Cycle-3 procedural HIGHs (task ordering, lockfiles) are closed wi
 | Cycle 4 MEDIUM — 04-02 Task 4 stale Task 3 ref | **Open (optional)** — doc hygiene only |
 
 **Status:** Phase 4 plans pass cycle-4 review with **0 HIGH** concerns. Execute-phase may proceed.
+
+---
+
+## Cycle 5 — Final pre-execute review (2026-05-30)
+
+> **Reviewer:** Independent in-context review (no external CLIs available on PATH; `claude` CLI skipped — same runtime). Scope: full re-read of all four plans post-`73719ff`; verify cycle-4 MEDIUM closures; hunt for new gaps.
+
+### Cycle 4 MEDIUM resolution status
+
+| Cycle 4 MEDIUM | Status | Evidence |
+|----------------|--------|----------|
+| Task 2 AC omits fmt/coverage ubuntu assertions | **Open (optional)** — action §3 is explicit; AC lines 232–236 test-step only; not machine-enforceable via AC alone |
+| 04-02 Task 4 stale "from 04-01 Task 3" setup-node ref | **Open (optional)** — doc hygiene; setup-node now in Task 2 |
+| fmt job deny/audit behavior with tray member | **Open (unverified)** — no plan change; executor confirms at Task 2 commit time |
+
+### 1. Summary
+
+Plans 04-01 through 04-04 remain well-structured with no new architectural or wave-ordering gaps. One new MEDIUM found: plans 02 and 03 each add Tauri IPC commands (`get_tray_config`, `refresh_all_git_state`, `panel-opened`) but neither lists `src-tauri/capabilities/default.json` in `files_modified` or requires updating it in task AC. In Tauri 2, unlisted commands are blocked at runtime by the capabilities system — panel chrome and background refresh will fail silently if capabilities are not updated. This is a concrete executor trap with no architectural complexity.
+
+### 2. Strengths
+
+- Cycle-3 HIGHs (Task 2 atomicity, lockfiles) remain closed — atomic commit rules still in frontmatter and task action with "do not edit ci.yml in this task" guard in Task 3.
+- Wave 2b ordering (04-03 depends on 04-02) remains intact; Svelte ownership scoping in 04-03 Task 3 is explicit.
+- SRCH-01 partial traceability in frontmatter + REQUIREMENTS.md unchanged and correct.
+- `shell-words` parse + indexed-path validation for launch in 04-04 is still the right security approach.
+- `get_tray_config` as dedicated IPC (not overloaded on `list_repos`) is committed in 04-02 Task 1 AC — cleaner boundary.
+
+### 3. Concerns
+
+| Severity | Concern |
+|----------|---------|
+| **MEDIUM** | **Plans 02 and 03 omit capabilities update:** `04-02` adds `get_tray_config` command and `04-03` adds `refresh_all_git_state` + emits `panel-opened`/`git-refresh-complete` events. Neither plan lists `src-tauri/capabilities/default.json` in `files_modified` nor requires a capabilities allow entry in task AC. In Tauri 2 production build (and `--release` CI), unregistered IPC calls are blocked by the capability system — fuzzy filter panel will open but `get_tray_config` invoke will silently fail, and background refresh command will never reach Rust. Plans 01 and 04 both list capabilities correctly. Gap is in the middle two plans. |
+| **MEDIUM** | **04-01 Task 2 AC still omits fmt/coverage ubuntu job assertions** (carried from cycle 4). Action §3 is explicit; AC lines 232–236 verify test step only. Executor passing AC alone could leave `cargo clippy --workspace` on ubuntu fmt job or `--workspace` on coverage job. |
+| **MEDIUM** | **04-02 Task 4 setup-node cross-reference is stale** (carried from cycle 4): `read_first` cites "from 04-01 Task 3 if not already present" — setup-node moved to Task 2 in `73719ff`. |
+| **LOW** | **`build.rs` in 04-01 `files_modified` but no explicit action:** Standard Tauri boilerplate (`tauri_build::build()`); any competent executor will include it; no plan instruction. Unlikely to cause failure. |
+| **LOW** | **`index-complete` event has no Svelte listener** (carried; acceptable fire-and-forget for menu-only refresh in MVP). |
+
+### 4. Suggestions
+
+1. **04-02 Task 1 AC:** Add: "`src-tauri/capabilities/default.json` includes invoke allow for `get_tray_config`."
+2. **04-03 Task 2 AC:** Add: "`src-tauri/capabilities/default.json` includes invoke allow for `refresh_all_git_state`." List `capabilities/default.json` in `04-03 files_modified`.
+3. **Optional:** Tighten 04-01 Task 2 AC with fmt clippy + coverage ubuntu assertions (as noted in cycle 4).
+4. **Optional:** Fix "from 04-01 Task 3" → "from 04-01 Task 2" in 04-02 Task 4 action.
+
+### 5. Risk Assessment
+
+**Overall: LOW**
+
+Justification: All structural HIGHs from prior cycles are closed. The new capabilities gap is MEDIUM — it will cause a runtime IPC failure on first launch, but it is a one-line fix per plan (add capabilities entry) with no architectural implications. The execute-phase can proceed; the executor should add capabilities allow entries for `get_tray_config` and `refresh_all_git_state` at implementation time if not patched in plan docs first.
+
+---
+
+## Consensus Summary (cycle 5)
+
+*Single reviewer (no external CLIs). All prior HIGHs closed; no new HIGHs.*
+
+### Agreed Strengths
+
+- Atomic Task 2 contract + lockfile AC remain enforceable in plans.
+- Linux `-p` package set, Wave 2b, SRCH-01 partial traceability, Node setup-node all intact.
+- `get_tray_config` IPC commitment and `shell-words` security mitigation in 04-04 unchanged.
+
+### Agreed Concerns (highest priority)
+
+1. Plans 02 and 03 omit `capabilities/default.json` update — IPC will fail at runtime (**MEDIUM**, new in cycle 5).
+2. 04-01 Task 2 AC omits fmt/coverage ubuntu assertions (**MEDIUM**, carried).
+3. 04-02 Task 4 stale Task 3 setup-node ref (**MEDIUM**, carried).
+
+### Divergent Views
+
+- None (single reviewer). Capabilities gap might be judged LOW if team runs a post-task manual smoke (IPC error is immediately visible) rather than relying on AC verification.
+
+---
+
+## Action Items for next replan or execute-phase (cycle 5)
+
+1. **Recommended before execute:** Add `capabilities/default.json` to 04-02 and 04-03 `files_modified` and AC (one line each).
+2. **Optional:** Extend 04-01 Task 2 AC for fmt/coverage ubuntu steps.
+3. **Optional:** Fix 04-02 Task 4 "Task 3" → "Task 2" setup-node reference.
+4. **Execute-phase may proceed** — no blocking HIGHs.
