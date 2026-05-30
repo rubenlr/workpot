@@ -111,12 +111,8 @@ jobs:
         run: cargo test -p workpot-core -p workpot-cli --all-targets
 
   coverage:
-    name: coverage (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    name: coverage
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
@@ -127,7 +123,7 @@ jobs:
         uses: ./.github/actions/rust-cache
         with:
           shared-key: ci
-          key: ${{ matrix.os }}
+          key: ${{ runner.os }}
       - name: Fetch dependencies
         run: cargo fetch
       - name: Install cargo-llvm-cov
@@ -135,25 +131,36 @@ jobs:
         with:
           tool: cargo-llvm-cov
           fallback: none
-      - name: Test with coverage (core + cli)
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo llvm-cov test -p workpot-core -p workpot-cli --lcov --output-path lcov-core-cli.info
-      - name: Test with coverage (tray)
-        if: matrix.os == 'macos-latest'
-        run: cargo llvm-cov test -p workpot-tray --lcov --output-path lcov-tray.info
+      - name: Rust test coverage
+        run: |
+          cargo llvm-cov test -p workpot-core -p workpot-cli --lcov --output-path lcov-core-cli.info
+          cargo llvm-cov test -p workpot-tray --lcov --output-path lcov-tray.info
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Frontend test coverage
+        run: |
+          npm ci
+          npm run test:coverage
       - name: Upload core + cli coverage
-        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: lcov-core-cli.info
           path: lcov-core-cli.info
           retention-days: 7
       - name: Upload tray coverage
-        if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: lcov-tray.info
           path: lcov-tray.info
+          retention-days: 7
+      - name: Upload JS coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-js.info
+          path: coverage/lcov.info
           retention-days: 7
 
   sonarcloud:
@@ -173,11 +180,25 @@ jobs:
         with:
           name: lcov-tray.info
 
-      - name: Merge LCOV reports
+      - uses: actions/download-artifact@v4
+        with:
+          name: lcov-js.info
+
+      - name: Merge Rust LCOV and prepare JS report
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq lcov
-          lcov -a lcov-core-cli.info -a lcov-tray.info -o lcov.info --ignore-errors empty
+          lcov -a lcov-core-cli.info -a lcov-tray.info -o lcov-rust.info --ignore-errors empty
+          cp coverage/lcov.info lcov-js.info
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx svelte-kit sync
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v5

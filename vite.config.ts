@@ -7,16 +7,26 @@ const isCi = process.env.CI === "true" || process.env.CI === "1";
 
 /** Avoid libuv kqueue assert on macOS when Node tears down after adapter-static. */
 function exitAfterProductionBuild(): Plugin {
+  let isSsrBuild = false;
   return {
     name: "workpot:exit-after-build",
     apply: "build",
-    closeBundle() {
-      process.exit(0);
+    configResolved(config) {
+      isSsrBuild = !!config.build.ssr;
+    },
+    closeBundle: {
+      sequential: true,
+      async handler() {
+        // Adapter runs in SvelteKit's sequential SSR closeBundle; wait for it.
+        if (!isSsrBuild) return;
+        process.exit(0);
+      },
     },
   };
 }
 
 export default defineConfig({
+  // Registered after sveltekit so sequential closeBundle runs after adapter-static.
   plugins: [tailwindcss(), sveltekit(), exitAfterProductionBuild()],
   clearScreen: false,
   logLevel: isCi ? "warn" : "info",
@@ -33,6 +43,15 @@ export default defineConfig({
       : undefined,
     watch: {
       ignored: ["**/src-tauri/**"],
+    },
+  },
+  test: {
+    coverage: {
+      provider: "v8",
+      reporter: ["lcov"],
+      reportsDirectory: "coverage",
+      include: ["src/**/*.{ts,svelte}"],
+      exclude: ["**/*.test.ts", "**/+layout.ts"],
     },
   },
 });
