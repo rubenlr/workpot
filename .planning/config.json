@@ -27,11 +27,11 @@
     "tdd_mode": false,
     "human_verify_mode": "end-of-phase",
     "text_mode": false,
-    "research_before_questions": false,
+    "research_before_questions": true,
     "discuss_mode": "discuss",
     "skip_discuss": false,
     "code_review": true,
-    "code_review_depth": "standard",
+    "code_review_depth": "deep",
     "code_review_command": null,
     "pattern_mapper": true,
     "plan_bounce": false,
@@ -42,7 +42,8 @@
     "security_enforcement": true,
     "security_asvs_level": 1,
     "security_block_on": "high",
-    "_auto_chain_active": false
+    "_auto_chain_active": false,
+    "plan_review_convergence": true
   },
   "ship": {
     "pr_body_sections": [

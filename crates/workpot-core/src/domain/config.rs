@@ -37,7 +37,7 @@ impl Default for Limits {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Config {
     /// Watch roots for auto-discovery (consumed in Phase 2).
     #[serde(default)]
@@ -53,6 +53,18 @@ pub struct Config {
     /// Maximum repo rows visible in the tray panel before scrolling (D-12).
     #[serde(default = "default_max_visible_rows")]
     pub max_visible_rows: u32,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            watch_roots: Vec::new(),
+            excludes: Vec::new(),
+            limits: Limits::default(),
+            launch_cmd: default_launch_cmd(),
+            max_visible_rows: default_max_visible_rows(),
+        }
+    }
 }
 
 impl Config {
