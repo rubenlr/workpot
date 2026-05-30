@@ -1,18 +1,19 @@
 ---
 phase: 4
 reviewers: [codex-fallback]
-review_cycles: 3
-replan_cycles: 3
-reviewed_at: 2026-05-30T18:00:00Z
+review_cycles: 4
+replan_cycles: 4
+reviewed_at: 2026-05-30T20:00:00Z
 plans_reviewed:
   - 04-01-PLAN.md
   - 04-02-PLAN.md
   - 04-03-PLAN.md
   - 04-04-PLAN.md
-replan_commits: [adaf3b2, 5cb5fb7]
+replan_commits: [adaf3b2, 5cb5fb7, 73719ff]
 codex_cli: unavailable
 fallback_reviewer: independent-plan-review
 cycle_3_current_high: 0
+cycle_4_current_high: 0
 ---
 
 # Cross-AI Plan Review — Phase 4
@@ -329,3 +330,98 @@ Justification: Prior structural HIGHs are closed in plan text. Remaining HIGHs a
 **Status:** Cycle-3 HIGHs closed in plan docs (extended replan) — re-run `/gsd-review --phase 4` for adversarial confirmation.
 
 **Next:** `/gsd-review --phase 4 --codex` when CLI available.
+
+---
+
+## Cycle 4 — Post-replan `73719ff` (2026-05-30)
+
+> **Reviewer:** Independent structured review (Codex CLI still missing on PATH). Scope: verify cycle-3 HIGH closures after replan `73719ff`; hunt for new gaps only.
+
+### Cycle 3 HIGH resolution status (mandatory verification)
+
+| Cycle 3 HIGH | Status | Evidence in `73719ff` / current `04-01-PLAN.md` |
+|--------------|--------|--------------------------------------------------|
+| **04-01 Task 2/3 atomicity** — workspace + `ci.yml` + lockfiles must land same commit | **FULLY RESOLVED** | Frontmatter `executor_commit_rules` (lines 7–10): Task 2 MUST land workspace, `Cargo.lock`, `package-lock.json`, `ci.yml`, DATA-02 in ONE commit; forbids push between partial Task 2 and CI fixes. Task 2 action §3: “Linux-safe CI in the same commit as workspace `members` change (do not defer to Task 3).” Task 3 action §5: “Do not edit `ci.yml` in this task.” `files_modified` includes `.github/workflows/ci.yml`, `Cargo.lock`, `package-lock.json`. |
+| **`package-lock.json` in scaffold AC** — required for macOS `npm ci` | **FULLY RESOLVED** | `files_modified` lists `package-lock.json`. Task 2 action §2: `npm install` + commit lockfile. Task 2 AC: “`package-lock.json` exists at repo root and is committed”; macos jobs AC: “`npm ci` (lockfile present).” Plan-level verification §2 references committed lockfile. |
+
+### 1. Summary
+
+Replan `73719ff` closes both cycle-3 HIGHs with machine-testable plan text (not narrative-only in REVIEWS). The atomic Task 2 contract is enforced at three layers: frontmatter rules, task action, and Task 3 exclusion. Lockfile requirements are in `files_modified`, action, AC, and verification. Phase 4 plans are execution-ready; no new HIGH gaps found.
+
+### 2. Strengths
+
+- Atomic Task 2 design is unusually explicit for GSD per-task commits — reduces ubuntu `--workspace` breakage between commits.
+- Lockfile + `Cargo.lock` requirements are duplicated in action, AC, and verification (same pattern as cycle-2 setup-node fix).
+- Prior cycle resolutions remain intact: Linux `-p` package set, Wave 2b serialization, SRCH-01 partial traceability, `get_tray_config` IPC commitment, DATA-02 tray member, validation doc task map.
+
+### 3. Concerns
+
+| Severity | Concern |
+|----------|---------|
+| **MEDIUM** | **Task 2 AC under-specifies ubuntu CI edits:** Action §3 requires fmt clippy, test, and coverage job changes; AC only asserts ubuntu `test` step (`cargo test -p workpot-core -p workpot-cli`). Executor passing AC could still leave `cargo clippy --workspace` or coverage `--workspace` on ubuntu — mitigated by explicit action + `executor_commit_rules`, but automated verify against AC alone is incomplete. |
+| **MEDIUM** | **Stale cross-plan reference in `04-02` Task 4:** `read_first` / action cite setup-node “from 04-01 Task 3”; setup-node now lives in 04-01 Task 2. Harmless for execution if executor reads Task 2, but confusing for wave-2-only context. |
+| **MEDIUM** | **`cargo deny` / `cargo audit` on fmt job unchanged:** Plan fixes clippy/test/coverage `--workspace` but does not mention deny/audit behavior after `src-tauri` joins `members`. Likely OK (metadata-only checks), but unverified — executor should confirm fmt job green after Task 2. |
+| **LOW** | **Duplicate macOS npm blocks:** 04-01 Task 2 adds `npm ci && npm run build` on macos test + release-build; 04-02 Task 4 adds `npm test` to same job — expected wave split, slightly redundant `npm ci`. |
+| **LOW** | **`index-complete` event** still has no Svelte listener (menu fire-and-forget; acceptable MVP). |
+
+### 4. Suggestions
+
+1. **Optional AC tighten in `04-01` Task 2:** Add AC lines for fmt clippy `-p workpot-core -p workpot-cli` and coverage offline build/test using same package set (mirror action §3).
+2. **Fix `04-02` Task 4 reference:** Point setup-node source to 04-01 Task 2 (not Task 3).
+3. **Execute-phase smoke:** After Task 2 commit, confirm full CI file diff includes all three ubuntu jobs before merge.
+
+### 5. Risk Assessment
+
+**Overall: LOW**
+
+Justification: Cycle-3 procedural HIGHs (task ordering, lockfiles) are closed with enforceable plan contracts. Remaining items are AC completeness and doc cross-refs — not architectural or wave-ordering risks.
+
+---
+
+## Codex Review (cycle 4)
+
+> **CLI status:** `codex` still missing (`command -v codex` → missing). Independent review substituting for Codex output on post-`73719ff` plans.
+
+*(Substance in **Cycle 4 — Post-replan `73719ff`** above.)*
+
+---
+
+## Consensus Summary (cycle 4)
+
+*Single reviewer (Codex unavailable). Cycle-3 HIGHs closed; no new HIGHs.*
+
+### Agreed Strengths
+
+- Atomic Task 2 + lockfile AC close cycle-3 procedural gaps.
+- Prior structural fixes (Linux CI, Wave 2b, SRCH partial, Node setup) remain solid.
+
+### Agreed Concerns (highest priority)
+
+1. Task 2 AC omits fmt/coverage ubuntu job assertions (**MEDIUM**).
+2. Stale 04-02 → 04-01 Task 3 setup-node reference (**MEDIUM**).
+3. fmt job deny/audit behavior unverified with tray member (**MEDIUM**).
+
+### Divergent Views
+
+- None (single reviewer). Task 2 AC gap might be judged LOW if team treats action §3 as binding AC — acceptable for execute-phase.
+
+---
+
+## Action Items for `/gsd-plan-phase 4 --reviews` (cycle 4)
+
+1. Optional: extend 04-01 Task 2 AC for fmt clippy + coverage ubuntu steps.
+2. Optional: fix 04-02 Task 4 setup-node cross-reference to 04-01 Task 2.
+3. No replan required for execute — proceed to `/gsd-execute-phase 4` when ready.
+
+---
+
+## Replan Resolution (cycle 4)
+
+| Concern | Status |
+|---------|--------|
+| Cycle 3 HIGH — Task 2 atomicity (workspace + ci.yml + lockfiles) | **Verified resolved** in `73719ff` — do not re-count |
+| Cycle 3 HIGH — `package-lock.json` in scaffold AC | **Verified resolved** in `73719ff` — do not re-count |
+| Cycle 4 MEDIUM — Task 2 AC fmt/coverage gaps | **Open (optional)** — action + executor rules sufficient for execute |
+| Cycle 4 MEDIUM — 04-02 Task 4 stale Task 3 ref | **Open (optional)** — doc hygiene only |
+
+**Status:** Phase 4 plans pass cycle-4 review with **0 HIGH** concerns. Execute-phase may proceed.
