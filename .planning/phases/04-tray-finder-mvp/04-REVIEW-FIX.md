@@ -1,56 +1,74 @@
 ---
 phase: 04-tray-finder-mvp
-fixed_at: 2026-05-30T18:45:00Z
+fixed_at: 2026-05-30T18:50:00Z
 review_path: .planning/phases/04-tray-finder-mvp/04-REVIEW.md
 iteration: 2
-findings_in_scope: 7
-fixed: 8
+findings_in_scope: 6
+fixed: 5
 skipped: 1
-status: all_fixed
+status: partial
 ---
 
 # Phase 4: Code Review Fix Report
 
-**Fixed at:** 2026-05-30T18:45:00Z  
+**Fixed at:** 2026-05-30  
 **Source review:** `.planning/phases/04-tray-finder-mvp/04-REVIEW.md`  
-**Iteration:** 2 (`--auto` re-review loop)
+**Iteration:** 2 (`--auto` re-review after fixes)
 
 **Summary:**
-- Findings in scope (warnings): 7 from initial review — all addressed in iteration 1
-- Re-review iteration 2: 1 new Clippy warning class — fixed
-- Skipped: 1 (IN-02, deferred to plan 04-03)
+- Findings in scope (initial): 6
+- Fixed: 5
+- Skipped: 1 (WR-04, plan 04-04)
+- Re-review iteration 2: 0 critical, 1 warning (WR-04 only), 3 info
 
-## Iteration 1 (prior commits)
+## Fixed Issues
 
-| ID | Commit | Summary |
-|----|--------|---------|
-| WR-01 | ca222a5 | Reload repos on `panel-opened` |
-| WR-02 | 7e86fa8 | ArrowUp in filter at caret start |
-| WR-03 | 4836cb7 | `console.warn` on tray config failure |
-| WR-04 | d850eed | macOS CI `clippy -p workpot-tray` |
-| WR-05 | 92d0ac5 | Validate `launch_cmd` in config |
-| WR-06 | f0a90f0 | Restrictive tray webview CSP |
-| WR-07 | 7b833a0 | Mouse click/dblclick on rows |
-| IN-01/03 | 7267fb5 | Open stub user hint |
-| IN-04 | b2b59ff | Workspace `directories` 6.0.0 |
-| IN-05 | 009deee | Tray icon error not panic |
+### CR-01: Batch refresh wipes stored git state when per-repo refresh fails
 
-## Iteration 2 (auto re-review)
+**Files modified:** `crates/workpot-core/src/services/git_state.rs`, `crates/workpot-core/src/lib.rs`, `crates/workpot-core/tests/tray_refresh_test.rs`  
+**Commit:** d899ab7  
+**Applied fix:** Added `is_hard_refresh_failure` / `persist_git_state_error_only`; persist loop skips nulling branch/dirty on hard `Err`. Split `git_refresh_paths` + `persist_git_refresh_results` for tray layer. Regression test removes `.git` after successful refresh and asserts branch preserved.
 
-### WR-08: Tray Clippy `-D warnings` failures
+### WR-01: `AppContext` mutex held for entire batch git refresh
 
-**Files modified:** `src-tauri/src/tray.rs`, `src-tauri/src/commands.rs`  
-**Commit:** 8739049  
-**Applied fix:** Collapsed nested `if let` (clippy::collapsible_if); `show_panel(app, …)` (clippy::needless_borrow). Verified: `cargo clippy -p workpot-tray --all-targets -- -D warnings` passes.
+**Files modified:** `src-tauri/src/commands.rs`  
+**Commit:** 402d81a  
+**Applied fix:** `spawn_background_git_refresh` locks only to read paths and to persist; `workpot_core::services::git_state::refresh_all` runs off the mutex.
+
+### WR-02: Selection can point at the wrong repo after refresh/re-sort
+
+**Files modified:** `src/routes/+page.svelte`  
+**Commit:** 593a77b  
+**Applied fix:** Reset `selectedIndex = 0` in `git-refresh-complete` listener before reload.
+
+### WR-03: Tray dirty icon ignores persisted dirty state when refresh errors
+
+**Files modified:** `crates/workpot-core/src/lib.rs` (with CR-01)  
+**Commit:** d899ab7  
+**Applied fix:** `any_dirty` computed via `SELECT EXISTS(... is_dirty = 1)` after persist transaction commits.
+
+### WR-05: Batch refresh failure not surfaced in the panel UI
+
+**Files modified:** `src/routes/+page.svelte`, `src-tauri/src/commands.rs`  
+**Commit:** 593a77b (frontend), 402d81a (`git-refresh-failed` emit on persist failure)  
+**Applied fix:** Emit `git-refresh-failed` on total handler failure; show error banner from `git-refresh-complete` summary (`errors` / `refreshed`); `loadRepos` optional `clearError` so refresh warnings survive reload.
 
 ## Skipped Issues
 
-### IN-02: Git branch/dirty display is SQLite-cached only
+### WR-04: Cursor launch and `touch_last_opened_at` not implemented (plan 04-04 gap)
 
-**Reason:** Deferred to plan 04-03 — not in 04-01/02 scope.
+**File:** `src/routes/+page.svelte:75-85`, `src-tauri/src/lib.rs:32-36`  
+**Reason:** Out of phase scope — deferred to plan 04-04 per user instruction.  
+**Original issue:** Enter/double-click shows “coming soon”; no `open_in_cursor` or `touch_last_opened_at` IPC.
+
+## Auto iteration 2 (re-review)
+
+Re-review confirmed CR-01, WR-01, WR-02, WR-03, WR-05 resolved. No second fix pass needed; WR-04 remains deferred to plan 04-04.
+
+**Verified locally:** `cargo test -p workpot-core tray_` (3), `npm test` (20).
 
 ---
 
-_Fixed: 2026-05-30T18:45:00Z_  
+_Fixed: 2026-05-30_  
 _Fixer: Claude (gsd-code-fixer + orchestrator, `--auto`)_  
 _Iteration: 2_
