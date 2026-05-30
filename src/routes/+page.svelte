@@ -3,10 +3,12 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { shouldNavigateListOnFilterArrow } from "$lib/filterNavigation";
   import {
     gitRefreshErrorMessage,
     shouldClearListErrorOnRefreshLoad,
   } from "$lib/gitRefresh";
+  import { trayListView } from "$lib/listState";
   import { selectionIndexAfterBackgroundOpen } from "$lib/openSelection";
   import { trayListMaxHeightPx } from "$lib/panelLayout";
   import { moveSelectionIndex } from "$lib/selection";
@@ -26,6 +28,9 @@
   let listMaxHeightPx = $derived(trayListMaxHeightPx(maxVisibleRows));
 
   let displayRepos = $derived(filterAndSortRepos(repos, filterQuery));
+  let listView = $derived(
+    trayListView(error, repos.length, filterQuery, displayRepos.length),
+  );
 
   $effect(() => {
     filterQuery;
@@ -88,22 +93,21 @@
       void startBackgroundRefresh();
       return;
     }
-    if (e.key === "ArrowDown") {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       const input = e.currentTarget as HTMLInputElement;
-      const atEnd =
-        input.selectionStart === input.value.length &&
-        input.selectionEnd === input.value.length;
-      if (atEnd || filterQuery.length === 0) {
+      const start = input.selectionStart ?? 0;
+      const end = input.selectionEnd ?? 0;
+      if (
+        shouldNavigateListOnFilterArrow(
+          e.key,
+          filterQuery,
+          start,
+          end,
+          input.value.length,
+        )
+      ) {
         e.preventDefault();
-        moveSelection(1);
-      }
-    } else if (e.key === "ArrowUp") {
-      const input = e.currentTarget as HTMLInputElement;
-      const atStart =
-        input.selectionStart === 0 && input.selectionEnd === 0;
-      if (atStart || filterQuery.length === 0) {
-        e.preventDefault();
-        moveSelection(-1);
+        moveSelection(e.key === "ArrowDown" ? 1 : -1);
       }
     } else if (e.key === "Escape") {
       e.preventDefault();
@@ -258,11 +262,11 @@
   </div>
 
   <div class="min-h-0 flex-1 overflow-y-auto p-2">
-    {#if error}
-      <p class="text-sm text-red-600 dark:text-red-400">{error}</p>
-    {:else if repos.length === 0}
+    {#if listView.kind === "error"}
+      <p class="text-sm text-red-600 dark:text-red-400">{listView.message}</p>
+    {:else if listView.kind === "empty-index"}
       <p class="text-sm text-neutral-500">No repos indexed yet.</p>
-    {:else if filterQuery.trim().length > 0 && displayRepos.length === 0}
+    {:else if listView.kind === "no-match"}
       <p class="text-sm text-neutral-500">No repos match</p>
     {:else}
       <ul class="space-y-0.5" role="listbox">
