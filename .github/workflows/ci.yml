@@ -18,30 +18,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96
           components: rustfmt
-      - uses: ./.github/actions/rust-cache
+      - name: Restore Rust cache
+        uses: ./.github/actions/rust-cache
         with:
           shared-key: ci
           key: ${{ runner.os }}
-      - run: cargo fmt --all -- --check
-
-  clippy:
-    name: clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
         with:
-          toolchain: 1.96
-          components: clippy
-      - uses: ./.github/actions/rust-cache
+          tool: cargo-deny
+          fallback: none
+      - name: Run cargo deny
+        run: cargo deny check --config .github/ci-assist/deny.toml
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
         with:
-          shared-key: ci
-          key: ${{ runner.os }}
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+          tool: cargo-audit
+          fallback: none
+      - name: Run cargo audit
+        run: cargo audit
 
   test:
     name: test (${{ matrix.os }})
@@ -52,10 +56,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96
-      - uses: ./.github/actions/rust-cache
+      - name: Restore Rust cache
+        uses: ./.github/actions/rust-cache
         with:
           shared-key: ci
           key: ${{ matrix.os }}
@@ -77,23 +83,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96
-      - uses: ./.github/actions/rust-cache
+      - name: Restore Rust cache
+        uses: ./.github/actions/rust-cache
         with:
           shared-key: ci
           key: ${{ runner.os }}
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-llvm-cov
-          fallback: none
       - name: Fetch dependencies
         run: cargo fetch
       - name: Check no network deps (DATA-02)
         run: bash scripts/check-no-network-deps.sh
       - name: Build workspace offline
         run: cargo build --offline --workspace
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+          fallback: none
       - name: Test with coverage
         run: cargo llvm-cov test --offline --workspace --lcov --output-path lcov.info
       - uses: actions/upload-artifact@v4
@@ -102,57 +111,50 @@ jobs:
           path: lcov.info
           retention-days: 7
 
+  sonarcloud:
+    name: sonarcloud
+    needs: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: lcov.info
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dproject.settings=.github/ci-assist/sonar-project.properties
+            -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
+            -Dsonar.pullrequest.branch=${{ github.event.pull_request.head.ref }}
+            -Dsonar.pullrequest.base=${{ github.event.pull_request.base.ref }}
+
   release-build:
     name: cargo build --release
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96
-      - uses: ./.github/actions/rust-cache
+      - name: Restore Rust cache
+        uses: ./.github/actions/rust-cache
         with:
           shared-key: ci
           key: ${{ runner.os }}
-      - run: cargo build --release -p workpot-cli
-      - run: ./target/release/workpot --version
+      - name: Build release CLI
+        run: cargo build --release -p workpot-cli
+      - name: Verify CLI version
+        run: ./target/release/workpot --version
       - uses: actions/upload-artifact@v4
         with:
           name: ci-workpot-macos-aarch64
           path: target/release/workpot
-
-  deny:
-    name: cargo-deny
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.96
-      - uses: ./.github/actions/rust-cache
-        with:
-          shared-key: ci
-          key: ${{ runner.os }}
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-deny
-          fallback: none
-      - run: cargo deny check --config .github/ci-assist/deny.toml
-
-  audit:
-    name: cargo-audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.96
-      - uses: ./.github/actions/rust-cache
-        with:
-          shared-key: ci
-          key: ${{ runner.os }}
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-audit
-          fallback: none
-      - run: cargo audit
