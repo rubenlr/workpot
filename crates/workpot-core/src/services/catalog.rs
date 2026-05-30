@@ -72,6 +72,7 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
             behind: None,
             git_refreshed_at: None,
             git_state_error: None,
+            last_opened_at: None,
         }),
         Err(rusqlite::Error::SqliteFailure(err, _))
             if err.code == rusqlite::ErrorCode::ConstraintViolation =>
@@ -85,7 +86,7 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
 pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
     let mut stmt = conn.prepare(
         "SELECT path, name, registered_at, source, git_common_dir,
-                branch, is_dirty, ahead, behind, git_refreshed_at, git_state_error
+                branch, is_dirty, ahead, behind, git_refreshed_at, git_state_error, last_opened_at
          FROM repos WHERE excluded = 0 ORDER BY registered_at, path",
     )?;
 
@@ -102,11 +103,29 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
             behind: row.get(8)?,
             git_refreshed_at: row.get(9)?,
             git_state_error: row.get(10)?,
+            last_opened_at: row.get(11)?,
         })
     })?;
 
     rows.collect::<std::result::Result<Vec<_>, _>>()
         .map_err(WorkpotError::Database)
+}
+
+/// Record that a repo was opened from the tray (D-25).
+pub fn touch_last_opened_at(conn: &Connection, path: &Path) -> Result<()> {
+    let path_key = resolve_repo_path_key(conn, path)?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let updated = conn.execute(
+        "UPDATE repos SET last_opened_at = ?1 WHERE path = ?2",
+        params![now, path_key],
+    )?;
+    if updated == 0 {
+        return Err(WorkpotError::NotFound(path_key));
+    }
+    Ok(())
 }
 
 /// Resolve repo location and SQLite path key, falling back when the directory is gone.

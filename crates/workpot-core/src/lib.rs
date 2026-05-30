@@ -84,6 +84,10 @@ impl AppContext {
         catalog::list_repos(&self.conn)
     }
 
+    pub fn touch_last_opened_at(&self, path: &Path) -> Result<()> {
+        catalog::touch_last_opened_at(&self.conn, path)
+    }
+
     pub fn remove_repo(&mut self, path: &Path) -> Result<()> {
         catalog::remove_repo_with_exclude(&self.conn, &self.config_path, &mut self.config, path)
     }

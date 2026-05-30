@@ -12,6 +12,14 @@ fn default_max_repos() -> u32 {
     1000
 }
 
+fn default_launch_cmd() -> String {
+    "cursor --new-window {path}".to_string()
+}
+
+fn default_max_visible_rows() -> u32 {
+    15
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Limits {
     #[serde(default = "default_max_watch_roots")]
@@ -39,6 +47,12 @@ pub struct Config {
     pub excludes: Vec<String>,
     #[serde(default)]
     pub limits: Limits,
+    /// Shell command template for opening a repo in the IDE (D-33). `{path}` is substituted.
+    #[serde(default = "default_launch_cmd")]
+    pub launch_cmd: String,
+    /// Maximum repo rows visible in the tray panel before scrolling (D-12).
+    #[serde(default = "default_max_visible_rows")]
+    pub max_visible_rows: u32,
 }
 
 impl Config {
@@ -61,6 +75,12 @@ impl Config {
                 "watch_roots count {} exceeds max_watch_roots {}",
                 self.watch_roots.len(),
                 self.limits.max_watch_roots
+            ));
+        }
+        if self.max_visible_rows < 1 || self.max_visible_rows > 100 {
+            return Err(format!(
+                "max_visible_rows {} must be between 1 and 100",
+                self.max_visible_rows
             ));
         }
         Ok(())
