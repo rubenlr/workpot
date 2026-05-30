@@ -19,16 +19,16 @@ created: 2026-05-30
 |----------|-------|
 | **Framework** | Rust built-in test + optional Vitest for Svelte utils |
 | **Config file** | `vitest.config.ts` (optional, plan 02+) |
-| **Quick run command** | `cargo test --workspace` |
-| **Full suite command** | `cargo test --workspace && npm run build` (from repo root after scaffold) |
+| **Quick run command** | Linux: `cargo test -p workpot-core -p workpot-cli --all-targets`; macOS: `cargo test --offline --workspace --all-targets` |
+| **Full suite command** | macOS: `cargo build -p workpot-tray && npm test && npm run build` (repo root after scaffold; Node 20+ local, CI uses setup-node@22) |
 | **Estimated runtime** | ~20s Rust; +10s frontend build |
 
 ---
 
 ## Sampling Rate
 
-- **After every task commit:** Run `cargo test --workspace`
-- **After every plan wave:** Run `cargo build -p workpot-tray` (or package name from tauri.conf) + `npm run build`
+- **After every task commit:** Linux/default-members: `cargo test -p workpot-core -p workpot-cli --all-targets`; macOS tray work: add `-p workpot-tray` or `cargo test --offline --workspace` when validating tray crate
+- **After every plan wave:** macOS: `cargo build -p workpot-tray` + `npm test` + `npm run build` (do not use bare `cargo test --workspace` on Ubuntu after `src-tauri` joins `members`)
 - **Before `/gsd-verify-work`:** Full suite green + manual macOS tray UAT (5 ROADMAP criteria)
 - **Max feedback latency:** 60 seconds (Tauri compile slower than core-only)
 

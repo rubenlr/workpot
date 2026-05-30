@@ -1,7 +1,8 @@
 ---
 phase: 4
 reviewers: [codex-fallback]
-reviewed_at: 2026-05-30T00:00:00Z
+review_cycles: 2
+reviewed_at: 2026-05-30T12:00:00Z
 plans_reviewed:
   - 04-01-PLAN.md
   - 04-02-PLAN.md
@@ -9,6 +10,7 @@ plans_reviewed:
   - 04-04-PLAN.md
 codex_cli: unavailable
 fallback_reviewer: independent-plan-review
+cycle_2_current_high: 0
 ---
 
 # Cross-AI Plan Review — Phase 4
@@ -120,3 +122,102 @@ Justification: Architecture and security design are sound and grounded in existi
 | **LOW — PATTERNS state.rs** | Deferred (no code change in replan; executor uses existing `lib.rs` only). |
 
 **Status:** Addressed in plan docs — re-run `/gsd-review --phase 4` for adversarial confirmation.
+
+---
+
+## Cycle 2 — Replan verification (2026-05-30)
+
+> **Reviewer:** Independent structured review (Codex CLI still missing on PATH). Scope: post-replan commit `adaf3b2` — verify cycle-1 HIGH closures and hunt for new gaps.
+
+### Cycle 1 HIGH resolution status
+
+| Cycle 1 HIGH | Status | Evidence in updated plans |
+|--------------|--------|---------------------------|
+| Linux CI / workspace (`src-tauri` in `members`) | **FULLY RESOLVED** | `04-01` Task 2 AC: `default-members` = core + cli only; Task 3 lists explicit `ci.yml` edits for ubuntu `fmt`/`test`/`coverage` (`-p workpot-core -p workpot-cli`); AC lines 255–256 require ubuntu test step and macos tray build in workflow file. Plan `verification` §1 names Linux simulate command. |
+| Wave 2 `+page.svelte` parallel conflict | **FULLY RESOLVED** | `04-03` `depends_on: [04-01, 04-02]`; ROADMAP **Wave 2b**; `04-03` objective + Task 3 scope “refresh slice only” with explicit preserve-04-02 handlers. |
+| SRCH-01 vs REQUIREMENTS tags/notes | **FULLY RESOLVED** | `04-02` `requirement_traceability` frontmatter + objective verify-phase note; `REQUIREMENTS.md` SRCH-01 partial annotation + trace table `Phase 4 (partial) / Phase 5`. |
+
+### 1. Summary
+
+Replan adequately closes all three cycle-1 HIGHs with testable acceptance criteria in plan tasks (not merely narrative in REVIEWS). Architecture, wave ordering, and requirement traceability are execution-ready. One new execution gap: macOS CI/npm steps were added without a Node.js toolchain install step — `npm ci` will fail on `macos-latest` and `release-build` as written.
+
+### 2. Strengths
+
+- Linux-safe workspace strategy is explicit and duplicated in Task 2 AC, Task 3 CI edits, and plan-level `verification` (reduces “forgot to edit ci.yml” risk).
+- Wave 2b + `depends_on` is the correct fix for Svelte ownership; 04-03 Task 3 boundaries are unusually clear for a follow-on plan.
+- SRCH-01 partial coverage is machine-readable in plan frontmatter and mirrored in REQUIREMENTS.md — verify-phase should not false-fail on tags/notes.
+- Cycle-1 MEDIUM items (04-01-PLAN ref, frontend CI intent, async `run_index`, 04-04→04-03 dep, dirty dot colors) are reflected in replan.
+
+### 3. Concerns
+
+| Severity | Concern |
+|----------|---------|
+| **HIGH** | **macOS CI missing Node.js setup:** `04-01` Task 3 and `04-02` Task 4 add `npm ci`, `npm test`, and `npm run build` to `macos-latest` `test` and `release-build`, but neither plan nor current `.github/workflows/ci.yml` includes `actions/setup-node` (or equivalent). Tray frontend steps will fail before exercising fuzzy tests or Svelte build. |
+| **MEDIUM** | **`04-VALIDATION.md` still prescribes `cargo test --workspace`** for quick run and per-task sampling. After `src-tauri` joins `members`, Linux/local sampling following VALIDATION contradicts `04-01` Linux-safe CI strategy — executor or Nyquist may reintroduce the original failure mode outside `ci.yml`. |
+| **MEDIUM** | **`04-03` frontmatter `wave: 2` vs ROADMAP Wave 2b:** Safe if executor honors `depends_on`; risky if any tooling parallelizes by `wave` number alone. |
+| **MEDIUM** | **`get_tray_config` vs list_repos** ambiguity in `04-02` Task 1 — no task commits to one IPC shape; minor scope drift risk. |
+| **LOW** | **`index-complete` event** from `04-04` menu refresh has no frontend listener — acceptable MVP if menu action is fire-and-forget; users get no in-panel progress. |
+| **LOW** | **Duplicate npm blocks** in `04-01` Task 3 and `04-02` Task 4 on same macOS job — harmless but redundant. |
+
+### 4. Suggestions
+
+1. **Amend `04-01` Task 3 (and/or `04-02` Task 4):** Add `actions/setup-node@v4` with pinned Node LTS before `npm ci`; document required version in `package.json` `engines` if desired.
+2. **Align `04-VALIDATION.md`:** Change quick run to `cargo test -p workpot-core -p workpot-cli` on Linux; macOS `cargo test --offline --workspace` + `npm test` + `npm run build`; note tray opt-in via `-p workpot-tray`.
+3. **Set `04-03` plan frontmatter `wave: 2b`** (or `3`) to match ROADMAP if wave-based schedulers exist.
+4. **Pick one config IPC** in `04-02` Task 1 (`get_tray_config` command vs extend `list_repos` / `RepoDto`).
+
+### 5. Risk Assessment
+
+**Overall: LOW-MEDIUM** (down from cycle-1 MEDIUM-HIGH)
+
+Justification: Structural risks (CI workspace, Svelte merge, SRCH traceability) are addressed in plans with verification hooks. Remaining HIGH is a concrete, cheap CI omission (Node setup), not architectural uncertainty.
+
+---
+
+## Codex Review (cycle 2)
+
+> **CLI status:** `codex` still missing (`command -v codex` → missing). This section is the cycle-2 independent review substituting for Codex output.
+
+*(Content mirrors **Cycle 2 — Replan verification** above.)*
+
+---
+
+## Consensus Summary (cycle 2)
+
+*Single reviewer (Codex unavailable). Cycle-1 HIGHs treated as closed in plan space; one new HIGH remains.*
+
+### Agreed Strengths
+
+- Linux workspace + explicit ubuntu `-p` package set in plan AC.
+- Serialized Wave 2b and scoped `+page.svelte` edits in 04-03.
+- SRCH-01 partial traceability across plan frontmatter and REQUIREMENTS.md.
+
+### Agreed Concerns (highest priority)
+
+1. macOS CI npm steps without Node.js toolchain (**HIGH**, new in cycle 2).
+2. `04-VALIDATION.md` still recommends `--workspace` on Linux (**MEDIUM**).
+3. `wave: 2` vs Wave 2b naming drift in 04-03 frontmatter (**MEDIUM**).
+
+### Divergent Views
+
+- None (single reviewer). True Codex pass may downgrade Node gap to MEDIUM if project already installs Node via undocumented custom runner image — verify against org runner image before execute.
+
+---
+
+## Action Items for `/gsd-plan-phase 4 --reviews` (cycle 2)
+
+1. Add `setup-node` (or document preinstalled Node) before macOS `npm ci` in `04-01` / `04-02` CI tasks.
+2. Update `04-VALIDATION.md` sampling commands for Linux-safe workspace.
+3. Optional: align `04-03` `wave` frontmatter with ROADMAP Wave 2b.
+
+---
+
+## Replan Resolution (cycle 2, 2026-05-30)
+
+| Concern | Resolution |
+|---------|------------|
+| **HIGH — macOS CI missing Node.js setup** | `04-01` Task 2: `package.json` `engines.node` `>=20`. Task 3: `actions/setup-node@v4` (`node-version: '22'`, `cache: npm`) on macos `test` + `release-build` before all `npm` steps; AC + verification updated. `04-02` Task 4: AC requires `setup-node` before `npm ci` / `npm test`. |
+| **MEDIUM — `04-VALIDATION.md` `--workspace` on Linux** | Quick run / sampling split Linux `-p workpot-core -p workpot-cli` vs macOS workspace + tray/npm commands. |
+| **MEDIUM — `04-03` wave vs Wave 2b** | Frontmatter `wave: 2b` aligned with ROADMAP. |
+
+**Status:** Cycle-2 HIGH closed in plan docs — re-run `/gsd-review --phase 4` for adversarial confirmation.
