@@ -13,7 +13,7 @@ check:
     cargo clippy --workspace --fix --allow-dirty --allow-staged --all-targets -- -D warnings
     cargo test --workspace --all-targets -q
     bash scripts/check-no-network-deps.sh
-    cargo deny check
+    cargo deny check --config .github/ci-assist/deny.toml
 
 precommit: build check
 

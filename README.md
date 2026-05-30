@@ -4,7 +4,4 @@
 
 ## Releasing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for PR gates and semver policy. To cut a
-release locally, run `bin/release X.Y.Z` then push the commit and tag. GitHub
-Actions publishes macOS tarballs to [GitHub Releases](https://github.com/rubenlr/workpot/releases).
-Future Tauri tray builds are documented in [docs/releasing.md](docs/releasing.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for PR gates and semver policy. [Release Please](https://github.com/googleapis/release-please) manages version and changelog from conventional commits; merging its Release PR tags the release and GitHub Actions uploads macOS tarballs to [GitHub Releases](https://github.com/rubenlr/workpot/releases). Details: [docs/releasing.md](docs/releasing.md).

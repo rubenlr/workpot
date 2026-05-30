@@ -1,44 +1,102 @@
 name: release
 
-# Triggered when a version tag is pushed, e.g. git push origin v0.1.0.
-# Builds macOS release tarballs and creates the GitHub Release.
-#
-# The CI workflow already validates the binary (fmt / clippy / test / deny).
-# This workflow assumes CI passed on the same commit and only publishes.
+# Builds macOS tarballs and uploads them to an existing GitHub Release.
+# Invoked by release-please.yml when release_created, or manually via workflow_dispatch.
+# release-please owns the GitHub Release record and CHANGELOG.
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag (e.g. v0.1.0)
+        required: true
+        type: string
+      dry_run:
+        description: Smoke mode — build matrix only, no release upload
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build/upload (e.g. v0.1.0)
+        required: true
+        type: string
+      dry_run:
+        description: Smoke mode — build matrix only, no release upload
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
+  RELEASE_TAG: ${{ inputs.tag || github.event.inputs.tag }}
 
-permissions:
-  contents: write
+concurrency:
+  group: release-${{ inputs.tag || github.event.inputs.tag }}
+  cancel-in-progress: false
 
 jobs:
+  prepare:
+    name: prepare
+    runs-on: ubuntu-latest
+    outputs:
+      dry_run: ${{ steps.flags.outputs.dry_run }}
+      checkout_ref: ${{ steps.flags.outputs.checkout_ref }}
+    steps:
+      - id: flags
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.dry_run }}" = "true" ] || [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+            echo "checkout_ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+            echo "checkout_ref=${{ inputs.tag || github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  ensure-master:
+    name: ensure release is on master
+    needs: prepare
+    if: needs.prepare.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Require version tag on master
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          git fetch origin master
+          git fetch origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          tag_sha="$(git rev-parse "${RELEASE_TAG}")"
+          if ! git merge-base --is-ancestor "$tag_sha" origin/master; then
+            echo "tag ${RELEASE_TAG} is not on origin/master" >&2
+            exit 1
+          fi
+
   validate-version:
     name: validate release version
+    needs: [prepare, ensure-master]
+    if: needs.prepare.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
 
       - id: version
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
           set -euo pipefail
-          tag_version="${GITHUB_REF_NAME#v}"
-          manifest_version="$(awk -F ' *= *' '
-            /^\[workspace.package\]$/ { in_workspace_package = 1; next }
-            /^\[/ { in_workspace_package = 0 }
-            in_workspace_package && $1 == "version" {
-              gsub(/"/, "", $2);
-              print $2;
-              exit;
-            }
-          ' Cargo.toml)"
+          tag_version="${RELEASE_TAG#v}"
+          manifest_version="$(bash scripts/read-workspace-version.sh)"
           if [ -z "$manifest_version" ]; then
             echo "could not read [workspace.package].version from Cargo.toml" >&2
             exit 1
@@ -51,7 +109,8 @@ jobs:
 
   binary:
     name: macos ${{ matrix.arch }} binary
-    needs: validate-version
+    needs: [prepare, validate-version]
+    if: always() && (needs.prepare.outputs.dry_run == 'true' || needs.validate-version.result == 'success')
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -65,6 +124,9 @@ jobs:
             runner: macos-13
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+          fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -88,46 +150,30 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
+          name: ${{ needs.prepare.outputs.dry_run == 'true' && format('smoke-{0}', matrix.artifact) || matrix.artifact }}
           path: |
             ${{ matrix.artifact }}.tar.gz
             ${{ matrix.artifact }}.tar.gz.sha256
+          retention-days: ${{ needs.prepare.outputs.dry_run == 'true' && 7 || 90 }}
 
   github-release:
     name: github release
-    needs: [binary, validate-version]
+    needs: [prepare, binary, validate-version]
+    if: needs.prepare.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
-      - name: Generate release body
-        run: |
-          echo "## Checksums (SHA256)" > body.md
-          echo '```' >> body.md
-          cat artifacts/*.sha256 >> body.md
-          echo '```' >> body.md
-          echo "" >> body.md
-          echo "## Install" >> body.md
-          echo '```bash' >> body.md
-          echo "# From source" >> body.md
-          echo "cargo install --git https://github.com/rubenlr/workpot --tag ${GITHUB_REF_NAME}" >> body.md
-          echo "" >> body.md
-          echo "# Binary tarball (macOS)" >> body.md
-          echo "curl -LO https://github.com/rubenlr/workpot/releases/download/${GITHUB_REF_NAME}/workpot-macos-aarch64.tar.gz" >> body.md
-          echo "curl -LO https://github.com/rubenlr/workpot/releases/download/${GITHUB_REF_NAME}/workpot-macos-aarch64.tar.gz.sha256" >> body.md
-          echo "shasum -a 256 -c workpot-macos-aarch64.tar.gz.sha256" >> body.md
-          echo "tar -xzf workpot-macos-aarch64.tar.gz" >> body.md
-          echo '```' >> body.md
-
-      - name: Create GitHub Release
+      - name: Upload macOS artifacts to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
-          gh release create "$GITHUB_REF_NAME" artifacts/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" \
-            --notes-file body.md \
-            --latest
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" artifacts/* --clobber
+          echo "Uploaded artifacts to release ${RELEASE_TAG}"

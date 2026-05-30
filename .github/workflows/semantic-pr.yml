@@ -1,0 +1,20 @@
+name: semantic-pr
+
+# Validates PR title (becomes squash commit subject on master). Pair with
+# scripts/configure-github-merge-defaults.sh (pr-title-description).
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  semantic-pr:
+    name: semantic-pr
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

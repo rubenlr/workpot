@@ -1,0 +1,22 @@
+name: release-smoke
+
+# PR smoke: full macOS release matrix without creating tags or uploading to GitHub Releases.
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/release*.yml'
+      - 'Cargo.toml'
+      - 'crates/**'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: release smoke
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: v0.0.0-smoke
+      dry_run: true

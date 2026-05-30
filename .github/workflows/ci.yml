@@ -116,7 +116,7 @@ jobs:
         with:
           log-level: warn
           command: check
-          arguments: --all-features
+          arguments: --config .github/ci-assist/deny.toml --all-features
 
   audit:
     name: cargo-audit
