@@ -109,3 +109,45 @@ pub fn refresh_all(paths: Vec<PathBuf>) -> Vec<GitRefreshResult> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::is_hard_refresh_failure;
+    use crate::domain::GitState;
+
+    #[test]
+    fn hard_failure_when_error_without_git_fields() {
+        let state = GitState {
+            branch: None,
+            is_dirty: None,
+            ahead: None,
+            behind: None,
+            error: Some("git unavailable".to_string()),
+        };
+        assert!(is_hard_refresh_failure(&state));
+    }
+
+    #[test]
+    fn not_hard_failure_when_branch_present_with_error() {
+        let state = GitState {
+            branch: Some("main".to_string()),
+            is_dirty: Some(true),
+            ahead: None,
+            behind: None,
+            error: Some("stale".to_string()),
+        };
+        assert!(!is_hard_refresh_failure(&state));
+    }
+
+    #[test]
+    fn not_hard_failure_on_success() {
+        let state = GitState {
+            branch: Some("main".to_string()),
+            is_dirty: Some(false),
+            ahead: Some(0),
+            behind: Some(0),
+            error: None,
+        };
+        assert!(!is_hard_refresh_failure(&state));
+    }
+}

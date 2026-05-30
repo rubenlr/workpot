@@ -187,6 +187,28 @@ mod tests {
     }
 
     #[test]
+    fn repo_dto_parent_dir_when_parent_is_home() {
+        let home = std::env::var("HOME").expect("HOME");
+        let path = PathBuf::from(format!("{home}/myrepo"));
+        let record = RepoRecord {
+            path: path.clone(),
+            name: "myrepo".to_string(),
+            registered_at: 0,
+            source: SOURCE_MANUAL.to_string(),
+            git_common_dir: String::new(),
+            branch: None,
+            is_dirty: None,
+            ahead: None,
+            behind: None,
+            git_refreshed_at: None,
+            git_state_error: None,
+            last_opened_at: None,
+        };
+        let dto = record_to_dto(record);
+        assert_eq!(dto.parent_dir, "~");
+    }
+
+    #[test]
     fn repo_dto_parent_dir_outside_home_uses_absolute_path() {
         let record = RepoRecord {
             path: PathBuf::from("/var/tmp/myrepo"),

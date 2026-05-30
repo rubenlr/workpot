@@ -3,9 +3,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { fuzzyMatch } from "$lib/fuzzy";
   import { moveSelectionIndex } from "$lib/selection";
-  import { traySort } from "$lib/sort";
+  import { filterAndSortRepos } from "$lib/trayList";
   import type { GitRefreshSummary, RepoDto, TrayConfigDto } from "$lib/types";
 
   const ROW_HEIGHT_PX = 44;
@@ -24,9 +23,7 @@
     maxVisibleRows * ROW_HEIGHT_PX + FILTER_BAR_HEIGHT_PX,
   );
 
-  let displayRepos = $derived(
-    repos.filter((r) => fuzzyMatch(filterQuery, r)).sort(traySort),
-  );
+  let displayRepos = $derived(filterAndSortRepos(repos, filterQuery));
 
   $effect(() => {
     filterQuery;

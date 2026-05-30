@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use workpot_core::domain::GitState;
+use workpot_core::services::git_state::GitRefreshResult;
 use workpot_core::AppContext;
 
 /// Initialize a git repo using git2 (same pattern as git_state_test).
@@ -94,4 +96,64 @@ fn tray_refresh_preserves_git_snapshot_on_hard_failure() {
         .expect("repo row");
     assert_eq!(record.branch, Some(branch_before));
     assert!(record.git_state_error.is_some());
+}
+
+#[test]
+fn persist_git_refresh_results_counts_refreshed_errors_and_dirty() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+
+    let (repo_ok, path_ok) = init_git_repo(dir.path(), "repo-ok");
+    make_commit(&repo_ok, "init");
+    let (repo_dirty, path_dirty) = init_git_repo(dir.path(), "repo-dirty");
+    make_commit(&repo_dirty, "init");
+    ctx.register_manual(&path_ok).expect("register ok");
+    ctx.register_manual(&path_dirty).expect("register dirty");
+
+    let path_ok_key = path_ok.canonicalize().expect("canon").display().to_string();
+    let path_dirty_key = path_dirty
+        .canonicalize()
+        .expect("canon")
+        .display()
+        .to_string();
+
+    let results = vec![
+        GitRefreshResult {
+            path: path_ok_key,
+            state: GitState {
+                branch: Some("main".to_string()),
+                is_dirty: Some(false),
+                ahead: None,
+                behind: None,
+                error: None,
+            },
+        },
+        GitRefreshResult {
+            path: path_dirty_key,
+            state: GitState {
+                branch: Some("main".to_string()),
+                is_dirty: Some(true),
+                ahead: None,
+                behind: None,
+                error: None,
+            },
+        },
+        GitRefreshResult {
+            path: "/tmp/missing-repo".to_string(),
+            state: GitState {
+                branch: None,
+                is_dirty: None,
+                ahead: None,
+                behind: None,
+                error: Some("hard fail".to_string()),
+            },
+        },
+    ];
+
+    let summary = ctx.persist_git_refresh_results(results).expect("persist");
+    assert_eq!(summary.refreshed, 2);
+    assert_eq!(summary.errors, 1);
+    assert!(summary.any_dirty);
 }
