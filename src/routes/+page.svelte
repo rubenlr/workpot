@@ -212,9 +212,16 @@
             data-row-index={i}
             role="option"
             aria-selected={i === selectedIndex}
-            class="rounded-md px-2 py-1.5 {i === selectedIndex
+            class="cursor-pointer rounded-md px-2 py-1.5 {i === selectedIndex
               ? 'bg-blue-600 text-white dark:bg-blue-500'
               : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}"
+            onclick={() => {
+              selectedIndex = i;
+            }}
+            ondblclick={() => {
+              selectedIndex = i;
+              void openSelected();
+            }}
           >
             <div class="flex items-center gap-2">
               <span
