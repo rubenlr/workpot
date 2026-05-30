@@ -6,7 +6,7 @@
   import { fuzzyMatch } from "$lib/fuzzy";
   import { moveSelectionIndex } from "$lib/selection";
   import { traySort } from "$lib/sort";
-  import type { RepoDto, TrayConfigDto } from "$lib/types";
+  import type { GitRefreshSummary, RepoDto, TrayConfigDto } from "$lib/types";
 
   const ROW_HEIGHT_PX = 44;
   const FILTER_BAR_HEIGHT_PX = 52;
@@ -18,6 +18,7 @@
   let maxVisibleRows = $state(15);
   let filterInput = $state<HTMLInputElement | null>(null);
   let openHint = $state<string | null>(null);
+  let refreshing = $state(false);
 
   let listMaxHeightPx = $derived(
     maxVisibleRows * ROW_HEIGHT_PX + FILTER_BAR_HEIGHT_PX,
@@ -84,6 +85,11 @@
   }
 
   function onFilterKeydown(e: KeyboardEvent) {
+    if (e.metaKey && (e.key === "r" || e.key === "R")) {
+      e.preventDefault();
+      void startBackgroundRefresh();
+      return;
+    }
     if (e.key === "ArrowDown") {
       const input = e.currentTarget as HTMLInputElement;
       const atEnd =
@@ -117,6 +123,11 @@
     ) {
       return;
     }
+    if (e.metaKey && (e.key === "r" || e.key === "R")) {
+      e.preventDefault();
+      void startBackgroundRefresh();
+      return;
+    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       moveSelection(1);
@@ -144,6 +155,16 @@
     }
   }
 
+  async function startBackgroundRefresh() {
+    refreshing = true;
+    try {
+      await invoke("refresh_all_git_state");
+    } catch (e) {
+      refreshing = false;
+      error = String(e);
+    }
+  }
+
   onMount(() => {
     void loadRepos();
 
@@ -156,15 +177,25 @@
         maxVisibleRows = 15;
       });
 
-    const unlisten = listen("panel-opened", () => {
+    const unlistenPanel = listen("panel-opened", () => {
       void loadRepos();
+      refreshing = true;
       focusFilter();
     });
+
+    const unlistenRefresh = listen<GitRefreshSummary>(
+      "git-refresh-complete",
+      () => {
+        refreshing = false;
+        void loadRepos();
+      },
+    );
 
     focusFilter();
 
     return () => {
-      void unlisten.then((fn) => fn());
+      void unlistenPanel.then((fn) => fn());
+      void unlistenRefresh.then((fn) => fn());
     };
   });
 </script>
@@ -178,16 +209,25 @@
   <div
     class="border-b border-neutral-200/80 bg-white/80 px-3 py-2 backdrop-blur-md dark:border-neutral-700/80 dark:bg-neutral-900/80"
   >
-    <input
-      id="repo-filter"
-      bind:this={filterInput}
-      type="search"
-      placeholder="Filter repos…"
-      maxlength="256"
-      class="w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-sm outline-none ring-blue-500 focus:ring-2 dark:border-neutral-600 dark:bg-neutral-800"
-      bind:value={filterQuery}
-      onkeydown={onFilterKeydown}
-    />
+    <div class="flex items-center gap-2">
+      <input
+        id="repo-filter"
+        bind:this={filterInput}
+        type="search"
+        placeholder="Filter repos…"
+        maxlength="256"
+        class="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-sm outline-none ring-blue-500 focus:ring-2 dark:border-neutral-600 dark:bg-neutral-800"
+        bind:value={filterQuery}
+        onkeydown={onFilterKeydown}
+      />
+      {#if refreshing}
+        <span
+          class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-neutral-300 border-t-blue-600 dark:border-neutral-600 dark:border-t-blue-400"
+          role="status"
+          aria-label="Refreshing git state"
+        ></span>
+      {/if}
+    </div>
     {#if openHint}
       <p class="mt-1 text-xs text-amber-700 dark:text-amber-400" role="status">
         {openHint}

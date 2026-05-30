@@ -2,6 +2,12 @@ export interface TrayConfigDto {
   max_visible_rows: number;
 }
 
+export interface GitRefreshSummary {
+  refreshed: number;
+  errors: number;
+  any_dirty: boolean;
+}
+
 export interface RepoDto {
   path: string;
   name: string;
