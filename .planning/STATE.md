@@ -8,8 +8,8 @@ progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 15
-  completed_plans: 12
-  percent: 47
+  completed_plans: 13
+  percent: 50
 ---
 
 # Project State
@@ -29,13 +29,14 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 1 | Core & persistence | Complete (2026-05-28) |
 | 2 | Repo discovery | Complete — 5/5 plans (2026-05-29) |
 | 3 | Git state | Complete — 3/3 plans, UAT 10/10 (2026-05-30) |
-| 4 | Tray finder MVP | In progress — 1/4 plans (04-01 complete) |
+| 4 | Tray finder MVP | In progress — 2/4 plans (04-02 complete) |
 | 5 | Tags & prioritization | Not started |
 | 6 | CLI parity | Not started |
 | 7 | Recipes | Not started |
 
 ## Session Notes
 
+- Phase 4 plan 04-02 (2026-05-30): panel chrome, `get_tray_config`, fuzzy/sort, keyboard nav, Vitest + macOS CI; commits `d417a95`, `55a913c`, `ace0bd4`, `d9767f2`
 - Phase 4 plan 04-01 (2026-05-30): Tauri tray scaffold, migration 005 `last_opened_at`, `list_repos` IPC, tray toggle + list UI; commits `de7ef67`, `a14e353`, `97d680c`
 - Phase 3 shipped (2026-05-30): PR https://github.com/rubenlr/workpot/pull/2 — branch `feature/03-git-state` → `master`
 - Phase 3 UAT `/gsd-verify-work 3 --fix --all` (2026-05-30): 10/10 automated checks; CR-01/02 + WR-01/02/03 fixes from code review

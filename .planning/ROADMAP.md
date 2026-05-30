@@ -134,7 +134,7 @@ Plans:
 
 **UI hint:** yes
 
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 **Wave 1**
@@ -143,7 +143,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04-02-PLAN.md — Panel chrome, fuzzy filter, sort, keyboard nav (UI-02, UI-03, SRCH-01 partial, SRCH-02..03)
+- [x] 04-02-PLAN.md — Panel chrome, fuzzy filter, sort, keyboard nav (UI-02, UI-03, SRCH-01 partial, SRCH-02..03) (2026-05-30)
 
 **Wave 2b** *(blocked on 04-02 — serializes `+page.svelte` ownership)*
 
