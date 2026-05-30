@@ -85,13 +85,13 @@ Analysis targets [SonarCloud project `workpot`](https://sonarcloud.io/project/co
 2. **`SONAR_TOKEN`** — [Account → Security](https://sonarcloud.io/account/security) → generate token → GitHub repo **Settings → Secrets → Actions** → `SONAR_TOKEN`.
 3. **Quality gate “zero issues”** — Default [Sonar way](https://sonarcloud.io/organizations/rubenlr/quality_gates) allows ratings/coverage slack, not a hard zero. Create a custom gate and assign it to `workpot`:
 
-   | Scope | Metric | Operator | Threshold |
-   | --- | --- | --- | --- |
-   | Overall Code | Issues | is greater than | 0 |
-   | New Code | Issues | is greater than | 0 |
-   | Overall Code | Vulnerabilities | is greater than | 0 |
-   | New Code | Vulnerabilities | is greater than | 0 |
-   | New Code | Security Hotspots Reviewed | is less than | 100 |
+   | Scope        | Metric                     | Operator        | Threshold |
+   | ------------ | -------------------------- | --------------- | --------- |
+   | Overall Code | Issues                     | is greater than | 0         |
+   | New Code     | Issues                     | is greater than | 0         |
+   | Overall Code | Vulnerabilities            | is greater than | 0         |
+   | New Code     | Vulnerabilities            | is greater than | 0         |
+   | New Code     | Security Hotspots Reviewed | is less than    | 100       |
 
    Assign: [Quality Gate for workpot](https://sonarcloud.io/project/quality_gate?id=workpot) → your custom gate.
 
