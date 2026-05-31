@@ -2,23 +2,30 @@
   let {
     allTags,
     visible,
+    prefix = "",
     onSelect,
   }: {
     allTags: string[];
     visible: boolean;
+    prefix?: string;
     onSelect: (tag: string) => void;
   } = $props();
 
   let inputValue = $state("");
   let highlightedIndex = $state(-1);
 
-  let filtered = $derived(
-    inputValue.length === 0
-      ? allTags
-      : allTags.filter((t) =>
-          t.toLowerCase().startsWith(inputValue.toLowerCase()),
-        ),
-  );
+  let filtered = $derived.by(() => {
+    let tags = allTags;
+    if (prefix.length > 0) {
+      const p = prefix.toLowerCase();
+      tags = tags.filter((t) => t.toLowerCase().startsWith(p));
+    }
+    if (inputValue.length > 0) {
+      const q = inputValue.toLowerCase();
+      tags = tags.filter((t) => t.toLowerCase().startsWith(q));
+    }
+    return tags;
+  });
 
   function selectTag(tag: string) {
     onSelect(tag);
