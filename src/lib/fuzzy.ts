@@ -49,6 +49,7 @@ export function fuzzyScore(query: string, repo: RepoDto): number {
 
   const scores = [
     scoreField(q, repo.name, true),
+    scoreField(q, repo.alias ?? "", true),
     scoreField(q, repo.path, false),
     scoreField(q, repo.branch ?? "", false),
     scoreField(q, repo.notes ?? "", false),

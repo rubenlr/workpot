@@ -84,6 +84,24 @@ describe("fuzzyMatch", () => {
     expect(fuzzyMatch("backend", r)).toBe(true);
   });
 
+  it("matches alias when name does not", () => {
+    const r = repo({ name: "workpot-core", alias: "wp" });
+    expect(fuzzyMatch("wp", r)).toBe(true);
+    expect(fuzzyMatch("wp", repo({ name: "alpha", alias: null }))).toBe(false);
+  });
+
+  it("scores alias prefix above path-only match", () => {
+    const byAlias = repo({ name: "x", alias: "workpot", path: "/tmp/a" });
+    const byPath = repo({
+      name: "y",
+      alias: null,
+      path: "/tmp/workpot-extra",
+    });
+    expect(fuzzyScore("work", byAlias)).toBeGreaterThan(
+      fuzzyScore("work", byPath),
+    );
+  });
+
   it("does not match unrelated query on note-only repo", () => {
     const r = repo({
       name: "x",

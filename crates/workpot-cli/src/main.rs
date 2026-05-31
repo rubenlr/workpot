@@ -377,6 +377,10 @@ fn run_open(identifier: &str) -> anyhow::Result<()> {
 
 /// Resolve CLI `repo` argument to SQLite `repos.path` (exact key, canonical path, or unique name).
 fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result<String> {
+    let identifier = identifier.trim();
+    if identifier.is_empty() {
+        return Err(anyhow::anyhow!("repo not found: (empty identifier)"));
+    }
     let repos = ctx.list_repos().context("failed to list repos")?;
 
     if let Some(path_key) = match_repo_path_key(&repos, identifier) {

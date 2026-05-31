@@ -492,6 +492,7 @@
     {#if detailRepo}
       <DetailPane
         repo={detailRepo}
+        {allTags}
         requestTagFocus={focusTagOnDetailOpen}
         onTagFocusDone={() => {
           focusTagOnDetailOpen = false;

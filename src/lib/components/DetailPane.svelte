@@ -6,21 +6,28 @@
     tagAlreadyOnRepo,
   } from "../orgClient";
   import type { RepoDto } from "../types";
+  import TagAutocomplete from "./TagAutocomplete.svelte";
   import TagChip from "./TagChip.svelte";
 
   let {
     repo,
+    allTags = [],
     onClose,
     onMutated,
     requestTagFocus = false,
     onTagFocusDone,
   }: {
     repo: RepoDto;
+    allTags?: string[];
     onClose: () => void;
     onMutated: () => void;
     requestTagFocus?: boolean;
     onTagFocusDone?: () => void;
   } = $props();
+
+  let tagSuggestTags = $derived(
+    allTags.filter((t) => !repo.tags.includes(t)),
+  );
 
   let branches = $state<string[]>([]);
   let branchError = $state<string | null>(null);
@@ -210,23 +217,33 @@
         <TagChip {tag} onRemove={() => void handleRemoveTag(tag)} />
       {/each}
     </div>
-    <input
-      type="text"
-      bind:this={tagInputEl}
-      bind:value={tagInput}
-      placeholder="Add tag…"
-      autocomplete="off"
-      autocapitalize="off"
-      autocorrect="off"
-      spellcheck="false"
-      class="mt-2 w-full rounded-md border border-neutral-200 bg-transparent px-2 py-1 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-      onkeydown={onTagInputKeydown}
-      onblur={() => {
-        if (tagInput.trim()) {
-          void handleAddTag(tagInput);
-        }
-      }}
-    />
+    <div class="relative mt-2">
+      <input
+        type="text"
+        bind:this={tagInputEl}
+        bind:value={tagInput}
+        placeholder="Add tag…"
+        autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        class="w-full rounded-md border border-neutral-200 bg-transparent px-2 py-1 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        onkeydown={onTagInputKeydown}
+        onblur={() => {
+          if (tagInput.trim()) {
+            void handleAddTag(tagInput);
+          }
+        }}
+      />
+      <TagAutocomplete
+        allTags={tagSuggestTags}
+        visible={tagInput.trim().length > 0 && tagSuggestTags.length > 0}
+        prefix={tagInput.trim()}
+        onSelect={(tag) => {
+          void handleAddTag(tag);
+        }}
+      />
+    </div>
     {#if tagError}
       <p class="mt-1 text-sm text-red-600 dark:text-red-400">{tagError}</p>
     {/if}
