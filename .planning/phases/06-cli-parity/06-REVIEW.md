@@ -1,6 +1,6 @@
 ---
 phase: 06-cli-parity
-reviewed: 2026-05-31T12:00:00Z
+reviewed: 2026-05-31T18:00:00Z
 depth: deep
 files_reviewed: 12
 files_reviewed_list:
@@ -19,68 +19,34 @@ files_reviewed_list:
 findings:
   critical: 0
   warning: 0
-  info: 3
-  total: 3
-status: issues_found
+  info: 0
+  total: 0
+status: clean
 ---
 
-# Phase 06: Code Review Report (re-review after fix)
+# Phase 06: Code Review Report
 
-**Reviewed:** 2026-05-31 (post `--fix --auto` iteration 1)  
+**Reviewed:** 2026-05-31T18:00:00Z  
 **Depth:** deep  
 **Files Reviewed:** 12  
-**Status:** issues_found (info only)
+**Status:** clean
 
 ## Summary
 
-Critical and warning findings from the initial review are resolved. CLI list/search ordering delegates to `repo_priority::section_sort`; fuzzy DoS guard uses scalar count; launch spawns are reaped; `workpot open` launch failures exit via `LaunchFailed` in `main` (code 2).
+Deep review of Phase 06 CLI parity scope: CLI list/search/display, repo resolution, tag error mapping, shared `launch` / `repo_fuzzy` / `repo_priority` services, golden-vector tests, and Tauri `launch.rs` re-export. Cross-file traces verified:
 
-Three info-level items remain — optional cleanup, not blocking parity.
+- `list` / `search` → `flat_tray_ordered_with_icons` → `repo_priority::section_sort` (single ordering model; pin_order sentinel 999 in core).
+- `search` → `fuzzy_match` / `fuzzy_score` with `q.chars().count()` DoS guard (256 grapheme limit).
+- `open` / tray → `launch_repo` → `indexed_launch_path` + `build_command` + `resolve_launch_program`; spawn reaped in background thread; CLI `LaunchFailed` → exit 2.
+- `tag` → `org::normalize_tag` via `map_tag_error` (no duplicate CLI validation).
+- `resolve_repo_identifier` → `match_repo_path_key` uses `OsStr` equality for stored path keys.
 
----
+Prior critical/warning items (section_sort wiring, launch reap, exit codes, cursor resolution) remain fixed. Prior info items IN-01 (duplicate tag validation) and IN-02 (`OsStr` path match) are confirmed resolved in `main.rs`.
 
-## Resolved (iteration 1)
-
-| ID | Resolution |
-|----|------------|
-| CR-01 | `fuzzy_score` uses `q.chars().count()` |
-| CR-02 | `flat_tray_ordered_with_icons` calls `section_sort` |
-| WR-01 | Unified via CR-02 (`pin_order` sentinel 999 in core, matches TS) |
-| WR-02 | `resolve_launch_program` simplified |
-| WR-03 | Background `child.wait()` after spawn |
-| WR-04 | `LaunchFailed` error type; exit 2 in `main` |
+All reviewed files meet quality standards. No issues found.
 
 ---
 
-## Info (remaining)
-
-### IN-01: Duplicate tag validation in CLI vs core
-
-**File:** `crates/workpot-cli/src/main.rs` — `validate_tag_for_add`
-
-CLI pre-validates tags before `ctx.add_tag`; core `org::normalize_tag` duplicates rules. Low risk of drift.
-
-**Fix:** Remove `validate_tag_for_add`; map `WorkpotError::InvalidInput` in the error pipeline.
-
----
-
-### IN-02: Path key match could use `OsStr` on POSIX
-
-**File:** `crates/workpot-cli/src/main.rs` — `match_repo_path_key`
-
-Now uses `path.to_str()` for comparison (improved). Non-UTF-8 paths still won't match string identifiers.
-
-**Fix:** Optional `as_os_str()` compare for POSIX-only paths.
-
----
-
-### IN-03: Core re-exports now used by CLI
-
-**File:** `list_display.rs` → `repo_priority::section_sort`
-
-Resolved by CR-02. `flat_tray_ordered*` re-exports remain for tray/tests.
-
----
-
-_Reviewer: gsd-code-review --fix --auto (iteration 1 re-review)_  
+_Reviewed: 2026-05-31T18:00:00Z_  
+_Reviewer: Claude (gsd-code-reviewer)_  
 _Depth: deep_
