@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Executing
-last_updated: "2026-05-31T06:00:06.369Z"
+last_updated: "2026-05-31T06:49:19.305Z"
 progress:
   total_phases: 7
   completed_phases: 4
@@ -20,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 04 — tray-finder-mvp
+**Current focus:** Phase 05 — tags-prioritization
 
 ## Phase Status
 

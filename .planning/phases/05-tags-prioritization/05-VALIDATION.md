@@ -3,7 +3,7 @@ phase: 5
 slug: tags-prioritization
 status: draft
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-05-31
 ---
 
@@ -38,9 +38,9 @@ created: 2026-05-31
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 05-01-01 | 01 | 0 | ORG-01,04 | — | N/A | infra | `cargo test -p workpot-core org` | ❌ W0: `tests/org_test.rs` | ⬜ pending |
-| 05-01-02 | 01 | 0 | ORG-01 | — | N/A | infra | `npm test -- tagFilter` | ❌ W0: `src/lib/tagFilter.test.ts` | ⬜ pending |
-| 05-01-03 | 01 | 0 | ORG-02 | — | N/A | infra | `npm test -- pinOrder` | ❌ W0: `src/lib/pinOrder.test.ts` | ⬜ pending |
+| 05-01-01 | 01 | 0 | ORG-01,04 | — | N/A | infra | `cargo test -p workpot-core org` | ✅ `tests/org_test.rs` | ✅ green |
+| 05-01-02 | 01 | 0 | ORG-01 | — | N/A | infra | `npm test -- tagFilter` | ✅ `src/lib/tagFilter.test.ts` | ✅ green |
+| 05-01-03 | 01 | 0 | ORG-02 | — | N/A | infra | `npm test -- pinOrder` | ✅ `src/lib/pinOrder.test.ts` | ✅ green |
 | 05-02-01 | 02 | 1 | ORG-01 | — | N/A | unit | `cargo test -p workpot-core org` | ❌ W0 | ⬜ pending |
 | 05-02-02 | 02 | 1 | ORG-02 | — | N/A | unit | `cargo test -p workpot-core org` | ❌ W0 | ⬜ pending |
 | 05-02-03 | 02 | 1 | ORG-04 | — | N/A | unit | `cargo test -p workpot-core org` | ❌ W0 | ⬜ pending |
@@ -56,9 +56,9 @@ created: 2026-05-31
 
 ## Wave 0 Requirements
 
-- [ ] `crates/workpot-core/tests/org_test.rs` — stubs for ORG-01 (tag CRUD), ORG-02 (pin mutations), ORG-04 (notes CRUD)
-- [ ] `src/lib/tagFilter.test.ts` — stubs for `#tag` parse and AND filter logic
-- [ ] `src/lib/pinOrder.test.ts` — stubs for `pinOrder` drag-reorder array helper
+- [x] `crates/workpot-core/tests/org_test.rs` — stubs for ORG-01 (tag CRUD), ORG-02 (pin mutations), ORG-04 (notes CRUD)
+- [x] `src/lib/tagFilter.test.ts` — stubs for `#tag` parse and AND filter logic
+- [x] `src/lib/pinOrder.test.ts` — stubs for `pinOrder` drag-reorder array helper
 
 ---
 

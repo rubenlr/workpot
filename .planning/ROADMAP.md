@@ -15,7 +15,7 @@
 | 2 | Repo discovery | 5/5 | Complete |
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
 | 4 | 4/4 | Complete |
-| 5 | Tags & prioritization | Pins, tags, notes, signal ranking | ORG-01..04 | 4 |
+| 5 | Tags & prioritization | 1/7 | In Progress|  |
 | 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
 | 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
 
@@ -174,12 +174,12 @@ Plans:
 3. Dirty and recently opened repos rank higher than stale clean repos
 4. User can save notes on a repo and search matches note text
 
-**Plans:** 7 plans
+**Plans:** 1/7 plans executed
 
 Plans:
 **Wave 0**
 
-- [ ] 05-01-PLAN.md — Test stubs: org_test.rs, tagFilter.ts+test, pinOrder.ts+test (ORG-01,02,04)
+- [x] 05-01-PLAN.md — Test stubs: org_test.rs, tagFilter.ts+test, pinOrder.ts+test (ORG-01,02,04)
 
 **Wave 1** *(parallel — no shared files)*
 
