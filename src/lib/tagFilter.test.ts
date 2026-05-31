@@ -78,6 +78,13 @@ describe("parseTagFilter", () => {
       activeTags: ["foo"],
     });
   });
+
+  it("parses unicode tag tokens", () => {
+    expect(parseTagFilter("find #后端")).toEqual({
+      baseQuery: "find",
+      activeTags: ["后端"],
+    });
+  });
 });
 
 describe("matchesTags", () => {
@@ -95,6 +102,12 @@ describe("matchesTags", () => {
   it("passes when no active tags", () => {
     const r = repo({ name: "a", tags: [] });
     expect(matchesTags(r, [])).toBe(true);
+  });
+
+  it("matches emoji tags", () => {
+    const emoji = "🏷️";
+    const r = repo({ name: "a", tags: [emoji] });
+    expect(matchesTags(r, [emoji])).toBe(true);
   });
 });
 
@@ -147,5 +160,16 @@ describe("replaceTrailingTagAutocomplete", () => {
 describe("trailingTagAutocompletePrefix", () => {
   it("captures unicode partial after trailing hash", () => {
     expect(trailingTagAutocompletePrefix("find #后")).toBe("后");
+  });
+
+  it("returns empty when hash is not trailing", () => {
+    expect(trailingTagAutocompletePrefix("find #foo bar")).toBe("");
+  });
+
+  it("captures emoji partial after trailing hash", () => {
+    const emoji = "🏷️";
+    expect(trailingTagAutocompletePrefix(`find #${emoji.slice(0, 1)}`)).toBe(
+      emoji.slice(0, 1),
+    );
   });
 });

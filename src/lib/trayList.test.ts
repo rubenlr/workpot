@@ -99,6 +99,37 @@ describe("filterAndSectionRepos", () => {
     expect(names).toEqual(["beta"]);
   });
 
+  it("filters by unicode #tag", () => {
+    const unicodeTag = "后端";
+    const tagged = [
+      repo({
+        name: "cn",
+        is_dirty: false,
+        last_opened_at: now - 1,
+        tags: [unicodeTag],
+      }),
+      repo({
+        name: "other",
+        is_dirty: false,
+        last_opened_at: now - 2,
+        tags: ["backend"],
+      }),
+    ];
+    const sections = filterAndSectionRepos(
+      tagged,
+      `#${unicodeTag}`,
+      config,
+      now,
+    );
+    const names = [
+      ...sections.pinned,
+      ...sections.dirty,
+      ...sections.recent,
+      ...sections.rest,
+    ].map((r) => r.name);
+    expect(names).toEqual(["cn"]);
+  });
+
   it("requires all active tags (AND)", () => {
     const multi = [
       repo({

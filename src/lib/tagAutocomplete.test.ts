@@ -23,4 +23,9 @@ describe("filterTagsForAutocomplete", () => {
   it("returns empty when no tag matches", () => {
     expect(filterTagsForAutocomplete(all, "zzz", "")).toEqual([]);
   });
+
+  it("filters by unicode prefix from filter bar", () => {
+    const tags = ["后端", "frontend"];
+    expect(filterTagsForAutocomplete(tags, "后", "")).toEqual(["后端"]);
+  });
 });
