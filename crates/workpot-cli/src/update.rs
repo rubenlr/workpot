@@ -65,6 +65,11 @@ struct Asset {
     browser_download_url: String,
 }
 
+struct VerifiedAsset {
+    _temp: tempfile::TempDir,
+    asset_path: PathBuf,
+}
+
 #[derive(Clone, Copy)]
 enum TargetKind {
     Cli,
@@ -246,29 +251,21 @@ fn update_cli(release: &Release, latest: &str, paths: &InstallPaths) -> Result<U
         return Ok(UpdateState::AlreadyCurrent);
     }
 
-    let temp = tempfile::tempdir().context("failed to create temp dir")?;
-    let tar_path = temp.path().join(CLI_ASSET_NAME);
-    let checksum_path = temp.path().join(CLI_CHECKSUM_NAME);
+    let verified = download_verified_asset(release, CLI_ASSET_NAME, CLI_CHECKSUM_NAME)?;
+    let tar_path = verified.asset_path;
 
-    let tar_url = find_asset_url(release, CLI_ASSET_NAME)?;
-    let checksum_url = find_asset_url(release, CLI_CHECKSUM_NAME)?;
-    download_to_path(tar_url, &tar_path)?;
-    download_to_path(checksum_url, &checksum_path)?;
-    verify_checksum(&tar_path, &checksum_path)?;
-
-    let unpack = temp.path().join("unpack");
-    fs::create_dir_all(&unpack).context("failed to create unpack dir")?;
+    let unpack = tempfile::tempdir().context("failed to create unpack dir")?;
     let tar_status = Command::new("tar")
         .arg("-xzf")
         .arg(&tar_path)
         .arg("-C")
-        .arg(&unpack)
+        .arg(unpack.path())
         .status()
         .context("failed to launch tar")?;
     if !tar_status.success() {
         return Err(UpdateFailed::install("failed to extract CLI tarball").into());
     }
-    let extracted = unpack.join("workpot");
+    let extracted = unpack.path().join("workpot");
     if !extracted.exists() {
         return Err(UpdateFailed::install("CLI tarball missing `workpot` binary").into());
     }
@@ -317,19 +314,16 @@ fn update_tray(release: &Release, latest: &str, paths: &InstallPaths) -> Result<
 
     let dmg_name = format!("Workpot-{latest}-aarch64.dmg");
     let dmg_checksum = format!("{dmg_name}.sha256");
-    let temp = tempfile::tempdir().context("failed to create temp dir")?;
-    let dmg_path = temp.path().join(&dmg_name);
-    let checksum_path = temp.path().join(&dmg_checksum);
-    download_to_path(find_asset_url(release, &dmg_name)?, &dmg_path)?;
-    download_to_path(find_asset_url(release, &dmg_checksum)?, &checksum_path)?;
-    verify_checksum(&dmg_path, &checksum_path)?;
+    let verified = download_verified_asset(release, &dmg_name, &dmg_checksum)?;
+    let dmg_path = verified.asset_path;
 
     if let Some(src) = std::env::var_os("WORKPOT_UPDATE_TEST_TRAY_APP_SOURCE").map(PathBuf::from) {
         replace_app_bundle(&src, &paths.tray)?;
         return Ok(UpdateState::Updated);
     }
 
-    let mount = temp.path().join("mount");
+    let mount_temp = tempfile::tempdir().context("failed to create mount temp dir")?;
+    let mount = mount_temp.path().join("mount");
     fs::create_dir_all(&mount).context("failed to create mount dir")?;
     let attach_status = Command::new("hdiutil")
         .arg("attach")
@@ -355,6 +349,19 @@ fn update_tray(release: &Release, latest: &str, paths: &InstallPaths) -> Result<
 
     replace_result?;
     Ok(UpdateState::Updated)
+}
+
+fn download_verified_asset(release: &Release, asset_name: &str, checksum_name: &str) -> Result<VerifiedAsset> {
+    let temp = tempfile::tempdir().context("failed to create temp dir")?;
+    let asset_path = temp.path().join(asset_name);
+    let checksum_path = temp.path().join(checksum_name);
+    download_to_path(find_asset_url(release, asset_name)?, &asset_path)?;
+    download_to_path(find_asset_url(release, checksum_name)?, &checksum_path)?;
+    verify_checksum(&asset_path, &checksum_path)?;
+    Ok(VerifiedAsset {
+        _temp: temp,
+        asset_path,
+    })
 }
 
 fn detect_cli_version(path: &Path) -> Result<Option<String>> {
