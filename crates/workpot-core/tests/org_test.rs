@@ -38,6 +38,38 @@ fn test_tag_crud_set_and_list() {
 }
 
 #[test]
+fn test_set_tags_replaces_all_tags() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-tag-replace";
+    insert_repo(&conn, path);
+    org::set_tags(&conn, path, &["backend", "infra"]).expect("set_tags");
+    org::set_tags(&conn, path, &["frontend"]).expect("replace");
+    let tags = org::list_tags_for_repo(&conn, path).expect("list");
+    assert_eq!(tags, vec!["frontend"]);
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM repo_tags WHERE repo_path = ?1",
+            params![path],
+            |row| row.get(0),
+        )
+        .expect("count");
+    assert_eq!(count, 1);
+}
+
+#[test]
+fn test_migration_006_repo_tags_table() {
+    let (_dir, conn) = temp_db();
+    let exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='repo_tags'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("repo_tags exists");
+    assert_eq!(exists, 1);
+}
+
+#[test]
 fn test_tag_add_remove() {
     let (_dir, conn) = temp_db();
     let path = "/tmp/org-tag-ar";
@@ -138,6 +170,21 @@ fn test_notes_set_and_get() {
         })
         .expect("select notes");
     assert_eq!(notes.as_deref(), Some("hello"));
+}
+
+#[test]
+fn test_notes_clear_with_none() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-notes-clear";
+    insert_repo(&conn, path);
+    org::set_notes(&conn, path, Some("hello")).expect("set_notes");
+    org::set_notes(&conn, path, None).expect("clear");
+    let notes: Option<String> = conn
+        .query_row("SELECT notes FROM repos WHERE path = ?1", params![path], |row| {
+            row.get(0)
+        })
+        .expect("select notes");
+    assert!(notes.is_none());
 }
 
 #[test]

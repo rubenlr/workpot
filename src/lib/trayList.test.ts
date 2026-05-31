@@ -78,6 +78,36 @@ describe("filterAndSectionRepos", () => {
     expect(names).toEqual(["beta"]);
   });
 
+  it("requires all active tags (AND)", () => {
+    const multi = [
+      repo({
+        name: "both",
+        is_dirty: false,
+        last_opened_at: now - 1,
+        tags: ["backend", "infra"],
+      }),
+      repo({
+        name: "backend-only",
+        is_dirty: false,
+        last_opened_at: now - 2,
+        tags: ["backend"],
+      }),
+    ];
+    const sections = filterAndSectionRepos(
+      multi,
+      "#backend #infra",
+      config,
+      now,
+    );
+    const names = [
+      ...sections.pinned,
+      ...sections.dirty,
+      ...sections.recent,
+      ...sections.rest,
+    ].map((r) => r.name);
+    expect(names).toEqual(["both"]);
+  });
+
   it("hides pinned repo when tag filter excludes it", () => {
     const sections = filterAndSectionRepos(sample, "#backend", config, now);
     expect(sections.pinned).toHaveLength(0);

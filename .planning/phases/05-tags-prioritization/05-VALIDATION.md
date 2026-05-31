@@ -41,12 +41,12 @@ created: 2026-05-31
 | 05-01-01 | 01 | 0 | ORG-01,04 | — | N/A | infra | `cargo test -p workpot-core org` | ✅ `tests/org_test.rs` | ✅ green |
 | 05-01-02 | 01 | 0 | ORG-01 | — | N/A | infra | `npm test -- tagFilter` | ✅ `src/lib/tagFilter.test.ts` | ✅ green |
 | 05-01-03 | 01 | 0 | ORG-02 | — | N/A | infra | `npm test -- pinOrder` | ✅ `src/lib/pinOrder.test.ts` | ✅ green |
-| 05-02-01 | 02 | 1 | ORG-01 | — | N/A | unit | `cargo test -p workpot-core org` | ❌ W0 | ⬜ pending |
-| 05-02-02 | 02 | 1 | ORG-02 | — | N/A | unit | `cargo test -p workpot-core org` | ❌ W0 | ⬜ pending |
-| 05-02-03 | 02 | 1 | ORG-04 | — | N/A | unit | `cargo test -p workpot-core org` | ❌ W0 | ⬜ pending |
-| 05-03-01 | 03 | 2 | ORG-03 | — | N/A | unit | `npm test -- sort` | ✅ extend `sort.test.ts` | ⬜ pending |
-| 05-03-02 | 03 | 2 | ORG-02 | — | N/A | unit | `npm test -- trayList` | ✅ extend `trayList.test.ts` | ⬜ pending |
-| 05-03-03 | 03 | 2 | ORG-01 | — | N/A | unit | `npm test -- tagFilter` | ❌ W0 | ⬜ pending |
+| 05-02-01 | 02 | 1 | ORG-01 | — | N/A | unit | `cargo test -p workpot-core --test org_test` | ✅ `tests/org_test.rs` | ✅ green |
+| 05-02-02 | 02 | 1 | ORG-02 | — | N/A | unit | `cargo test -p workpot-core --test org_test` | ✅ `tests/org_test.rs` | ✅ green |
+| 05-02-03 | 02 | 1 | ORG-04 | — | N/A | unit | `cargo test -p workpot-core --test org_test` | ✅ `tests/org_test.rs` | ✅ green |
+| 05-03-01 | 03 | 1 | ORG-03 | — | N/A | unit | `npm test -- sort` | ✅ `sort.test.ts` | ✅ green |
+| 05-03-02 | 03 | 1 | ORG-02 | — | N/A | unit | `npm test -- trayList` | ✅ `trayList.test.ts` | ✅ green |
+| 05-03-03 | 03 | 1 | ORG-01 | — | N/A | unit | `npm test -- tagFilter` | ✅ `tagFilter.test.ts` | ✅ green |
 | 05-04-01 | 04 | 3 | ORG-01 | — | N/A | unit | `npm test -- fuzzy` | ✅ extend `fuzzy.test.ts` | ⬜ pending |
 | 05-04-02 | 04 | 3 | ORG-04 | — | N/A | unit | `npm test -- fuzzy` | ✅ extend `fuzzy.test.ts` | ⬜ pending |
 

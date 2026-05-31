@@ -82,4 +82,14 @@ describe("fuzzyMatch", () => {
     const r = repo({ name: "x", tags: ["backend"] });
     expect(fuzzyMatch("backend", r)).toBe(true);
   });
+
+  it("does not match unrelated query on note-only repo", () => {
+    const r = repo({
+      name: "x",
+      branch: null,
+      notes: "deployment pipeline",
+    });
+    expect(fuzzyMatch("zzz", r)).toBe(false);
+    expect(fuzzyScore("zzz", r)).toBe(0);
+  });
 });
