@@ -1,16 +1,14 @@
 ---
-status: partial
+status: approved
 phase: 05-tags-prioritization
 source: [05-VERIFICATION.md]
 started: 2026-05-31T11:15:00Z
-updated: 2026-05-31T12:05:00Z
+updated: 2026-05-31T14:00:00Z
 ---
 
 ## Current Test
 
-### Re-verify tag remove (after × on TagChip)
-expected: × on list/detail chips removes tag; single-tag context menu Remove tag… removes without detail
-result: pending
+(none — all tests passed)
 
 ## Tests
 
@@ -34,15 +32,20 @@ expected: Typing `#` shows dropdown; selection filters with AND logic; chips hid
 result: pass
 result_note: add_tag path works; AND filter via tagFilter
 
+### 5. Re-verify tag remove (after × on TagChip)
+expected: × on list/detail chips removes tag; single-tag context menu Remove tag… removes without detail
+result: pass
+result_note: User approved 2026-05-31 — visible × and context menu remove verified
+
 ## Summary
 
 total: 5
-passed: 3
-issues: 1
-pending: 1
+passed: 5
+issues: 0
+pending: 0
 skipped: 0
 blocked: 0
 
 ## Gaps
 
-~~can't remove tags, there is no option for it~~ — auto-fix 2026-05-31: visible × on `TagChip` (list + detail). Re-test pending.
+(none)

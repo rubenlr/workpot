@@ -1,8 +1,8 @@
 ---
 phase: 05-tags-prioritization
-verified: 2026-05-31T12:05:00Z
-status: human_needed
-score: 4/4 roadmap truths verified (automated)
+verified: 2026-05-31T14:00:00Z
+status: passed
+score: 4/4 roadmap truths verified
 decision_coverage:
   honored: 29
   total: 29
@@ -11,15 +11,7 @@ deferred:
   - truth: "CLI pin/unpin commands"
     addressed_in: "Phase 6"
     evidence: "05-CONTEXT.md D-18; 05-07-PLAN.md decisions_covered D-18"
-gaps:
-  - truth: "User can remove tags from tray with a visible affordance (ORG-01 / D-05)"
-    status: partial
-    reason: "UAT 2026-05-31 — removal only via Cmd+Click; user reported no option. Auto-fix added × on TagChip."
-    artifacts:
-      - path: src/lib/components/TagChip.svelte
-        issue: "Had no visible remove control before verify-phase --gap --auto"
-    missing:
-      - "Human re-run: click × on list row and detail pane; context menu Remove tag on single-tag repo"
+gaps: []
 ---
 
 # Phase 5: Tags & prioritization Verification Report
@@ -28,9 +20,9 @@ gaps:
 
 **Verified:** 2026-05-31T12:05:00Z
 
-**Status:** human_needed
+**Status:** passed
 
-**Re-verification:** Yes — gap closure after 05-09 + UAT remove-tag affordance fix
+**Re-verification:** Complete — gap closure + human UAT approved 2026-05-31
 
 ## Goal Achievement
 
@@ -121,26 +113,13 @@ All trackable CONTEXT.md decisions honored (29/29).
 
 ## Human Verification
 
-Prior UAT (`05-HUMAN-UAT.md`): 3/4 automated items passed; **gap** — tag remove not discoverable.
+UAT (`05-HUMAN-UAT.md`): **5/5 passed** (approved 2026-05-31).
 
-**Required re-check after auto-fix:**
-
-1. List row: click **×** on a tag chip — tag disappears and survives tray reload.
-2. Detail pane: **×** on tag chip — same.
-3. Context menu **Remove tag…** on single-tag repo — removes without opening detail.
-4. Multi-tag repo: context menu **Remove tag…** opens detail; use **×** or Cmd+Click to remove one tag.
-
-Reply **approved** in chat or update `05-HUMAN-UAT.md` when green.
+Tag remove re-verified after `TagChip` × affordance: list row, detail pane, and context menu paths confirmed.
 
 ## Gaps Summary
 
-| Gap | Resolution |
-|-----|------------|
-| Tags not persisting (pre-05-09) | Closed in 05-09 |
-| IPC ACL (pre-05-08) | Closed in 05-08 |
-| No visible remove option (UAT 2026-05-31) | **Auto-fixed** in verify-phase: `TagChip` × button |
-
-No new code gaps pending automated closure. Phase blocked on human UAT re-run only.
+All gaps closed (05-08 ACL, 05-09 tag persistence, TagChip × remove affordance + human UAT).
 
 ## Verification Metadata
 
@@ -148,8 +127,8 @@ No new code gaps pending automated closure. Phase blocked on human UAT re-run on
 
 **Automated checks:** artifacts pass, tests green, decision coverage 29/29.
 
-**Human checks required:** 4 (tag remove affordance re-test)
+**Human checks required:** 0 (UAT approved)
 
 ---
-*Verified: 2026-05-31T12:05:00Z*
-*Verifier: gsd-verify-phase 5 --gap --auto*
+*Verified: 2026-05-31T14:00:00Z*
+*Verifier: gsd-verify-phase 5 — human UAT approved*
