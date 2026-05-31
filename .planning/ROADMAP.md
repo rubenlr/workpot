@@ -17,7 +17,7 @@
 | 4 | 4/4 | Complete |
 | 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
 | 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
-| 06.1 | Release & distribution *(INSERTED)* | 1/3 | In Progress|  |
+| 06.1 | Release & distribution *(INSERTED)* | 2/3 | In Progress|  |
 | 06.2 | Tray UX polish *(INSERTED)* | Icons, panel chrome, alias, interaction | — | 8 |
 
 ---
@@ -257,11 +257,11 @@ Plans:
 4. `INSTALL.md` gives equal prominence to script and DMG install paths, and documents update + uninstall/PATH without reading `docs/releasing.md`
 5. Maintainer flow in `docs/releasing.md` references DMG + installer; CI smoke covers new artifacts where feasible
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [x] 06.1-01-PLAN.md — Lock release artifact/signing contract (aarch64-only + DMG + smoke/docs)
-- [ ] 06.1-02-PLAN.md — TDD `workpot update` with strict exit/error/checksum semantics
+- [x] 06.1-02-PLAN.md — TDD `workpot update` with strict exit/error/checksum semantics
 - [ ] 06.1-03-PLAN.md — Implement `install.sh` + installer smoke + user install docs
 
 ---

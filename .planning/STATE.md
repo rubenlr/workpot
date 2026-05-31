@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-last_updated: "2026-05-31T17:47:23.150Z"
+last_updated: "2026-05-31T17:54:27.896Z"
 progress:
   total_phases: 9
   completed_phases: 6
   total_plans: 33
-  completed_plans: 31
+  completed_plans: 32
   percent: 67
 ---
 
@@ -58,6 +58,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 - Git refresh: rayon batch outside DB tx; `open_and_query` expects pre-canonicalized path (03-02/03)
 - Migration 005 for `last_opened_at` (04-01)
 - Tauri org IPC requires explicit `allow-org-commands` capability (05-08; same class as 04 `get_tray_config`)
+- [Phase ?]: Updater failures map to Network=2 and Install=1 for deterministic CLI exits.
+- [Phase ?]: Checksum verification is enforced before any CLI or tray replacement step.
 
 ## Accumulated Context
 
