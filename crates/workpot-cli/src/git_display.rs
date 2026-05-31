@@ -55,6 +55,10 @@ mod tests {
             git_refreshed_at: Some(1_700_000_000),
             git_state_error: None,
             last_opened_at: None,
+            pinned: false,
+            pin_order: None,
+            notes: None,
+            tags: vec![],
         }
     }
 

@@ -2,9 +2,9 @@ mod git_display;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
-use std::process::ExitCode;
-use workpot_core::{AppContext, WorkpotError};
+use std::path::{Path, PathBuf};
+use std::process::{ExitCode, exit};
+use workpot_core::{AppContext, RepoRecord, WorkpotError};
 
 use git_display::format_git_state;
 
@@ -27,6 +27,9 @@ enum Commands {
     Roots(RootsCommands),
     #[command(subcommand)]
     Excludes(ExcludesCommands),
+    /// Add, remove, or list tags on a repository.
+    #[command(subcommand)]
+    Tag(TagAction),
 }
 
 #[derive(Subcommand)]
@@ -45,6 +48,29 @@ enum ExcludesCommands {
     List,
     /// Remove an exclude glob from config.
     Remove { glob: String },
+}
+
+#[derive(Subcommand)]
+enum TagAction {
+    /// Add a tag to a repository.
+    Add {
+        /// Repository path or name
+        repo: String,
+        /// Tag to add (max 64 chars, no #)
+        tag: String,
+    },
+    /// Remove a tag from a repository.
+    Remove {
+        /// Repository path or name
+        repo: String,
+        /// Tag to remove
+        tag: String,
+    },
+    /// List tags for a repository.
+    List {
+        /// Repository path or name
+        repo: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -172,8 +198,87 @@ fn run() -> anyhow::Result<()> {
                 }
             }
         }
+        Commands::Tag(action) => {
+            let ctx = AppContext::open().context("failed to open workpot")?;
+            match action {
+                TagAction::Add { repo, tag } => {
+                    validate_tag_for_add(&tag)?;
+                    let path_key = resolve_repo_identifier(&ctx, &repo)?;
+                    ctx.add_tag(&path_key, tag.trim())?;
+                }
+                TagAction::Remove { repo, tag } => {
+                    let path_key = resolve_repo_identifier(&ctx, &repo)?;
+                    ctx.remove_tag(&path_key, &tag)?;
+                }
+                TagAction::List { repo } => {
+                    let path_key = resolve_repo_identifier(&ctx, &repo)?;
+                    let tags = ctx.list_tags_for_repo(&path_key)?;
+                    if tags.is_empty() {
+                        println!("(no tags)");
+                    } else {
+                        for tag in tags {
+                            println!("{tag}");
+                        }
+                    }
+                }
+            }
+        }
     }
     Ok(())
+}
+
+fn validate_tag_for_add(tag: &str) -> anyhow::Result<()> {
+    if tag.trim().is_empty() {
+        eprintln!("tag cannot be empty");
+        exit(1);
+    }
+    if tag.len() > 64 {
+        eprintln!("tag too long (max 64 chars)");
+        exit(1);
+    }
+    if tag.starts_with('#') {
+        eprintln!("tag may not contain '#'");
+        exit(1);
+    }
+    Ok(())
+}
+
+/// Resolve CLI `repo` argument to SQLite `repos.path` (exact key, canonical path, or unique name).
+fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result<String> {
+    let repos = ctx.list_repos().context("failed to list repos")?;
+
+    if let Some(path_key) = match_repo_path_key(&repos, identifier) {
+        return Ok(path_key);
+    }
+
+    let path = Path::new(identifier);
+    if path.is_absolute() || identifier.contains(std::path::MAIN_SEPARATOR) {
+        if let Ok(canon) = path.canonicalize() {
+            if let Some(path_key) = repos
+                .iter()
+                .find(|r| r.path == canon)
+                .map(|r| r.path.display().to_string())
+            {
+                return Ok(path_key);
+            }
+        }
+    }
+
+    let matches: Vec<&RepoRecord> = repos.iter().filter(|r| r.name == identifier).collect();
+    match matches.len() {
+        0 => Err(anyhow::anyhow!("repo not found: {identifier}")),
+        1 => Ok(matches[0].path.display().to_string()),
+        _ => Err(anyhow::anyhow!(
+            "ambiguous repo name '{identifier}'; use the absolute path from `workpot repo list`"
+        )),
+    }
+}
+
+fn match_repo_path_key(repos: &[RepoRecord], identifier: &str) -> Option<String> {
+    repos
+        .iter()
+        .find(|r| r.path.display().to_string() == identifier)
+        .map(|r| r.path.display().to_string())
 }
 
 fn map_roots_error(err: WorkpotError) -> anyhow::Error {
