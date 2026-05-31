@@ -424,6 +424,24 @@ mod tests {
         assert_eq!(cfg.max_recent_days, 14);
         assert_eq!(cfg.min_recent_count, 3);
         assert_eq!(cfg.max_pinned, 5);
+        assert_eq!(cfg.stale_dirty_days, 7);
+    }
+
+    #[test]
+    fn record_to_dto_maps_alias() {
+        let path = PathBuf::from("/tmp/alias-dto");
+        let mut record = sample_record(path);
+        record.alias = Some("Display Name".to_string());
+        let dto = record_to_dto(record);
+        assert_eq!(dto.alias.as_deref(), Some("Display Name"));
+    }
+
+    #[test]
+    fn validate_alias_rejects_empty_and_long() {
+        assert!(validate_alias("").is_err());
+        assert!(validate_alias("   ").is_err());
+        assert!(validate_alias(&"a".repeat(65)).is_err());
+        assert!(validate_alias("ok-alias").is_ok());
     }
 
     #[test]
