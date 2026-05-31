@@ -28,19 +28,33 @@
   $effect(() => {
     const path = repo.path;
     branchError = null;
+    let cancelled = false;
     void (async () => {
       try {
-        branches = await invoke<string[]>("list_branches", { repoPath: path });
+        const result = await invoke<string[]>("list_branches", { repoPath: path });
+        if (!cancelled) {
+          branches = result;
+        }
       } catch (e) {
-        branchError = String(e);
-        branches = [];
+        if (!cancelled) {
+          branchError = String(e);
+          branches = [];
+        }
       }
       try {
-        allTags = await invoke<string[]>("list_all_tags");
+        const tags = await invoke<string[]>("list_all_tags");
+        if (!cancelled) {
+          allTags = tags;
+        }
       } catch {
-        allTags = [];
+        if (!cancelled) {
+          allTags = [];
+        }
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   });
 
   async function handlePinChange() {
