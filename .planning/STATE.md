@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-last_updated: "2026-05-31T17:54:27.896Z"
+last_updated: "2026-05-31T17:59:46.800Z"
 progress:
   total_phases: 9
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 33
-  completed_plans: 32
-  percent: 67
+  completed_plans: 33
+  percent: 78
 ---
 
 # Project State
@@ -60,6 +60,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 - Tauri org IPC requires explicit `allow-org-commands` capability (05-08; same class as 04 `get_tray_config`)
 - [Phase ?]: Updater failures map to Network=2 and Install=1 for deterministic CLI exits.
 - [Phase ?]: Checksum verification is enforced before any CLI or tray replacement step.
+- [Phase 06.1]: Installer now enforces checksum-first staging for CLI tarball and DMG before install writes.
+- [Phase 06.1]: Installer smoke tests use local fixture metadata/assets for deterministic default, flag, global, and checksum-failure verification.
 
 ## Accumulated Context
 
