@@ -12,7 +12,7 @@ use crate::domain::Config;
 use crate::error::Result;
 use crate::infra::paths;
 use crate::infra::store;
-use crate::services::{catalog, excludes, index, roots};
+use crate::services::{catalog, excludes, index, org, roots};
 use rusqlite::Connection;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -210,6 +210,38 @@ impl AppContext {
         let paths = self.git_refresh_paths()?;
         let git_results = crate::services::git_state::refresh_all(paths);
         self.persist_git_refresh_results(git_results)
+    }
+
+    pub fn set_tags(&self, path: &str, tags: &[&str]) -> Result<()> {
+        org::set_tags(&self.conn, path, tags)
+    }
+
+    pub fn add_tag(&self, path: &str, tag: &str) -> Result<()> {
+        org::add_tag(&self.conn, path, tag)
+    }
+
+    pub fn remove_tag(&self, path: &str, tag: &str) -> Result<()> {
+        org::remove_tag(&self.conn, path, tag)
+    }
+
+    pub fn list_tags_for_repo(&self, path: &str) -> Result<Vec<String>> {
+        org::list_tags_for_repo(&self.conn, path)
+    }
+
+    pub fn list_all_tags(&self) -> Result<Vec<String>> {
+        org::list_all_tags(&self.conn)
+    }
+
+    pub fn set_notes(&self, path: &str, notes: Option<&str>) -> Result<()> {
+        org::set_notes(&self.conn, path, notes)
+    }
+
+    pub fn set_pin(&self, path: &str, pinned: bool) -> Result<()> {
+        org::set_pin(&self.conn, path, pinned)
+    }
+
+    pub fn set_pin_order(&self, items: &[(&str, i64)]) -> Result<()> {
+        org::set_pin_order(&self.conn, items)
     }
 }
 

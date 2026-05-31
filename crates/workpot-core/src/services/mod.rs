@@ -1,4 +1,5 @@
 pub mod catalog;
+pub mod org;
 pub mod discovery;
 pub mod excludes;
 pub mod git_state;

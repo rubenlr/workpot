@@ -3,6 +3,7 @@ use crate::error::{Result, WorkpotError};
 use crate::infra::git::resolve_git_common_dir;
 use crate::save_config;
 use rusqlite::{Connection, params};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -73,6 +74,10 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
             git_refreshed_at: None,
             git_state_error: None,
             last_opened_at: None,
+            pinned: false,
+            pin_order: None,
+            notes: None,
+            tags: vec![],
         }),
         Err(rusqlite::Error::SqliteFailure(err, _))
             if err.code == rusqlite::ErrorCode::ConstraintViolation =>
@@ -86,29 +91,69 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
 pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
     let mut stmt = conn.prepare(
         "SELECT path, name, registered_at, source, git_common_dir,
-                branch, is_dirty, ahead, behind, git_refreshed_at, git_state_error, last_opened_at
+                branch, is_dirty, ahead, behind, git_refreshed_at, git_state_error, last_opened_at,
+                pinned, pin_order, notes
          FROM repos WHERE excluded = 0 ORDER BY registered_at, path",
     )?;
 
+    let mut order: Vec<String> = Vec::new();
+    let mut by_path: HashMap<String, RepoRecord> = HashMap::new();
+
     let rows = stmt.query_map([], |row| {
-        Ok(RepoRecord {
-            path: PathBuf::from(row.get::<_, String>(0)?),
-            name: row.get(1)?,
-            registered_at: row.get(2)?,
-            source: row.get(3)?,
-            git_common_dir: row.get(4)?,
-            branch: row.get(5)?,
-            is_dirty: row.get::<_, Option<i64>>(6)?.map(|v| v != 0),
-            ahead: row.get(7)?,
-            behind: row.get(8)?,
-            git_refreshed_at: row.get(9)?,
-            git_state_error: row.get(10)?,
-            last_opened_at: row.get(11)?,
-        })
+        let path: String = row.get(0)?;
+        let pinned: i64 = row.get(12)?;
+        Ok((
+            path.clone(),
+            RepoRecord {
+                path: PathBuf::from(path),
+                name: row.get(1)?,
+                registered_at: row.get(2)?,
+                source: row.get(3)?,
+                git_common_dir: row.get(4)?,
+                branch: row.get(5)?,
+                is_dirty: row.get::<_, Option<i64>>(6)?.map(|v| v != 0),
+                ahead: row.get(7)?,
+                behind: row.get(8)?,
+                git_refreshed_at: row.get(9)?,
+                git_state_error: row.get(10)?,
+                last_opened_at: row.get(11)?,
+                pinned: pinned != 0,
+                pin_order: row.get(13)?,
+                notes: row.get(14)?,
+                tags: vec![],
+            },
+        ))
     })?;
 
-    rows.collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(WorkpotError::Database)
+    for row in rows {
+        let (path, record) = row.map_err(WorkpotError::Database)?;
+        order.push(path.clone());
+        by_path.insert(path, record);
+    }
+
+    let mut tag_stmt = conn.prepare(
+        "SELECT repo_tags.repo_path, repo_tags.tag
+         FROM repo_tags
+         JOIN repos ON repo_tags.repo_path = repos.path
+         WHERE repos.excluded = 0
+         ORDER BY repo_tags.repo_path, repo_tags.tag COLLATE NOCASE",
+    )?;
+
+    let tag_rows = tag_stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+
+    for row in tag_rows {
+        let (path, tag) = row.map_err(WorkpotError::Database)?;
+        if let Some(record) = by_path.get_mut(&path) {
+            record.tags.push(tag);
+        }
+    }
+
+    Ok(order
+        .into_iter()
+        .filter_map(|path| by_path.remove(&path))
+        .collect())
 }
 
 /// Absolute path for an indexed repo launch, after validating it is in the catalog.

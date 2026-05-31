@@ -18,4 +18,8 @@ pub struct RepoRecord {
     pub git_refreshed_at: Option<i64>, // None = never refreshed (D-06)
     pub git_state_error: Option<String>, // last failure message (D-09)
     pub last_opened_at: Option<i64>, // None = never opened from tray (D-25)
+    pub pinned: bool,
+    pub pin_order: Option<i64>,
+    pub notes: Option<String>,
+    pub tags: Vec<String>,
 }
