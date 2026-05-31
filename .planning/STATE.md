@@ -2,15 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-last_updated: 2026-05-31T15:30:30.355Z
+status: Ready to plan
+last_updated: "2026-05-31T15:39:24.653Z"
 progress:
   total_phases: 7
-  completed_phases: 1
-  total_plans: 4
+  completed_phases: 6
+  total_plans: 30
   completed_plans: 30
-  percent: 14
-stopped_at: Phase 06 complete (5/5) — ready to discuss Phase 7
+  percent: 86
 ---
 
 # Project State
@@ -32,11 +31,12 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 3 | Git state | Complete — 3/3 plans, UAT 10/10 (2026-05-30) |
 | 4 | Tray finder MVP | Complete — 4/4 plans (2026-05-30) |
 | 5 | Tags & prioritization | Shipped — PR https://github.com/rubenlr/workpot/pull/4 (2026-05-31) |
-| 6 | CLI parity | Not started |
+| 6 | CLI parity | Complete — 5/5 plans, UAT 5/6 auto (2026-05-31) |
 | 7 | Recipes | Not started |
 
 ## Session Notes
 
+- Phase 6 UAT auto (2026-05-31): `cargo test -p workpot-core -p workpot-cli` green; list/search/open CLI smoke verified
 - Phase 5 shipped (2026-05-31): PR https://github.com/rubenlr/workpot/pull/4
 - Phase 5 gap 05-09 (2026-05-31): tag blur-save, duplicate feedback, allTags refresh; commits `dbacbbb`, `e359e42`, `a01eb99`
 - Phase 5 plan 05-08 (2026-05-31): `allow-org-commands` — commits `1070e7a`, `ffd36e4`
