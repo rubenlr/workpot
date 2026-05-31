@@ -572,6 +572,76 @@ fn list_empty_index_exits_zero() {
         .stdout(predicate::str::is_empty());
 }
 
+/// Helper: create a git repo at `parent/name` and return its path.
+fn named_git_fixture(parent: &std::path::Path, name: &str) -> PathBuf {
+    let repo = parent.join(name);
+    fs::create_dir_all(&repo).expect("repo dir");
+    let status = StdCommand::new("git")
+        .args(["init", "-q"])
+        .current_dir(&repo)
+        .status()
+        .expect("git init");
+    assert!(status.success(), "git init failed for {name}");
+    repo
+}
+
+#[test]
+fn search_filters_by_fuzzy_query() {
+    let home = tempfile::tempdir().expect("tempdir");
+
+    let alpha_path = named_git_fixture(home.path(), "alpha");
+    let beta_path = named_git_fixture(home.path(), "beta");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", alpha_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", beta_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    // Search for "alpha" — should include the alpha repo and exclude beta.
+    workpot_cmd(home.path())
+        .args(["search", "alpha"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("alpha")
+                .and(predicate::str::contains("beta").not()),
+        );
+}
+
+#[test]
+fn search_empty_query_equals_list() {
+    let home = tempfile::tempdir().expect("tempdir");
+
+    let repo_path = named_git_fixture(home.path(), "myrepo");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    let list_out = workpot_cmd(home.path())
+        .arg("list")
+        .output()
+        .expect("list command");
+    let search_out = workpot_cmd(home.path())
+        .args(["search", ""])
+        .output()
+        .expect("search command");
+
+    assert!(list_out.status.success());
+    assert!(search_out.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&list_out.stdout),
+        String::from_utf8_lossy(&search_out.stdout),
+        "workpot search '' must produce the same output as workpot list"
+    );
+}
+
 /// Helper: write a config.toml that uses /usr/bin/true as launch_cmd so open tests don't
 /// try to spawn a real Cursor.
 fn write_true_launch_config(home: &std::path::Path) {
