@@ -5,5 +5,6 @@ pub mod git_state;
 pub mod index;
 pub mod org;
 pub mod paths;
+pub mod repo_fuzzy;
 pub mod repo_priority;
 pub mod roots;
