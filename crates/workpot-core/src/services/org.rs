@@ -1,13 +1,43 @@
 use crate::error::{Result, WorkpotError};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
+
+const MAX_NOTES_CHARS: usize = 500;
+
+fn ensure_repo_exists(conn: &Connection, repo_path: &str) -> Result<()> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM repos WHERE path = ?1",
+        params![repo_path],
+        |row| row.get(0),
+    )?;
+    if count == 0 {
+        return Err(WorkpotError::NotFound(repo_path.to_string()));
+    }
+    Ok(())
+}
+
+fn normalize_tag(tag: &str) -> Result<String> {
+    let trimmed = tag.trim();
+    if trimmed.is_empty() {
+        return Err(WorkpotError::InvalidInput(
+            "tag must not be empty or whitespace".into(),
+        ));
+    }
+    Ok(trimmed.to_string())
+}
 
 pub fn set_tags(conn: &Connection, repo_path: &str, tags: &[&str]) -> Result<()> {
+    ensure_repo_exists(conn, repo_path)?;
+    let normalized: Vec<String> = tags
+        .iter()
+        .map(|tag| normalize_tag(tag))
+        .collect::<Result<_>>()?;
+
     let tx = conn.unchecked_transaction()?;
     tx.execute(
         "DELETE FROM repo_tags WHERE repo_path = ?1",
         params![repo_path],
     )?;
-    for tag in tags {
+    for tag in &normalized {
         tx.execute(
             "INSERT OR IGNORE INTO repo_tags (repo_path, tag) VALUES (?1, ?2)",
             params![repo_path, tag],
@@ -18,6 +48,8 @@ pub fn set_tags(conn: &Connection, repo_path: &str, tags: &[&str]) -> Result<()>
 }
 
 pub fn add_tag(conn: &Connection, repo_path: &str, tag: &str) -> Result<()> {
+    ensure_repo_exists(conn, repo_path)?;
+    let tag = normalize_tag(tag)?;
     conn.execute(
         "INSERT OR IGNORE INTO repo_tags (repo_path, tag) VALUES (?1, ?2)",
         params![repo_path, tag],
@@ -26,6 +58,7 @@ pub fn add_tag(conn: &Connection, repo_path: &str, tag: &str) -> Result<()> {
 }
 
 pub fn remove_tag(conn: &Connection, repo_path: &str, tag: &str) -> Result<()> {
+    ensure_repo_exists(conn, repo_path)?;
     conn.execute(
         "DELETE FROM repo_tags WHERE repo_path = ?1 AND tag = ?2",
         params![repo_path, tag],
@@ -57,6 +90,13 @@ pub fn list_all_tags(conn: &Connection) -> Result<Vec<String>> {
 }
 
 pub fn set_notes(conn: &Connection, repo_path: &str, notes: Option<&str>) -> Result<()> {
+    if let Some(text) = notes {
+        if text.chars().count() > MAX_NOTES_CHARS {
+            return Err(WorkpotError::InvalidInput(format!(
+                "notes exceed {MAX_NOTES_CHARS} characters"
+            )));
+        }
+    }
     let updated = conn.execute(
         "UPDATE repos SET notes = ?1 WHERE path = ?2",
         params![notes, repo_path],
@@ -67,21 +107,51 @@ pub fn set_notes(conn: &Connection, repo_path: &str, notes: Option<&str>) -> Res
     Ok(())
 }
 
-pub fn set_pin(conn: &Connection, repo_path: &str, pinned: bool) -> Result<()> {
-    let pin_order: Option<i64> = if pinned {
+pub fn set_pin(
+    conn: &Connection,
+    repo_path: &str,
+    pinned: bool,
+    max_pinned: u32,
+) -> Result<()> {
+    let (current_pinned, _current_pin_order): (i64, Option<i64>) = conn
+        .query_row(
+            "SELECT pinned, pin_order FROM repos WHERE path = ?1",
+            params![repo_path],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .ok_or_else(|| WorkpotError::NotFound(repo_path.to_string()))?;
+
+    if pinned {
+        if current_pinned != 0 {
+            return Ok(());
+        }
+        let pinned_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM repos WHERE pinned = 1 AND excluded = 0",
+            [],
+            |row| row.get(0),
+        )?;
+        if pinned_count >= i64::from(max_pinned) {
+            return Err(WorkpotError::PinCapExceeded { max: max_pinned });
+        }
         let next: i64 = conn.query_row(
             "SELECT COALESCE(MAX(pin_order), -1) + 1 FROM repos WHERE pinned = 1",
             [],
             |row| row.get(0),
         )?;
-        Some(next)
-    } else {
-        None
-    };
-    let pinned_int = i64::from(pinned);
+        let updated = conn.execute(
+            "UPDATE repos SET pinned = 1, pin_order = ?1 WHERE path = ?2",
+            params![next, repo_path],
+        )?;
+        if updated == 0 {
+            return Err(WorkpotError::NotFound(repo_path.to_string()));
+        }
+        return Ok(());
+    }
+
     let updated = conn.execute(
-        "UPDATE repos SET pinned = ?1, pin_order = ?2 WHERE path = ?3",
-        params![pinned_int, pin_order, repo_path],
+        "UPDATE repos SET pinned = 0, pin_order = NULL WHERE path = ?1",
+        params![repo_path],
     )?;
     if updated == 0 {
         return Err(WorkpotError::NotFound(repo_path.to_string()));

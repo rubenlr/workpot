@@ -237,7 +237,7 @@ impl AppContext {
     }
 
     pub fn set_pin(&self, path: &str, pinned: bool) -> Result<()> {
-        org::set_pin(&self.conn, path, pinned)
+        org::set_pin(&self.conn, path, pinned, self.config.max_pinned)
     }
 
     pub fn set_pin_order(&self, items: &[(&str, i64)]) -> Result<()> {
