@@ -1,7 +1,7 @@
 name: release-artifacts
 
 # Runs when release-publish (or a maintainer) publishes a GitHub Release — builds
-# macOS tarballs and uploads them to that release.
+# macOS aarch64 CLI and DMG artifacts and uploads them to that release.
 
 on:
   release:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   upload:
-    name: upload release binaries
+    name: upload release artifacts
     permissions:
       contents: write
     uses: ./.github/workflows/release.yml

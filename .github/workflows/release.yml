@@ -1,6 +1,7 @@
 name: release
 
-# Builds macOS tarballs and uploads them to an existing GitHub Release.
+# Builds macOS aarch64 CLI tarball + checksum and Workpot DMG + checksum,
+# then uploads them to an existing GitHub Release.
 # Invoked by release-artifacts.yml on release: published, release-smoke (dry_run),
 # or manually via workflow_dispatch.
 # release-publish.yml creates the GitHub Release and tag on master when version increases.
@@ -111,20 +112,14 @@ jobs:
           echo "version=${tag_version}" >> "$GITHUB_OUTPUT"
 
   binary:
-    name: macos ${{ matrix.arch }} binary
+    name: macos aarch64 cli binary
     needs: [prepare, validate-version]
     if: always() && (needs.prepare.outputs.dry_run == 'true' || needs.validate-version.result == 'success')
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: aarch64
-            artifact: workpot-macos-aarch64
-            runner: macos-latest
-          - arch: x86_64
-            artifact: workpot-macos-x86_64
-            runner: macos-15-intel
+    runs-on: macos-latest
+    env:
+      RELEASE_ARTIFACT: workpot-macos-aarch64
+      RELEASE_ARCHIVE: workpot-macos-aarch64.tar.gz
+      RELEASE_ARCHIVE_CHECKSUM: workpot-macos-aarch64.tar.gz.sha256
     steps:
       - uses: actions/checkout@v5
         with:
@@ -138,33 +133,82 @@ jobs:
       - uses: ./.github/actions/rust-cache
         with:
           shared-key: release
-          key: ${{ matrix.arch }}
+          key: aarch64
 
       - name: Build release binary
         run: cargo build --release -p workpot-cli
 
       - name: Create release tarball
-        env:
-          RELEASE_ARTIFACT: ${{ matrix.artifact }}
         run: |
           artifact="$RELEASE_ARTIFACT"
           mkdir -p "dist/$artifact"
           cp target/release/workpot "dist/$artifact/workpot"
           cp README.md LICENSE "dist/$artifact/"
-          tar -C "dist/$artifact" -czf "$artifact.tar.gz" .
-          shasum -a 256 "$artifact.tar.gz" > "$artifact.tar.gz.sha256"
+          tar -C "dist/$artifact" -czf "$RELEASE_ARCHIVE" .
+          shasum -a 256 "$RELEASE_ARCHIVE" > "$RELEASE_ARCHIVE_CHECKSUM"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ needs.prepare.outputs.dry_run == 'true' && format('smoke-{0}', matrix.artifact) || matrix.artifact }}
+          name: ${{ needs.prepare.outputs.dry_run == 'true' && format('smoke-{0}', env.RELEASE_ARTIFACT) || env.RELEASE_ARTIFACT }}
           path: |
-            ${{ matrix.artifact }}.tar.gz
-            ${{ matrix.artifact }}.tar.gz.sha256
+            ${{ env.RELEASE_ARCHIVE }}
+            ${{ env.RELEASE_ARCHIVE_CHECKSUM }}
+          retention-days: ${{ needs.prepare.outputs.dry_run == 'true' && 7 || 90 }}
+
+  dmg:
+    name: macos aarch64 dmg
+    needs: [prepare, validate-version]
+    if: always() && (needs.prepare.outputs.dry_run == 'true' || needs.validate-version.result == 'success')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96
+
+      - uses: ./.github/actions/rust-cache
+        with:
+          shared-key: release
+          key: tauri-aarch64
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Build aarch64 DMG bundle
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run tauri:build -- --bundles dmg
+
+      - name: Rename DMG and create checksum
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          dmg_name="Workpot-${version}-aarch64.dmg"
+          dmg_checksum="${dmg_name}.sha256"
+          produced_dmg="$(ls src-tauri/target/release/bundle/dmg/*.dmg)"
+          cp "$produced_dmg" "$dmg_name"
+          shasum -a 256 "$dmg_name" > "$dmg_checksum"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.dry_run == 'true' && 'smoke-workpot-dmg-aarch64' || 'workpot-dmg-aarch64' }}
+          path: |
+            Workpot-*-aarch64.dmg
+            Workpot-*-aarch64.dmg.sha256
           retention-days: ${{ needs.prepare.outputs.dry_run == 'true' && 7 || 90 }}
 
   github-release:
     name: github release
-    needs: [prepare, binary, validate-version]
+    needs: [prepare, binary, dmg, validate-version]
     if: needs.prepare.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
     permissions:
