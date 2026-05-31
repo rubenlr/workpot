@@ -164,8 +164,21 @@ pub fn set_pin(
 pub fn set_pin_order(conn: &Connection, items: &[(&str, i64)]) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
     for (path, order) in items {
+        let pinned: i64 = tx
+            .query_row(
+                "SELECT pinned FROM repos WHERE path = ?1",
+                params![path],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| WorkpotError::NotFound((*path).to_string()))?;
+        if pinned == 0 {
+            return Err(WorkpotError::InvalidInput(format!(
+                "cannot set pin_order on unpinned repo: {path}"
+            )));
+        }
         let updated = tx.execute(
-            "UPDATE repos SET pin_order = ?1 WHERE path = ?2",
+            "UPDATE repos SET pin_order = ?1 WHERE path = ?2 AND pinned = 1",
             params![order, path],
         )?;
         if updated == 0 {
