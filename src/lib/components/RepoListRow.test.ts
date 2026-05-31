@@ -1,5 +1,5 @@
-import { fireEvent, render } from "@testing-library/svelte";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render } from "@testing-library/svelte";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import RepoListRow from "./RepoListRow.svelte";
 import type { RepoDto } from "../types";
 
@@ -41,6 +41,10 @@ function renderRow(
 }
 
 describe("RepoListRow", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it("plain_click_calls_onOpen_not_onDetail", async () => {
     const onOpen = vi.fn();
     const onDetail = vi.fn();
