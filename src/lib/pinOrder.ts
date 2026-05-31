@@ -8,7 +8,7 @@ export function reorderPinned(
   to: number,
 ): RepoWithPinOrder[] {
   if (from === to) {
-    return repos as RepoWithPinOrder[];
+    return repos;
   }
 
   const result = [...repos] as RepoWithPinOrder[];

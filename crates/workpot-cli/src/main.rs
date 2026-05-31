@@ -112,114 +112,133 @@ fn main() -> ExitCode {
 fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Paths => {
+        Commands::Paths => run_paths(),
+        Commands::Index => run_index(),
+        Commands::Repo(sub) => run_repo(sub),
+        Commands::Excludes(sub) => run_excludes(sub),
+        Commands::Roots(sub) => run_roots(sub),
+        Commands::Tag(action) => run_tag(action),
+    }
+}
+
+fn run_paths() -> anyhow::Result<()> {
+    let ctx = AppContext::open().context("failed to open workpot")?;
+    println!("config: {}", ctx.config_path().display());
+    println!("database: {}", ctx.database_path().display());
+    let roots = ctx.roots_list();
+    if roots.is_empty() {
+        println!("watch_roots: (none)");
+    } else {
+        println!(
+            "watch_roots: (first-run config may seed ~/code and ~/dev when those dirs exist)"
+        );
+        for root in roots {
+            println!("  {}", root.display());
+        }
+    }
+    Ok(())
+}
+
+fn run_index() -> anyhow::Result<()> {
+    let ctx = AppContext::open().context("failed to open workpot")?;
+    let summary = ctx.run_index()?;
+    println!(
+        "index: +{} -{} skipped {} / git: {} refreshed, {} errors",
+        summary.added,
+        summary.removed,
+        summary.skipped,
+        summary.git_refreshed,
+        summary.git_errors
+    );
+    Ok(())
+}
+
+fn run_repo(sub: RepoCommands) -> anyhow::Result<()> {
+    match sub {
+        RepoCommands::Add { path } => {
             let ctx = AppContext::open().context("failed to open workpot")?;
-            println!("config: {}", ctx.config_path().display());
-            println!("database: {}", ctx.database_path().display());
-            let roots = ctx.roots_list();
-            if roots.is_empty() {
-                println!("watch_roots: (none)");
-            } else {
+            let record = ctx.register_manual(&path).context("repo add failed")?;
+            println!("registered: {}", record.path.display());
+        }
+        RepoCommands::List => {
+            let ctx = AppContext::open().context("failed to open workpot")?;
+            let repos = ctx.list_repos().context("repo list failed")?;
+            for repo in repos {
                 println!(
-                    "watch_roots: (first-run config may seed ~/code and ~/dev when those dirs exist)"
+                    "{}  {}  {}",
+                    repo.name,
+                    repo.path.display(),
+                    format_git_state(&repo)
                 );
-                for root in roots {
-                    println!("  {}", root.display());
-                }
             }
         }
-        Commands::Index => {
-            let ctx = AppContext::open().context("failed to open workpot")?;
-            let summary = ctx.run_index()?;
-            println!(
-                "index: +{} -{} skipped {} / git: {} refreshed, {} errors",
-                summary.added,
-                summary.removed,
-                summary.skipped,
-                summary.git_refreshed,
-                summary.git_errors
-            );
-        }
-        Commands::Repo(sub) => match sub {
-            RepoCommands::Add { path } => {
-                let ctx = AppContext::open().context("failed to open workpot")?;
-                let record = ctx.register_manual(&path).context("repo add failed")?;
-                println!("registered: {}", record.path.display());
-            }
-            RepoCommands::List => {
-                let ctx = AppContext::open().context("failed to open workpot")?;
-                let repos = ctx.list_repos().context("repo list failed")?;
-                for repo in repos {
-                    println!(
-                        "{}  {}  {}",
-                        repo.name,
-                        repo.path.display(),
-                        format_git_state(&repo)
-                    );
-                }
-            }
-            RepoCommands::Remove { path } => {
-                let mut ctx = AppContext::open().context("failed to open workpot")?;
-                ctx.remove_repo(&path).context("repo remove failed")?;
-                println!("removed: {}", path.display());
-            }
-        },
-        Commands::Excludes(sub) => {
+        RepoCommands::Remove { path } => {
             let mut ctx = AppContext::open().context("failed to open workpot")?;
-            match sub {
-                ExcludesCommands::List => {
-                    for glob in ctx.excludes_list() {
-                        println!("{glob}");
-                    }
-                }
-                ExcludesCommands::Remove { glob } => {
-                    ctx.excludes_remove(&glob)
-                        .context("excludes remove failed")?;
-                    println!("removed exclude: {glob}");
-                }
+            ctx.remove_repo(&path).context("repo remove failed")?;
+            println!("removed: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+fn run_excludes(sub: ExcludesCommands) -> anyhow::Result<()> {
+    let mut ctx = AppContext::open().context("failed to open workpot")?;
+    match sub {
+        ExcludesCommands::List => {
+            for glob in ctx.excludes_list() {
+                println!("{glob}");
             }
         }
-        Commands::Roots(sub) => {
-            let mut ctx = AppContext::open().context("failed to open workpot")?;
-            match sub {
-                RootsCommands::Add { path } => {
-                    ctx.roots_add(&path).map_err(map_roots_error)?;
-                    println!("watch root added: {}", path.display());
-                }
-                RootsCommands::List => {
-                    for root in ctx.roots_list() {
-                        println!("{}", root.display());
-                    }
-                }
-                RootsCommands::Remove { path, skip_prune } => {
-                    ctx.roots_remove(&path, skip_prune)
-                        .map_err(map_roots_error)?;
-                    println!("watch root removed: {}", path.display());
-                }
+        ExcludesCommands::Remove { glob } => {
+            ctx.excludes_remove(&glob)
+                .context("excludes remove failed")?;
+            println!("removed exclude: {glob}");
+        }
+    }
+    Ok(())
+}
+
+fn run_roots(sub: RootsCommands) -> anyhow::Result<()> {
+    let mut ctx = AppContext::open().context("failed to open workpot")?;
+    match sub {
+        RootsCommands::Add { path } => {
+            ctx.roots_add(&path).map_err(map_roots_error)?;
+            println!("watch root added: {}", path.display());
+        }
+        RootsCommands::List => {
+            for root in ctx.roots_list() {
+                println!("{}", root.display());
             }
         }
-        Commands::Tag(action) => {
-            let ctx = AppContext::open().context("failed to open workpot")?;
-            match action {
-                TagAction::Add { repo, tag } => {
-                    validate_tag_for_add(&tag)?;
-                    let path_key = resolve_repo_identifier(&ctx, &repo)?;
-                    ctx.add_tag(&path_key, tag.trim())?;
-                }
-                TagAction::Remove { repo, tag } => {
-                    let path_key = resolve_repo_identifier(&ctx, &repo)?;
-                    ctx.remove_tag(&path_key, &tag)?;
-                }
-                TagAction::List { repo } => {
-                    let path_key = resolve_repo_identifier(&ctx, &repo)?;
-                    let tags = ctx.list_tags_for_repo(&path_key)?;
-                    if tags.is_empty() {
-                        println!("(no tags)");
-                    } else {
-                        for tag in tags {
-                            println!("{tag}");
-                        }
-                    }
+        RootsCommands::Remove { path, skip_prune } => {
+            ctx.roots_remove(&path, skip_prune)
+                .map_err(map_roots_error)?;
+            println!("watch root removed: {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+fn run_tag(action: TagAction) -> anyhow::Result<()> {
+    let ctx = AppContext::open().context("failed to open workpot")?;
+    match action {
+        TagAction::Add { repo, tag } => {
+            validate_tag_for_add(&tag)?;
+            let path_key = resolve_repo_identifier(&ctx, &repo)?;
+            ctx.add_tag(&path_key, tag.trim())?;
+        }
+        TagAction::Remove { repo, tag } => {
+            let path_key = resolve_repo_identifier(&ctx, &repo)?;
+            ctx.remove_tag(&path_key, &tag)?;
+        }
+        TagAction::List { repo } => {
+            let path_key = resolve_repo_identifier(&ctx, &repo)?;
+            let tags = ctx.list_tags_for_repo(&path_key)?;
+            if tags.is_empty() {
+                println!("(no tags)");
+            } else {
+                for tag in tags {
+                    println!("{tag}");
                 }
             }
         }

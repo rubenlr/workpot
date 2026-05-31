@@ -41,8 +41,8 @@ export function matchesTags(repo: RepoDto, activeTags: string[]): boolean {
   if (activeTags.length === 0) {
     return true;
   }
-  const normalized = repoTags(repo).map((t) => t.toLowerCase());
-  return activeTags.every((at) => normalized.includes(at));
+  const normalized = new Set(repoTags(repo).map((t) => t.toLowerCase()));
+  return activeTags.every((at) => normalized.has(at));
 }
 
 /** Idempotent append of `#tag` to the tray filter (T-05-06-05). */
@@ -59,7 +59,7 @@ export function appendTagToFilterQuery(
 
 /** Replace trailing `#partial` with a completed tag token (D-10 autocomplete). */
 export function trailingTagAutocompletePrefix(filterQuery: string): string {
-  const m = filterQuery.match(TRAILING_TAG_PARTIAL_RE);
+  const m = TRAILING_TAG_PARTIAL_RE.exec(filterQuery);
   return m ? m[1] : "";
 }
 
