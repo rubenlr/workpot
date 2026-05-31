@@ -73,6 +73,7 @@ pub fn run() {
             commands::remove_tag,
             commands::list_all_tags,
             commands::set_notes,
+            commands::set_alias,
             commands::set_pin,
             commands::set_pin_order,
             commands::list_branches,

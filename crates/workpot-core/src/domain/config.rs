@@ -32,6 +32,10 @@ fn default_min_recent_count() -> u32 {
     3
 }
 
+fn default_stale_dirty_days() -> u32 {
+    7
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Limits {
     #[serde(default = "default_max_watch_roots")]
@@ -74,6 +78,9 @@ pub struct Config {
     /// Minimum Recent section size via padding (Phase 5).
     #[serde(default = "default_min_recent_count")]
     pub min_recent_count: u32,
+    /// Threshold for stale-dirty tray icon: dirty repo last opened longer ago than this (06.2).
+    #[serde(default = "default_stale_dirty_days")]
+    pub stale_dirty_days: u32,
 }
 
 impl Default for Config {
@@ -87,6 +94,7 @@ impl Default for Config {
             max_pinned: default_max_pinned(),
             max_recent_days: default_max_recent_days(),
             min_recent_count: default_min_recent_count(),
+            stale_dirty_days: default_stale_dirty_days(),
         }
     }
 }
@@ -141,6 +149,12 @@ impl Config {
             return Err(format!(
                 "min_recent_count {} must be <= max_pinned {}",
                 self.min_recent_count, self.max_pinned
+            ));
+        }
+        if self.stale_dirty_days < 1 || self.stale_dirty_days > 365 {
+            return Err(format!(
+                "stale_dirty_days {} must be between 1 and 365",
+                self.stale_dirty_days
             ));
         }
         Ok(())

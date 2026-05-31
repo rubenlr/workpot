@@ -12,6 +12,7 @@ pub struct ContextMenuRepo(pub Arc<Mutex<Option<String>>>);
 pub struct RepoDto {
     pub path: String,
     pub name: String,
+    pub alias: Option<String>,
     pub branch: Option<String>,
     pub is_dirty: Option<bool>,
     pub parent_dir: String,
@@ -32,6 +33,7 @@ fn record_to_dto(record: RepoRecord) -> RepoDto {
     RepoDto {
         path: record.path.display().to_string(),
         name: record.name,
+        alias: record.alias,
         branch: record.branch,
         is_dirty: record.is_dirty,
         parent_dir: parent_dir_display(&record.path),
@@ -101,6 +103,7 @@ pub struct TrayConfigDto {
     pub max_recent_days: u32,
     pub min_recent_count: u32,
     pub max_pinned: u32,
+    pub stale_dirty_days: u32,
 }
 
 pub fn tray_config_from(ctx: &AppContext) -> TrayConfigDto {
@@ -110,6 +113,7 @@ pub fn tray_config_from(ctx: &AppContext) -> TrayConfigDto {
         max_recent_days: config.max_recent_days,
         min_recent_count: config.min_recent_count,
         max_pinned: config.max_pinned,
+        stale_dirty_days: config.stale_dirty_days,
     }
 }
 
@@ -179,6 +183,17 @@ pub fn list_all_tags(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<Vec<Str
     ctx.list_all_tags().map_err(|e| e.to_string())
 }
 
+fn validate_alias(alias: &str) -> Result<(), String> {
+    let trimmed = alias.trim();
+    if trimmed.is_empty() {
+        return Err("alias must not be empty".to_string());
+    }
+    if trimmed.chars().count() > 64 {
+        return Err("alias too long".to_string());
+    }
+    Ok(())
+}
+
 fn validate_notes(notes: &Option<String>) -> Result<(), String> {
     if let Some(n) = notes
         && n.chars().count() > 500
@@ -186,6 +201,25 @@ fn validate_notes(notes: &Option<String>) -> Result<(), String> {
         return Err("notes exceed 500 characters".to_string());
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn set_alias(
+    repo_path: String,
+    alias: Option<String>,
+    state: State<'_, Arc<Mutex<AppContext>>>,
+) -> Result<(), String> {
+    if let Some(ref value) = alias {
+        validate_alias(value)?;
+    }
+    let ctx = state
+        .lock()
+        .map_err(|_| "AppContext lock poisoned".to_string())?;
+    ctx.set_alias(
+        &repo_path,
+        alias.as_deref().map(str::trim),
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -398,6 +432,7 @@ mod tests {
             pin_order: None,
             notes: None,
             tags: vec![],
+            alias: None,
         }
     }
 
@@ -475,6 +510,7 @@ mod tests {
             pin_order: Some(1),
             notes: Some("note".to_string()),
             tags: vec!["rust".to_string()],
+            alias: None,
         };
         let dto = record_to_dto(record);
         assert_eq!(dto.parent_dir, "/var/tmp");
@@ -503,6 +539,7 @@ mod tests {
             pin_order: None,
             notes: None,
             tags: vec![],
+            alias: None,
         };
         let dtos = repo_records_to_dtos(vec![record]);
         assert_eq!(dtos[0].git_state_error, Some("bare".to_string()));

@@ -100,6 +100,35 @@ pub fn list_all_tags(conn: &Connection) -> Result<Vec<String>> {
     Ok(tags)
 }
 
+pub fn set_alias(conn: &Connection, repo_path: &str, alias: Option<&str>) -> Result<()> {
+    ensure_repo_exists(conn, repo_path)?;
+    let db_value: Option<&str> = match alias {
+        None => None,
+        Some(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                return Err(WorkpotError::InvalidInput(
+                    "alias must not be empty".into(),
+                ));
+            }
+            if trimmed.chars().count() > 64 {
+                return Err(WorkpotError::InvalidInput(
+                    "alias exceeds 64 characters".into(),
+                ));
+            }
+            Some(trimmed)
+        }
+    };
+    let updated = conn.execute(
+        "UPDATE repos SET alias = ?1 WHERE path = ?2",
+        params![db_value, repo_path],
+    )?;
+    if updated == 0 {
+        return Err(WorkpotError::NotFound(repo_path.to_string()));
+    }
+    Ok(())
+}
+
 pub fn set_notes(conn: &Connection, repo_path: &str, notes: Option<&str>) -> Result<()> {
     if let Some(text) = notes
         && text.chars().count() > MAX_NOTES_CHARS

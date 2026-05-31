@@ -239,6 +239,10 @@ impl AppContext {
         org::set_notes(&self.conn, path, notes)
     }
 
+    pub fn set_alias(&self, repo_path: &str, alias: Option<&str>) -> Result<()> {
+        org::set_alias(&self.conn, repo_path, alias)
+    }
+
     pub fn set_pin(&self, path: &str, pinned: bool) -> Result<()> {
         org::set_pin(&self.conn, path, pinned, self.config.max_pinned)
     }
