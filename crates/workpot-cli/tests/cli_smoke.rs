@@ -572,6 +572,107 @@ fn list_empty_index_exits_zero() {
         .stdout(predicate::str::is_empty());
 }
 
+/// Helper: write a config.toml that uses /usr/bin/true as launch_cmd so open tests don't
+/// try to spawn a real Cursor.
+fn write_true_launch_config(home: &std::path::Path) {
+    let config_dir = home.join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    fs::write(
+        config_dir.join("config.toml"),
+        r#"watch_roots = []
+excludes = []
+launch_cmd = "/usr/bin/true {path}"
+"#,
+    )
+    .expect("write config");
+}
+
+#[test]
+fn open_exits_zero_and_prints_opening_prefix() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+    let repo_path = git_fixture(home.path());
+    let canon = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["open", canon.to_str().expect("utf8")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("opening:"));
+}
+
+#[test]
+fn open_resolves_by_name_and_prints_full_path() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+    let repo_path = git_fixture(home.path());
+    let canon = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    // Open by name; stdout must contain the full canonical path (D-10)
+    workpot_cmd(home.path())
+        .args(["open", "sample-repo"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            canon.to_str().expect("utf8"),
+        ));
+}
+
+#[test]
+fn open_not_found_exits_one_with_message() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+
+    workpot_cmd(home.path())
+        .args(["open", "no-such-repo"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("repo not found: no-such-repo"));
+}
+
+#[test]
+fn open_ambiguous_exits_one_with_numbered_paths() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+    let watch = home.path().join("watch");
+    let one = watch.join("one");
+    let two = watch.join("two");
+    fs::create_dir_all(&one).expect("one");
+    fs::create_dir_all(&two).expect("two");
+    let repo1 = git_fixture(&one);
+    let repo2 = git_fixture(&two);
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo1.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo2.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    // Both repos are named "sample-repo" — ambiguous (D-09)
+    workpot_cmd(home.path())
+        .args(["open", "sample-repo"])
+        .assert()
+        .code(1)
+        .stderr(
+            predicate::str::contains("ambiguous repo name")
+                .and(predicate::str::contains("1."))
+                .and(predicate::str::contains("2.")),
+        );
+}
+
 #[test]
 fn list_registered_repo_shows_icon_and_name() {
     let home = tempfile::tempdir().expect("tempdir");

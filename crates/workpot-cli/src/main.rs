@@ -5,6 +5,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::{ExitCode, exit};
+use workpot_core::services::launch::launch_repo;
 use workpot_core::{AppContext, RepoRecord, WorkpotError};
 
 use git_display::format_git_state;
@@ -33,6 +34,11 @@ enum Commands {
     /// Add, remove, or list tags on a repository.
     #[command(subcommand)]
     Tag(TagAction),
+    /// Open a repository in the configured IDE (default: Cursor).
+    Open {
+        /// Repository name, path key, or canonical path.
+        repo: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -122,6 +128,7 @@ fn run() -> anyhow::Result<()> {
         Commands::Excludes(sub) => run_excludes(sub),
         Commands::Roots(sub) => run_roots(sub),
         Commands::Tag(action) => run_tag(action),
+        Commands::Open { repo } => run_open(&repo),
     }
 }
 
@@ -258,6 +265,19 @@ fn run_tag(action: TagAction) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn run_open(identifier: &str) -> anyhow::Result<()> {
+    let ctx = AppContext::open().context("failed to open workpot")?;
+    // resolve_repo_identifier handles D-09 (ambiguous) and D-11 (not found) exits via Err
+    let path_key = resolve_repo_identifier(&ctx, identifier)?;
+    // D-10: print full canonical path before launch
+    println!("opening: {path_key}");
+    launch_repo(&ctx, &path_key).map_err(|e| {
+        // Exit 2 for launch spawn failure (per D context: distinguish from "not found" exit 1)
+        eprintln!("error: {e}");
+        exit(2);
+    })
+}
+
 fn validate_tag_for_add(tag: &str) -> anyhow::Result<()> {
     let trimmed = tag.trim();
     if trimmed.is_empty() {
@@ -298,9 +318,16 @@ fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result
     match matches.len() {
         0 => Err(anyhow::anyhow!("repo not found: {identifier}")),
         1 => Ok(matches[0].path.display().to_string()),
-        _ => Err(anyhow::anyhow!(
-            "ambiguous repo name '{identifier}'; use the absolute path from `workpot repo list`"
-        )),
+        _ => {
+            let mut msg = format!(
+                "error: ambiguous repo name '{identifier}'; matches:\n"
+            );
+            for (i, r) in matches.iter().enumerate() {
+                msg.push_str(&format!("{}. {}\n", i + 1, r.path.display()));
+            }
+            msg.push_str("use the full path from 'workpot list'");
+            Err(anyhow::anyhow!("{msg}"))
+        }
     }
 }
 
