@@ -114,6 +114,7 @@ mod tests {
             pin_order: None,
             notes: None,
             tags: vec![],
+            alias: None,
         }
     }
 

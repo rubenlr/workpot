@@ -140,6 +140,7 @@ mod tests {
             pin_order: None,
             notes: notes.map(|s| s.to_string()),
             tags: tags.into_iter().map(|s| s.to_string()).collect(),
+            alias: None,
         }
     }
 

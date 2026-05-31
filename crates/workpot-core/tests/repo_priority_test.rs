@@ -38,6 +38,7 @@ fn repo(name: &str) -> RepoRecord {
         pin_order: None,
         notes: None,
         tags: vec![],
+        alias: None,
     }
 }
 

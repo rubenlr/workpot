@@ -22,4 +22,6 @@ pub struct RepoRecord {
     pub pin_order: Option<i64>,
     pub notes: Option<String>,
     pub tags: Vec<String>,
+    /// Display name override (06.2); None means use folder `name`.
+    pub alias: Option<String>,
 }

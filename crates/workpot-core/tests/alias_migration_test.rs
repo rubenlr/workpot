@@ -2,6 +2,7 @@
 
 use rusqlite::Connection;
 use workpot_core::infra::migrations;
+use workpot_core::services::catalog;
 
 fn temp_db() -> (tempfile::TempDir, Connection) {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -51,4 +52,8 @@ fn list_repos_returns_alias_from_db() {
         )
         .expect("select alias");
     assert_eq!(alias.as_deref(), Some("My Alias"));
+
+    let repos = catalog::list_repos(&conn).expect("list");
+    assert_eq!(repos.len(), 1);
+    assert_eq!(repos[0].alias.as_deref(), Some("My Alias"));
 }
