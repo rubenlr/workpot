@@ -37,6 +37,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 ## Session Notes
 
+- Phase 06.2 plan 06.2-03 (2026-05-31): alias_score in fuzzy_score; TDD RED `d27d3b4`, GREEN `dff06c0`
 - Phase 06.2 plan 06.2-02 (2026-05-31): has_stale_dirty + 16-case tests; TDD RED `9252f6d`, GREEN `6e1aefc`
 - Phase 06.2 plan 06.2-01 (2026-05-31): migration 007 alias, org::set_alias, RepoDto.alias, TrayConfigDto.stale_dirty_days; commits `5767d80`, `a64345a`, `49ff05f`, `61bf197`
 - Phase 6 UAT auto (2026-05-31): `cargo test -p workpot-core -p workpot-cli` green; list/search/open CLI smoke verified
