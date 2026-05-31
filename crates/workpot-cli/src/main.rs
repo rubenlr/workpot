@@ -1,4 +1,5 @@
 mod git_display;
+mod list_display;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
