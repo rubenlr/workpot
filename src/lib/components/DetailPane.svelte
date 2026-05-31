@@ -19,10 +19,13 @@
   let tagInput = $state("");
   let tagError = $state<string | null>(null);
   let allTags = $state<string[]>([]);
+  let notesTextarea = $state<HTMLTextAreaElement | undefined>(undefined);
 
   $effect(() => {
-    const n = repo.notes ?? "";
-    notesValue = n;
+    repo.path;
+    if (document.activeElement !== notesTextarea) {
+      notesValue = repo.notes ?? "";
+    }
   });
 
   $effect(() => {
@@ -207,6 +210,7 @@
       Notes
     </h3>
     <textarea
+      bind:this={notesTextarea}
       rows="3"
       maxlength="500"
       bind:value={notesValue}
