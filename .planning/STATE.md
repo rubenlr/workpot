@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-last_updated: "2026-05-31T15:39:24.653Z"
+last_updated: "2026-05-31T15:55:36.301Z"
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 30
   completed_plans: 30
-  percent: 86
+  percent: 75
 ---
 
 # Project State
@@ -20,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 7 — recipes
+**Current focus:** Phase 06.1 — release & distribution (inserted before recipes)
 
 ## Phase Status
 
@@ -32,7 +32,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 4 | Tray finder MVP | Complete — 4/4 plans (2026-05-30) |
 | 5 | Tags & prioritization | Shipped — PR https://github.com/rubenlr/workpot/pull/4 (2026-05-31) |
 | 6 | CLI parity | Complete — 5/5 plans, UAT 5/6 auto (2026-05-31) |
-| 7 | Recipes | Not started |
+| 06.1 | Release & distribution | Not started — inserted 2026-05-31 |
 
 ## Session Notes
 
@@ -60,10 +60,17 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 06.1 inserted after Phase 6: Release distribution and install: GitHub tarballs, install.sh, DMG, workpot update, INSTALL.md (URGENT)
+- Phase 7 (Recipes) deferred to backlog as 999.1 (2026-05-31) — prioritize 06.1 release path first
+
 ### Pending Todos
 
-1. **Add shell installer with update subcommand** — [todo](todos/pending/2026-05-31-add-shell-installer-with-update-subcommand.md)
-2. **Add macOS DMG distribution at MVP** — [todo](todos/pending/2026-05-31-add-macos-dmg-distribution-at-mvp.md)
+Captured in **Phase 06.1** (was pending):
+
+1. ~~Add shell installer with update subcommand~~ → [06.1-CONTEXT.md](phases/06.1-release-distribution-and-install-github-release-tarballs-sta/06.1-CONTEXT.md)
+2. ~~Add macOS DMG distribution at MVP~~ → same
 
 ## Blockers
 

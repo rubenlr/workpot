@@ -1,7 +1,7 @@
 # Roadmap: Workpot
 
 **Project:** Workpot  
-**Phases:** 7  
+**Phases:** 6 + 06.1 (active); 1 backlog  
 **Requirements mapped:** 28/28 v1  
 **Structure:** Vertical MVP (each phase ships usable capability)
 
@@ -16,8 +16,8 @@
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
 | 4 | 4/4 | Complete |
 | 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
-| 6 | CLI parity | 5/5 | Complete    | 2026-05-31 |
-| 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
+| 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
+| 06.1 | Release & distribution *(INSERTED)* | End-user install/update + DMG | — | 5 |
 
 ---
 
@@ -238,7 +238,32 @@ Plans:
 
 ---
 
-### Phase 7: Recipes
+### Phase 06.1: Release & distribution (INSERTED)
+
+**Goal:** Ship a complete macOS release path — GitHub artifacts, one-line install, self-update, and tray `.dmg` — so users never hand-place binaries.
+
+**Mode:** mvp
+
+**Depends on:** Phase 6 (CLI parity complete)
+
+**Requirements:** Tooling (no new v1 requirement IDs; extends release/docs surface)
+
+**Success Criteria:**
+
+1. Every `v*` GitHub Release publishes `workpot-macos-{aarch64,x86_64}.tar.gz` + `.sha256` (existing) and a signed/notarized `.dmg` containing the tray app
+2. User can run `curl -fsSL …/install.sh | bash` (or documented equivalent) on macOS and get `workpot` on `PATH` with correct `--version`
+3. `workpot update` upgrades the installed CLI from the latest GitHub Release with clear failure modes (offline, permission denied, already current)
+4. `INSTALL.md` documents install (script + manual tarball + DMG), update, and uninstall/PATH without reading `docs/releasing.md`
+5. Maintainer flow in `docs/releasing.md` references DMG + installer; CI smoke covers new artifacts where feasible
+
+**Plans:** 0 plans — run `/gsd-plan-phase 06.1`
+
+Plans:
+- [ ] TBD via `/gsd-plan-phase 06.1`
+
+## Backlog
+
+### Phase 999.1: Recipes (BACKLOG)
 
 **Goal:** One-action workflows — open, pull, test, or custom shell chains.
 
@@ -254,7 +279,12 @@ Plans:
 4. Multi-step recipes run in order and stop on first failure with visible error
 5. User can invoke a recipe from CLI and tray
 
-**Plans:** TBD via `/gsd-plan-phase 7`
+**Deferred from:** Phase 7 (2026-05-31) — ship 06.1 release/distribution before recipes
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with `/gsd-review-backlog` when ready)
 
 ---
 
@@ -268,7 +298,7 @@ Plans:
 | 4 | Not started | 0/0 |
 | 5 | Not started | 0/0 |
 | 6 | Not started | 0/0 |
-| 7 | Not started | 0/0 |
+| 06.1 | Not started | 0/0 |
 
 ---
 *Roadmap created: 2026-05-28*

@@ -98,7 +98,7 @@
 | ORG-01..04 | Phase 5 | Pending |
 | UI-01..04 | Phase 4 | Pending |
 | LAUNCH-01 | Phase 4 | Pending |
-| LAUNCH-02..06 | Phase 7 | Pending |
+| LAUNCH-02..06 | Backlog 999.1 (Recipes) | Deferred |
 | CLI-01..03 | Phase 6 | Pending |
 | DATA-01..02 | Phase 1 | Pending |
 
