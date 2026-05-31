@@ -43,18 +43,19 @@ pub fn shorten_parent_dir(path: &Path) -> String {
     parent.to_string_lossy().into_owned()
 }
 
-/// Format a single list row: `[icon] [parent_dir] [name] [branch] [tags]` (D-03).
+/// Format a single list row: `[icon] [parent_dir] [display_name] [branch?] [tags]` (D-03).
 ///
-/// - Branch is `—` if `None`.
-/// - Tags are space-separated; omitted if empty.
+/// Display name is alias when set, otherwise folder name. Bare repos omit branch (no placeholder).
+/// Tags are space-separated; omitted if empty.
 pub fn format_list_row(repo: &RepoRecord, icon: &str) -> String {
     let parent = shorten_parent_dir(&repo.path);
-    let branch = repo.branch.as_deref().unwrap_or("—");
+    let display_name = repo.alias.as_deref().unwrap_or(&repo.name);
     let tags = repo.tags.join(" ");
-    if tags.is_empty() {
-        format!("{icon} {parent} {} {branch}", repo.name)
-    } else {
-        format!("{icon} {parent} {} {branch} {tags}", repo.name)
+    match (repo.branch.as_deref(), tags.is_empty()) {
+        (Some(branch), true) => format!("{icon} {parent} {display_name} {branch}"),
+        (Some(branch), false) => format!("{icon} {parent} {display_name} {branch} {tags}"),
+        (None, true) => format!("{icon} {parent} {display_name}"),
+        (None, false) => format!("{icon} {parent} {display_name} {tags}"),
     }
 }
 
@@ -172,7 +173,28 @@ mod tests {
         let mut repo = make_repo("myrepo", "/Users/test/c/myrepo");
         repo.branch = None;
         let row = format_list_row(&repo, "📌");
-        assert!(row.contains("—"), "missing em-dash for None branch: {row}");
+        assert!(
+            !row.contains('—'),
+            "em-dash must not appear for None branch: {row}"
+        );
+        assert!(row.contains("myrepo"), "missing name: {row}");
+    }
+
+    #[test]
+    fn format_list_row_alias_when_set() {
+        let mut repo = make_repo("myrepo", "/Users/test/c/myrepo");
+        repo.alias = Some("wp".to_string());
+        let row = format_list_row(&repo, "⬜");
+        assert!(row.contains("wp"), "alias display: {row}");
+        assert!(!row.contains("myrepo"), "folder name hidden when alias set: {row}");
+        assert!(row.contains("main"), "branch present: {row}");
+    }
+
+    #[test]
+    fn format_list_row_alias_none_uses_folder_name() {
+        let repo = make_repo("myrepo", "/Users/test/c/myrepo");
+        let row = format_list_row(&repo, "⬜");
+        assert!(row.contains("myrepo"), "folder name when no alias: {row}");
     }
 
     #[test]
