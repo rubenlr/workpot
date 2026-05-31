@@ -3,12 +3,6 @@ use std::process::Command;
 
 use crate::AppContext;
 
-/// Default template uses bare `cursor`; on macOS the tray resolves to Cursor.app's bundled CLI when it is not on PATH.
-/// Set `launch_cmd` to an absolute program path in config to override.
-fn is_unqualified_program(program: &str) -> bool {
-    !program.contains('/') && !program.contains('\\')
-}
-
 /// macOS Cursor.app bundled CLI locations (bare `cursor` is often missing from GUI PATH).
 #[cfg(target_os = "macos")]
 fn cursor_bundled_candidates() -> Vec<PathBuf> {
@@ -25,7 +19,7 @@ fn cursor_bundled_candidates() -> Vec<PathBuf> {
 
 /// Resolve bare `cursor` to an installed Cursor.app binary on macOS; honor absolute paths and other programs.
 pub fn resolve_launch_program(program: &str) -> String {
-    if program != "cursor" || !is_unqualified_program(program) {
+    if program != "cursor" {
         return program.to_string();
     }
     #[cfg(target_os = "macos")]
@@ -73,10 +67,13 @@ pub fn launch_repo(ctx: &AppContext, path: &str) -> Result<(), String> {
     let template = ctx.config().launch_cmd.clone();
     let (program, args) = build_command(&template, &repo_path)?;
     let program = resolve_launch_program(&program);
-    Command::new(&program)
+    let mut child = Command::new(&program)
         .args(&args)
         .spawn()
         .map_err(|e| format!("failed to launch {program}: {e}"))?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
     ctx.touch_last_opened_at(&repo_path)
         .map_err(|e| e.to_string())?;
     Ok(())
