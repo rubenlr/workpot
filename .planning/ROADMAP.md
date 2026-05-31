@@ -16,7 +16,7 @@
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
 | 4 | 4/4 | Complete |
 | 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
-| 6 | CLI parity | 2/5 | In Progress|  |
+| 6 | CLI parity | 4/5 | In Progress|  |
 | 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
 
 ---
@@ -220,7 +220,7 @@ Plans:
 2. `workpot search <query>` returns the same results as tray filter
 3. `workpot open <name|path>` opens Cursor for the matched repo
 
-**Plans:** 2/5 plans executed
+**Plans:** 4/5 plans executed
 
 **Wave 1** *(parallel — no shared files)*
 
@@ -229,8 +229,8 @@ Plans:
 
 **Wave 2** *(parallel — depends on 06-01)*
 
-- [ ] 06-03-PLAN.md — `workpot list` + emoji row formatter (CLI-01, CLI-03)
-- [ ] 06-05-PLAN.md — Move `launch` to core + `workpot open` (CLI-02, LAUNCH-01)
+- [x] 06-03-PLAN.md — `workpot list` + emoji row formatter (CLI-01, CLI-03)
+- [x] 06-05-PLAN.md — Move `launch` to core + `workpot open` (CLI-02, LAUNCH-01)
 
 **Wave 3**
 
