@@ -3,6 +3,7 @@ mod list_display;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{ExitCode, exit};
 use workpot_core::services::launch::launch_repo;
@@ -111,6 +112,18 @@ enum RootsCommands {
     },
 }
 
+/// IDE launch failure (exit 2), distinct from repo-not-found (exit 1 via anyhow).
+#[derive(Debug)]
+struct LaunchFailed(String);
+
+impl fmt::Display for LaunchFailed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "launch failed: {}", self.0)
+    }
+}
+
+impl std::error::Error for LaunchFailed {}
+
 fn main() -> ExitCode {
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
         .try_init();
@@ -124,6 +137,10 @@ fn main() -> ExitCode {
         {
             eprintln!("{e:#}");
             ExitCode::from(1)
+        }
+        Err(e) if e.downcast_ref::<LaunchFailed>().is_some() => {
+            eprintln!("{e:#}");
+            ExitCode::from(2)
         }
         Err(e) => {
             eprintln!("{e:#}");
@@ -307,11 +324,8 @@ fn run_open(identifier: &str) -> anyhow::Result<()> {
     let path_key = resolve_repo_identifier(&ctx, identifier)?;
     // D-10: print full canonical path before launch
     println!("opening: {path_key}");
-    launch_repo(&ctx, &path_key).map_err(|e| {
-        // Exit 2 for launch spawn failure (per D context: distinguish from "not found" exit 1)
-        eprintln!("error: {e}");
-        exit(2);
-    })
+    launch_repo(&ctx, &path_key).map_err(LaunchFailed)?;
+    Ok(())
 }
 
 fn validate_tag_for_add(tag: &str) -> anyhow::Result<()> {
@@ -370,7 +384,7 @@ fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result
 fn match_repo_path_key(repos: &[RepoRecord], identifier: &str) -> Option<String> {
     repos
         .iter()
-        .find(|r| r.path.display().to_string() == identifier)
+        .find(|r| r.path.to_str().is_some_and(|s| s == identifier))
         .map(|r| r.path.display().to_string())
 }
 
