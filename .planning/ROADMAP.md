@@ -220,7 +220,21 @@ Plans:
 2. `workpot search <query>` returns the same results as tray filter
 3. `workpot open <name|path>` opens Cursor for the matched repo
 
-**Plans:** TBD via `/gsd-plan-phase 6`
+**Plans:** 5 plans in 3 waves
+
+**Wave 1** *(parallel — no shared files)*
+
+- [ ] 06-01-PLAN.md — Core `repo_priority`: section sort + flat tray order (CLI-01, CLI-03)
+- [ ] 06-02-PLAN.md — Core `repo_fuzzy`: port tray fuzzy matcher (CLI-02, CLI-03)
+
+**Wave 2** *(parallel — depends on 06-01)*
+
+- [ ] 06-03-PLAN.md — `workpot list` + emoji row formatter (CLI-01, CLI-03)
+- [ ] 06-05-PLAN.md — Move `launch` to core + `workpot open` (CLI-02, LAUNCH-01)
+
+**Wave 3**
+
+- [ ] 06-04-PLAN.md — `workpot search <query>` (CLI-02, CLI-03; depends 06-01, 06-02, 06-03)
 
 ---
 
