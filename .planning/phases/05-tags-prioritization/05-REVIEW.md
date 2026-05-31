@@ -1,14 +1,15 @@
 ---
 phase: 05-tags-prioritization
-scope: wave-6
-reviewed: 2026-05-31T11:05:00Z
+scope: wave-7
+reviewed: 2026-05-31T11:10:00Z
 depth: standard
-iteration: post-fix-1
-files_reviewed: 3
+iteration: 1
+files_reviewed: 4
 files_reviewed_list:
   - src/lib/tagFilter.ts
   - src/lib/tagFilter.test.ts
-  - src/routes/+page.svelte
+  - src/lib/tagAutocomplete.test.ts
+  - src/lib/trayList.test.ts
 findings:
   critical: 0
   warning: 0
@@ -17,25 +18,19 @@ findings:
 status: clean
 ---
 
-# Phase 5: Code Review Report (wave 6, re-review)
+# Phase 5: Code Review Report (wave 7)
 
-**Reviewed:** 2026-05-31T11:05:00Z  
+**Reviewed:** 2026-05-31T11:10:00Z  
 **Depth:** standard  
-**Scope:** Post–wave-5 tag filter delta  
-**Files Reviewed:** 3  
+**Scope:** Post–wave-6 add-tests commit (`888a9ec`)  
+**Files Reviewed:** 4  
 **Status:** clean
 
 ## Summary
 
-Wave 6 fixed Unicode/emoji trailing autocomplete (WR-01). Re-review clean. Tests: `npm test` 109/109.
-
-## Prior findings — verification
-
-| ID | Status | Evidence |
-|----|--------|----------|
-| WR-01 | **Fixed** | Shared `TRAILING_TAG_PARTIAL_RE` + `trailingTagAutocompletePrefix()` |
+Add-tests wave-6 delta is test-only. Unicode parse/match, trailing-prefix capture, autocomplete filter, and section filter tests match implementation contracts from WR-01 fix. No new findings.
 
 ---
 
 _Reviewer: gsd-code-reviewer (orchestrated)_  
-_Scope: wave-6 (post-fix-1)_
+_Scope: wave-7_
