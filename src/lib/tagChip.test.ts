@@ -4,12 +4,12 @@ import { tagChipTitle } from "./tagChip";
 describe("tagChipTitle", () => {
   it("describes filter + remove when both handlers exist", () => {
     expect(tagChipTitle(true, true)).toBe(
-      "Click to filter · Cmd+Click to remove",
+      "Click to filter · × or Cmd+Click to remove",
     );
   });
 
   it("describes remove-only in detail pane", () => {
-    expect(tagChipTitle(true, false)).toBe("Cmd+Click to remove");
+    expect(tagChipTitle(true, false)).toBe("× or Cmd+Click to remove");
   });
 
   it("describes filter-only on repo row", () => {

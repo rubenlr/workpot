@@ -3,10 +3,10 @@ export function tagChipTitle(
   hasOnFilter: boolean,
 ): string | undefined {
   if (hasOnRemove && hasOnFilter) {
-    return "Click to filter · Cmd+Click to remove";
+    return "Click to filter · × or Cmd+Click to remove";
   }
   if (hasOnRemove) {
-    return "Cmd+Click to remove";
+    return "× or Cmd+Click to remove";
   }
   if (hasOnFilter) {
     return "Click to filter";
