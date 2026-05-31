@@ -11,6 +11,11 @@ function repo(partial: Partial<RepoDto> & Pick<RepoDto, "name">): RepoDto {
     parent_dir: "",
     last_opened_at: null,
     git_state_error: partial.git_state_error ?? null,
+    pinned: false,
+    pin_order: null,
+    notes: null,
+    tags: [],
+    branches: [],
   };
 }
 

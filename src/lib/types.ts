@@ -16,4 +16,9 @@ export interface RepoDto {
   parent_dir: string;
   last_opened_at: number | null;
   git_state_error: string | null;
+  pinned: boolean;
+  pin_order: number | null;
+  notes: string | null;
+  tags: string[];
+  branches: string[];
 }
