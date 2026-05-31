@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { clientTagAddError, shouldSaveNotes } from "./orgClient";
+import {
+  clientTagAddError,
+  shouldSaveNotes,
+  tagAlreadyOnRepo,
+} from "./orgClient";
 
 describe("clientTagAddError", () => {
   it("returns null for empty or whitespace-only input", () => {
@@ -15,6 +19,22 @@ describe("clientTagAddError", () => {
   it("accepts normal tags", () => {
     expect(clientTagAddError("backend")).toBeNull();
     expect(clientTagAddError("  rust  ")).toBeNull();
+  });
+});
+
+describe("tagAlreadyOnRepo", () => {
+  it("returns false for empty tag", () => {
+    expect(tagAlreadyOnRepo("", ["a"])).toBe(false);
+    expect(tagAlreadyOnRepo("   ", ["a"])).toBe(false);
+  });
+
+  it("detects existing tag case-sensitively", () => {
+    expect(tagAlreadyOnRepo("Rust", ["Rust", "go"])).toBe(true);
+    expect(tagAlreadyOnRepo("rust", ["Rust"])).toBe(false);
+  });
+
+  it("returns false when tag is new", () => {
+    expect(tagAlreadyOnRepo("new", ["old"])).toBe(false);
   });
 });
 

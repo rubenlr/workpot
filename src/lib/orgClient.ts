@@ -1,3 +1,12 @@
+/** Case-sensitive match against repo.tags (same as DB collation). */
+export function tagAlreadyOnRepo(tag: string, repoTags: string[]): boolean {
+  const trimmed = tag.trim();
+  if (!trimmed) {
+    return false;
+  }
+  return repoTags.includes(trimmed);
+}
+
 /** Client-side tag add validation before IPC (DetailPane). */
 export function clientTagAddError(raw: string): string | null {
   const tag = raw.trim();

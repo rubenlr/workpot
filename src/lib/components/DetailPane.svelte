@@ -1,6 +1,10 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import { clientTagAddError, shouldSaveNotes } from "../orgClient";
+  import {
+    clientTagAddError,
+    shouldSaveNotes,
+    tagAlreadyOnRepo,
+  } from "../orgClient";
   import type { RepoDto } from "../types";
   import TagChip from "./TagChip.svelte";
 
@@ -8,10 +12,14 @@
     repo,
     onClose,
     onMutated,
+    requestTagFocus = false,
+    onTagFocusDone,
   }: {
     repo: RepoDto;
     onClose: () => void;
     onMutated: () => void;
+    requestTagFocus?: boolean;
+    onTagFocusDone?: () => void;
   } = $props();
 
   let branches = $state<string[]>([]);
@@ -21,12 +29,23 @@
   let tagError = $state<string | null>(null);
   let allTags = $state<string[]>([]);
   let notesTextarea = $state<HTMLTextAreaElement | undefined>(undefined);
+  let tagInputEl = $state<HTMLInputElement | undefined>(undefined);
 
   $effect(() => {
     repo.path;
     if (document.activeElement !== notesTextarea) {
       notesValue = repo.notes ?? "";
     }
+  });
+
+  $effect(() => {
+    if (!requestTagFocus) {
+      return;
+    }
+    queueMicrotask(() => {
+      tagInputEl?.focus();
+      onTagFocusDone?.();
+    });
   });
 
   $effect(() => {
@@ -79,6 +98,10 @@
     }
     const tag = raw.trim();
     if (!tag) {
+      return;
+    }
+    if (tagAlreadyOnRepo(tag, repo.tags)) {
+      tagError = "Tag already on this repo";
       return;
     }
     try {
@@ -196,10 +219,16 @@
     </div>
     <input
       type="text"
+      bind:this={tagInputEl}
       bind:value={tagInput}
       placeholder="Add tag…"
       class="mt-2 w-full rounded-md border border-neutral-200 bg-transparent px-2 py-1 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
       onkeydown={onTagInputKeydown}
+      onblur={() => {
+        if (tagInput.trim()) {
+          void handleAddTag(tagInput);
+        }
+      }}
     />
     {#if tagError}
       <p class="mt-1 text-sm text-red-600 dark:text-red-400">{tagError}</p>
