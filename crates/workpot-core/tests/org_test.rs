@@ -1,8 +1,9 @@
 #![allow(clippy::disallowed_methods)]
 
 use rusqlite::{Connection, params};
+use workpot_core::error::WorkpotError;
 use workpot_core::infra::migrations;
-use workpot_core::services::org;
+use workpot_core::services::{catalog, org};
 
 fn temp_db() -> (tempfile::TempDir, Connection) {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -23,6 +24,8 @@ fn insert_repo(conn: &Connection, path: &str) {
     )
     .expect("insert repo");
 }
+
+const MAX_PINNED: u32 = 5;
 
 #[test]
 fn test_tag_crud_set_and_list() {
@@ -47,6 +50,24 @@ fn test_tag_add_remove() {
 }
 
 #[test]
+fn test_tags_missing_repo_returns_not_found() {
+    let (_dir, conn) = temp_db();
+    let err = org::set_tags(&conn, "/tmp/missing", &["x"]).unwrap_err();
+    assert!(matches!(err, WorkpotError::NotFound(_)));
+    let err = org::add_tag(&conn, "/tmp/missing", "x").unwrap_err();
+    assert!(matches!(err, WorkpotError::NotFound(_)));
+}
+
+#[test]
+fn test_tags_reject_empty() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-tag-empty";
+    insert_repo(&conn, path);
+    let err = org::add_tag(&conn, path, "  ").unwrap_err();
+    assert!(matches!(err, WorkpotError::InvalidInput(_)));
+}
+
+#[test]
 fn test_notes_set_and_get() {
     let (_dir, conn) = temp_db();
     let path = "/tmp/org-notes";
@@ -61,11 +82,21 @@ fn test_notes_set_and_get() {
 }
 
 #[test]
+fn test_notes_reject_over_500_chars() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-notes-long";
+    insert_repo(&conn, path);
+    let long = "x".repeat(501);
+    let err = org::set_notes(&conn, path, Some(&long)).unwrap_err();
+    assert!(matches!(err, WorkpotError::InvalidInput(_)));
+}
+
+#[test]
 fn test_pin_set_and_unpin() {
     let (_dir, conn) = temp_db();
     let path = "/tmp/org-pin";
     insert_repo(&conn, path);
-    org::set_pin(&conn, path, true).expect("pin");
+    org::set_pin(&conn, path, true, MAX_PINNED).expect("pin");
     let (pinned, pin_order): (i64, Option<i64>) = conn
         .query_row(
             "SELECT pinned, pin_order FROM repos WHERE path = ?1",
@@ -76,7 +107,7 @@ fn test_pin_set_and_unpin() {
     assert_eq!(pinned, 1);
     assert!(pin_order.is_some());
 
-    org::set_pin(&conn, path, false).expect("unpin");
+    org::set_pin(&conn, path, false, MAX_PINNED).expect("unpin");
     let (pinned, pin_order): (i64, Option<i64>) = conn
         .query_row(
             "SELECT pinned, pin_order FROM repos WHERE path = ?1",
@@ -89,14 +120,53 @@ fn test_pin_set_and_unpin() {
 }
 
 #[test]
+fn test_pin_repin_is_idempotent() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-pin-idempotent";
+    insert_repo(&conn, path);
+    org::set_pin(&conn, path, true, MAX_PINNED).expect("pin");
+    let order_first: i64 = conn
+        .query_row(
+            "SELECT pin_order FROM repos WHERE path = ?1",
+            params![path],
+            |row| row.get(0),
+        )
+        .expect("order");
+    org::set_pin(&conn, path, true, MAX_PINNED).expect("re-pin");
+    let order_second: i64 = conn
+        .query_row(
+            "SELECT pin_order FROM repos WHERE path = ?1",
+            params![path],
+            |row| row.get(0),
+        )
+        .expect("order");
+    assert_eq!(order_first, order_second);
+}
+
+#[test]
+fn test_pin_cap_enforced() {
+    let (_dir, conn) = temp_db();
+    let max = 2u32;
+    for i in 0..max {
+        let path = format!("/tmp/org-pin-cap-{i}");
+        insert_repo(&conn, &path);
+        org::set_pin(&conn, &path, true, max).expect("pin");
+    }
+    let overflow = "/tmp/org-pin-cap-overflow";
+    insert_repo(&conn, overflow);
+    let err = org::set_pin(&conn, overflow, true, max).unwrap_err();
+    assert!(matches!(err, WorkpotError::PinCapExceeded { max: 2 }));
+}
+
+#[test]
 fn test_pin_order_batch_update() {
     let (_dir, conn) = temp_db();
     let path_a = "/tmp/org-pin-a";
     let path_b = "/tmp/org-pin-b";
     insert_repo(&conn, path_a);
     insert_repo(&conn, path_b);
-    org::set_pin(&conn, path_a, true).expect("pin a");
-    org::set_pin(&conn, path_b, true).expect("pin b");
+    org::set_pin(&conn, path_a, true, MAX_PINNED).expect("pin a");
+    org::set_pin(&conn, path_b, true, MAX_PINNED).expect("pin b");
     org::set_pin_order(&conn, &[(path_a, 1), (path_b, 0)]).expect("reorder");
 
     let order_a: i64 = conn
@@ -115,6 +185,46 @@ fn test_pin_order_batch_update() {
         .expect("order b");
     assert_eq!(order_a, 1);
     assert_eq!(order_b, 0);
+}
+
+#[test]
+fn test_tags_cascade_on_repo_delete() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-cascade";
+    insert_repo(&conn, path);
+    org::set_tags(&conn, path, &["keep-me-gone"]).expect("set_tags");
+    conn.execute("DELETE FROM repos WHERE path = ?1", params![path])
+        .expect("delete repo");
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM repo_tags WHERE repo_path = ?1",
+            params![path],
+            |row| row.get(0),
+        )
+        .expect("count tags");
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn test_list_repos_hydrates_tags() {
+    let (_dir, conn) = temp_db();
+    let path_a = "/tmp/org-list-a";
+    let path_b = "/tmp/org-list-b";
+    insert_repo(&conn, path_a);
+    insert_repo(&conn, path_b);
+    org::set_tags(&conn, path_a, &["alpha"]).expect("tags a");
+
+    let repos = catalog::list_repos(&conn).expect("list_repos");
+    let a = repos
+        .iter()
+        .find(|r| r.path.to_string_lossy() == path_a)
+        .expect("repo a");
+    let b = repos
+        .iter()
+        .find(|r| r.path.to_string_lossy() == path_b)
+        .expect("repo b");
+    assert_eq!(a.tags, vec!["alpha"]);
+    assert!(b.tags.is_empty());
 }
 
 #[test]
