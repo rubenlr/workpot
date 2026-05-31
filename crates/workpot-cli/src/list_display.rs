@@ -4,6 +4,7 @@
 //! Order: Pinned (📌) > Dirty (🟡) > Recent (🔥) > Rest (⬜)
 
 use std::path::{Path, PathBuf};
+use workpot_core::services::repo_priority::section_sort;
 use workpot_core::{RepoRecord, domain::Config};
 
 /// Priority section for a repo (mirrors TypeScript `Section` type in `sort.ts`).
@@ -58,96 +59,32 @@ pub fn format_list_row(repo: &RepoRecord, icon: &str) -> String {
     }
 }
 
-/// Section-sort repos and attach emoji icons, mirroring the TypeScript `sectionSort` from
-/// `src/lib/sort.ts`. Returns a flat ordered `Vec` of `(repo, icon)` pairs.
-///
-/// Order: Pinned (by `pin_order`) → Dirty (non-pinned, `is_dirty==true`, by `last_opened_at` desc)
-///        → Recent (non-pinned, non-dirty, within `max_recent_days` or padded to `min_recent_count`)
-///        → Rest (alphabetical by name).
+/// Section-sort repos via shared `repo_priority` and attach emoji icons.
 pub fn flat_tray_ordered_with_icons(
     repos: Vec<RepoRecord>,
     config: &Config,
     now_secs: i64,
 ) -> Vec<(RepoRecord, &'static str)> {
-    // --- Pinned section (sorted by pin_order) ---
-    let (mut pinned, non_pinned): (Vec<RepoRecord>, Vec<RepoRecord>) =
-        repos.into_iter().partition(|r| r.pinned);
-    pinned.sort_by_key(|r| r.pin_order.unwrap_or(i64::MAX));
-
-    // --- Dirty section (non-pinned, dirty, last_opened_at desc) ---
-    let (mut dirty, non_dirty): (Vec<RepoRecord>, Vec<RepoRecord>) =
-        non_pinned.into_iter().partition(|r| r.is_dirty == Some(true));
-    dirty.sort_by(by_last_opened_desc);
-
-    // --- Recent section (within window or padded to min_recent_count) ---
-    let window_secs = i64::from(config.max_recent_days) * 86_400;
-
-    let (in_window, out_of_window): (Vec<RepoRecord>, Vec<RepoRecord>) =
-        non_dirty.into_iter().partition(|r| {
-            r.last_opened_at
-                .map(|t| now_secs - t < window_secs)
-                .unwrap_or(false)
-        });
-
-    let mut in_window_sorted = in_window;
-    in_window_sorted.sort_by(by_last_opened_desc);
-
-    // Pad up to min_recent_count with repos that have last_opened_at (even outside window).
-    let mut recent: Vec<RepoRecord> = in_window_sorted;
-    let min_count = config.min_recent_count as usize;
-    if recent.len() < min_count {
-        // Candidates: repos outside window that have last_opened_at, sorted by last_opened_at desc.
-        let mut candidates: Vec<RepoRecord> = out_of_window
-            .iter()
-            .filter(|r| r.last_opened_at.is_some())
-            .cloned()
-            .collect();
-        candidates.sort_by(by_last_opened_desc);
-
-        for r in candidates {
-            if recent.len() >= min_count {
-                break;
-            }
-            recent.push(r);
-        }
-    }
-
-    // --- Rest section (not in recent, alphabetical by name) ---
-    let recent_paths: std::collections::HashSet<PathBuf> =
-        recent.iter().map(|r| r.path.clone()).collect();
-    let mut rest: Vec<RepoRecord> = out_of_window
-        .into_iter()
-        .filter(|r| !recent_paths.contains(&r.path))
-        .collect();
-    // Also include out-of-window repos that had no last_opened_at and were not padded into recent.
-    // (These were in out_of_window but not in candidates since last_opened_at is None.)
-    rest.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-
-    // Assemble flat ordered list with icons.
-    let mut result = Vec::with_capacity(pinned.len() + dirty.len() + recent.len() + rest.len());
-    for r in pinned {
+    let sectioned = section_sort(&repos, config, now_secs);
+    let mut result = Vec::with_capacity(
+        sectioned.pinned.len()
+            + sectioned.dirty.len()
+            + sectioned.recent.len()
+            + sectioned.rest.len(),
+    );
+    for r in sectioned.pinned {
         result.push((r, priority_icon(PrioritySection::Pinned)));
     }
-    for r in dirty {
+    for r in sectioned.dirty {
         result.push((r, priority_icon(PrioritySection::Dirty)));
     }
-    for r in recent {
+    for r in sectioned.recent {
         result.push((r, priority_icon(PrioritySection::Recent)));
     }
-    for r in rest {
+    for r in sectioned.rest {
         result.push((r, priority_icon(PrioritySection::Rest)));
     }
     result
-}
-
-/// Sort comparator: last_opened_at desc (None last), tie-break by name asc.
-fn by_last_opened_desc(a: &RepoRecord, b: &RepoRecord) -> std::cmp::Ordering {
-    match (a.last_opened_at, b.last_opened_at) {
-        (Some(at), Some(bt)) if at != bt => bt.cmp(&at),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-    }
 }
 
 fn home_dir() -> Option<PathBuf> {
