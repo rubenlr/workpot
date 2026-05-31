@@ -72,7 +72,7 @@ fn validate_tag(tag: &str) -> Result<(), String> {
     if trimmed.contains('#') {
         return Err("tag may not contain '#'".to_string());
     }
-    if trimmed.len() > 64 {
+    if trimmed.chars().count() > 64 {
         return Err("tag too long".to_string());
     }
     Ok(())
@@ -184,10 +184,10 @@ pub fn set_notes(
     notes: Option<String>,
     state: State<'_, Arc<Mutex<AppContext>>>,
 ) -> Result<(), String> {
-    if let Some(ref n) = notes
-        && n.len() > 500
-    {
-        return Err("notes exceed 500 characters".to_string());
+    if let Some(ref n) = notes {
+        if n.chars().count() > 500 {
+            return Err("notes exceed 500 characters".to_string());
+        }
     }
     let notes = normalize_notes(notes);
     let ctx = state
