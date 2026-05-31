@@ -22,7 +22,7 @@ pub use crate::domain::RepoRecord;
 pub use crate::error::WorkpotError;
 pub use crate::services::git_state::GitRefreshSummary;
 pub use crate::services::repo_priority::{
-    flat_tray_ordered, flat_tray_ordered_repos, section_sort, SectionedRepos,
+    SectionedRepos, flat_tray_ordered, flat_tray_ordered_repos, section_sort,
 };
 
 pub fn version() -> &'static str {

@@ -41,9 +41,9 @@ fn cmp_last_opened_desc(
     use std::cmp::Ordering;
     match (a_ts, b_ts) {
         (Some(a), Some(b)) if a != b => b.cmp(&a), // higher ts first
-        (Some(_), None) => Ordering::Less,          // a beats null
-        (None, Some(_)) => Ordering::Greater,       // b beats null
-        _ => a_name.cmp(b_name),                    // tie-break by name
+        (Some(_), None) => Ordering::Less,         // a beats null
+        (None, Some(_)) => Ordering::Greater,      // b beats null
+        _ => a_name.cmp(b_name),                   // tie-break by name
     }
 }
 
@@ -70,9 +70,8 @@ pub fn section_sort(repos: &[RepoRecord], config: &Config, now_seconds: i64) -> 
         .filter(|r| r.is_dirty == Some(true))
         .map(|r| (*r).clone())
         .collect();
-    dirty.sort_by(|a, b| {
-        cmp_last_opened_desc(a.last_opened_at, b.last_opened_at, &a.name, &b.name)
-    });
+    dirty
+        .sort_by(|a, b| cmp_last_opened_desc(a.last_opened_at, b.last_opened_at, &a.name, &b.name));
 
     // ---- Non-dirty pool ------------------------------------------------
     let non_dirty: Vec<&RepoRecord> = non_pinned
@@ -93,23 +92,23 @@ pub fn section_sort(repos: &[RepoRecord], config: &Config, now_seconds: i64) -> 
         })
         .map(|r| (*r).clone())
         .collect();
-    recent_by_time.sort_by(|a, b| {
-        cmp_last_opened_desc(a.last_opened_at, b.last_opened_at, &a.name, &b.name)
-    });
+    recent_by_time
+        .sort_by(|a, b| cmp_last_opened_desc(a.last_opened_at, b.last_opened_at, &a.name, &b.name));
 
     // D-22: Padding floor — pad Recent to min_recent_count using the
     // next most-recently-opened repos that have `last_opened_at IS NOT NULL`.
     // Never-opened repos (null) cannot be used as padding candidates (D-21).
     let mut recent = recent_by_time;
     if (recent.len() as u32) < config.min_recent_count {
-        let in_recent: std::collections::HashSet<String> =
-            recent.iter().map(|r| r.path.to_string_lossy().into_owned()).collect();
+        let in_recent: std::collections::HashSet<String> = recent
+            .iter()
+            .map(|r| r.path.to_string_lossy().into_owned())
+            .collect();
 
         let mut candidates: Vec<RepoRecord> = non_dirty
             .iter()
             .filter(|r| {
-                r.last_opened_at.is_some()
-                    && !in_recent.contains(r.path.to_string_lossy().as_ref())
+                r.last_opened_at.is_some() && !in_recent.contains(r.path.to_string_lossy().as_ref())
             })
             .map(|r| (*r).clone())
             .collect();
@@ -126,8 +125,10 @@ pub fn section_sort(repos: &[RepoRecord], config: &Config, now_seconds: i64) -> 
     }
 
     // ---- Rest ----------------------------------------------------------
-    let recent_paths: std::collections::HashSet<String> =
-        recent.iter().map(|r| r.path.to_string_lossy().into_owned()).collect();
+    let recent_paths: std::collections::HashSet<String> = recent
+        .iter()
+        .map(|r| r.path.to_string_lossy().into_owned())
+        .collect();
 
     let mut rest: Vec<RepoRecord> = non_dirty
         .iter()

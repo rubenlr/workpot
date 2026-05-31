@@ -81,13 +81,17 @@ fn config_default() -> Config {
 /// Mirrors: "places pinned repos only in pinned section"
 #[test]
 fn pinned_repos_land_only_in_pinned_section() {
-    let repos = vec![
-        pinned("pin", 0),
-        clean("other", Some(NOW)),
-    ];
+    let repos = vec![pinned("pin", 0), clean("other", Some(NOW))];
     let sections = section_sort(&repos, &config_default(), NOW);
 
-    assert_eq!(sections.pinned.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["pin"]);
+    assert_eq!(
+        sections
+            .pinned
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect::<Vec<_>>(),
+        ["pin"]
+    );
     assert!(sections.dirty.is_empty());
     assert!(sections.recent.iter().any(|r| r.name == "other"));
     assert!(sections.rest.is_empty());
@@ -101,10 +105,17 @@ fn dirty_repo_lands_in_dirty_not_recent() {
     let sections = section_sort(&repos, &config_default(), NOW);
 
     assert_eq!(
-        sections.dirty.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+        sections
+            .dirty
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect::<Vec<_>>(),
         ["dirty"]
     );
-    assert!(sections.recent.is_empty(), "D-20: dirty must not appear in recent");
+    assert!(
+        sections.recent.is_empty(),
+        "D-20: dirty must not appear in recent"
+    );
 }
 
 /// Recent section is padded to `min_recent_count` from outside-window repos (D-22).
@@ -120,7 +131,11 @@ fn recent_padded_to_min_recent_count_from_outside_window_d22() {
     ];
     let sections = section_sort(&repos, &cfg, NOW);
 
-    assert_eq!(sections.recent.len(), 3, "D-22: recent padded to min_recent_count");
+    assert_eq!(
+        sections.recent.len(),
+        3,
+        "D-22: recent padded to min_recent_count"
+    );
     let mut names: Vec<&str> = sections.recent.iter().map(|r| r.name.as_str()).collect();
     names.sort();
     assert_eq!(names, ["a", "b", "c"]);
@@ -140,7 +155,11 @@ fn never_opened_repos_land_in_rest_not_recent_d21() {
 
     assert!(sections.recent.is_empty());
     assert_eq!(
-        sections.rest.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+        sections
+            .rest
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect::<Vec<_>>(),
         ["never"]
     );
 }
@@ -149,14 +168,13 @@ fn never_opened_repos_land_in_rest_not_recent_d21() {
 /// Mirrors: "does not pad recent with never-opened repos (D-21)"
 #[test]
 fn padding_never_uses_never_opened_repos_d21() {
-    let repos = vec![
-        clean("a", None),
-        clean("b", None),
-        clean("c", None),
-    ];
+    let repos = vec![clean("a", None), clean("b", None), clean("c", None)];
     let sections = section_sort(&repos, &config_default(), NOW);
 
-    assert!(sections.recent.is_empty(), "D-21: null last_opened_at cannot pad Recent");
+    assert!(
+        sections.recent.is_empty(),
+        "D-21: null last_opened_at cannot pad Recent"
+    );
     let mut names: Vec<&str> = sections.rest.iter().map(|r| r.name.as_str()).collect();
     names.sort();
     assert_eq!(names, ["a", "b", "c"]);
@@ -191,14 +209,15 @@ fn every_repo_appears_exactly_once() {
 /// Mirrors: "sorts pinned by pin_order"
 #[test]
 fn pinned_sorted_by_pin_order_ascending() {
-    let repos = vec![
-        pinned("a", 2),
-        pinned("b", 0),
-    ];
+    let repos = vec![pinned("a", 2), pinned("b", 0)];
     let sections = section_sort(&repos, &config_default(), NOW);
 
     assert_eq!(
-        sections.pinned.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+        sections
+            .pinned
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect::<Vec<_>>(),
         ["b", "a"],
         "pin_order 0 before 2"
     );
@@ -217,7 +236,11 @@ fn pinned_none_pin_order_treated_as_999() {
     ];
     let sections = section_sort(&repos, &config_default(), NOW);
     assert_eq!(
-        sections.pinned.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+        sections
+            .pinned
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect::<Vec<_>>(),
         ["first", "last"]
     );
 }
@@ -237,7 +260,11 @@ fn rest_sorted_alphabetically() {
     let sections = section_sort(&repos, &cfg, NOW);
 
     assert_eq!(
-        sections.rest.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+        sections
+            .rest
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect::<Vec<_>>(),
         ["apple", "mango", "zebra"]
     );
 }
@@ -267,7 +294,10 @@ fn flat_output_follows_pinned_dirty_recent_rest_order() {
     // recent then rest (exact positions depend on padding, but dirty-a is not in either)
     let dirty_pos = names.iter().position(|n| *n == "dirty-a").unwrap();
     let rest_pos = names.iter().position(|n| *n == "rest-z").unwrap();
-    assert!(dirty_pos < rest_pos, "dirty must precede rest in flat output");
+    assert!(
+        dirty_pos < rest_pos,
+        "dirty must precede rest in flat output"
+    );
 }
 
 /// D-20: a dirty repo with recent last_opened_at appears in the dirty tier, not recent tier.
@@ -280,5 +310,8 @@ fn dirty_beats_recent_in_flat_output_d20() {
     let flat = flat_tray_ordered_repos(&repos, &config_default(), NOW);
     let dirty_pos = flat.iter().position(|r| r.name == "dirty-recent").unwrap();
     let clean_pos = flat.iter().position(|r| r.name == "clean-recent").unwrap();
-    assert!(dirty_pos < clean_pos, "D-20: dirty must precede clean-recent");
+    assert!(
+        dirty_pos < clean_pos,
+        "D-20: dirty must precede clean-recent"
+    );
 }

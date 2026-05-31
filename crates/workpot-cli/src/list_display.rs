@@ -125,7 +125,10 @@ mod tests {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/test".to_string());
         let path = PathBuf::from(format!("{home}/c/myrepo"));
         let result = shorten_parent_dir(&path);
-        assert_eq!(result, "~/c", "expected home-shortened parent, got: {result}");
+        assert_eq!(
+            result, "~/c",
+            "expected home-shortened parent, got: {result}"
+        );
     }
 
     #[test]
@@ -211,7 +214,10 @@ mod tests {
         let clean = make_repo("clean-repo", "/home/test/clean-repo");
 
         let result = flat_tray_ordered_with_icons(vec![clean, dirty], &config, now);
-        assert_eq!(result[0].0.name, "dirty-repo", "dirty repo must come before rest");
+        assert_eq!(
+            result[0].0.name, "dirty-repo",
+            "dirty repo must come before rest"
+        );
         assert_eq!(result[0].1, "🟡");
     }
 

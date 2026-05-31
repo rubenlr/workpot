@@ -1,7 +1,7 @@
 # Roadmap: Workpot
 
 **Project:** Workpot  
-**Phases:** 6 + 06.1 (active); 1 backlog  
+**Phases:** 6 + 06.1 + 06.2 (active); 1 backlog  
 **Requirements mapped:** 28/28 v1  
 **Structure:** Vertical MVP (each phase ships usable capability)
 
@@ -18,6 +18,7 @@
 | 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
 | 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
 | 06.1 | Release & distribution *(INSERTED)* | End-user install/update + DMG | — | 5 |
+| 06.2 | Tray UX polish *(INSERTED)* | Icons, panel chrome, alias, interaction | — | 8 |
 
 ---
 
@@ -250,16 +251,48 @@ Plans:
 
 **Success Criteria:**
 
-1. Every `v*` GitHub Release publishes `workpot-macos-{aarch64,x86_64}.tar.gz` + `.sha256` (existing) and a signed/notarized `.dmg` containing the tray app
+1. Every `v*` GitHub Release publishes `workpot-macos-aarch64.tar.gz` + `.sha256` and `Workpot-<version>-aarch64.dmg` + `.sha256` (signed/notarized when Apple secrets are present)
 2. User can run `curl -fsSL …/install.sh | bash` (or documented equivalent) on macOS and get `workpot` on `PATH` with correct `--version`
 3. `workpot update` upgrades the installed CLI from the latest GitHub Release with clear failure modes (offline, permission denied, already current)
-4. `INSTALL.md` documents install (script + manual tarball + DMG), update, and uninstall/PATH without reading `docs/releasing.md`
+4. `INSTALL.md` gives equal prominence to script and DMG install paths, and documents update + uninstall/PATH without reading `docs/releasing.md`
 5. Maintainer flow in `docs/releasing.md` references DMG + installer; CI smoke covers new artifacts where feasible
 
-**Plans:** 0 plans — run `/gsd-plan-phase 06.1`
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD via `/gsd-plan-phase 06.1`
+- [ ] 06.1-01-PLAN.md — Lock release artifact/signing contract (aarch64-only + DMG + smoke/docs)
+- [ ] 06.1-02-PLAN.md — TDD `workpot update` with strict exit/error/checksum semantics
+- [ ] 06.1-03-PLAN.md — Implement `install.sh` + installer smoke + user install docs
+
+---
+
+### Phase 06.2: Tray UX polish (INSERTED)
+
+**Goal:** Tray feels like a daily driver — correct open/detail gestures, honest menu-bar signal for forgotten WIP, clean panel chrome, aliases, and predictable tag/notes inputs.
+
+**Mode:** mvp
+
+**Depends on:** Phases 4–6 (tray MVP, org fields, CLI parity for alias display/search)
+
+**Parallel with:** Phase 06.1 (release) — neither blocks the other
+
+**Requirements:** UX polish (no new v1 requirement IDs; extends tray/org surface)
+
+**Success Criteria:**
+
+1. Plain click on a list row opens Cursor and closes the panel; ⌘+click and row info badge open detail without launching
+2. Menu-bar icon is default unless a repo is dirty and `last_opened_at` is older than `stale_dirty_days`; stale-dirty icon when triggered; animated icon during background refresh
+3. `stale_dirty_days` is configurable in `config.toml` (independent of `max_recent_days`)
+4. Optional per-repo `alias` persists; tray and CLI show alias when set; fuzzy matches alias and folder name
+5. Panel shell is borderless with transparent background and curved bottom; bare repos omit branch when none
+6. Detail header: back + title (alias), pin as 📌/📍 on the right; tag field suggests existing tags only; notes field has no OS autocomplete/spellcheck
+7. Storybook documents list-row and detail-header visual states (same milestone; not a merge gate for interaction fixes)
+8. Automated tests cover stale-dirty tray logic and alias in core/CLI fuzzy where applicable
+
+**Plans:** 0 plans — run `/gsd-plan-phase 06.2`
+
+Plans:
+- [ ] TBD via `/gsd-plan-phase 06.2`
 
 ## Backlog
 
@@ -299,6 +332,7 @@ Plans:
 | 5 | Not started | 0/0 |
 | 6 | Not started | 0/0 |
 | 06.1 | Not started | 0/0 |
+| 06.2 | Not started | 0/0 |
 
 ---
 *Roadmap created: 2026-05-28*

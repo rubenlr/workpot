@@ -83,8 +83,16 @@ pub fn fuzzy_score(query: &str, repo: &RepoRecord) -> i32 {
 
     let name_score = score_field(&q, &repo.name.to_lowercase(), true);
     let path_score = score_field(&q, &repo.path.to_string_lossy().to_lowercase(), false);
-    let branch_score = score_field(&q, &repo.branch.as_deref().unwrap_or("").to_lowercase(), false);
-    let notes_score = score_field(&q, &repo.notes.as_deref().unwrap_or("").to_lowercase(), false);
+    let branch_score = score_field(
+        &q,
+        &repo.branch.as_deref().unwrap_or("").to_lowercase(),
+        false,
+    );
+    let notes_score = score_field(
+        &q,
+        &repo.notes.as_deref().unwrap_or("").to_lowercase(),
+        false,
+    );
     let tag_scores = repo
         .tags
         .iter()
@@ -108,7 +116,13 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn make_repo(name: &str, path: &str, branch: Option<&str>, notes: Option<&str>, tags: Vec<&str>) -> RepoRecord {
+    fn make_repo(
+        name: &str,
+        path: &str,
+        branch: Option<&str>,
+        notes: Option<&str>,
+        tags: Vec<&str>,
+    ) -> RepoRecord {
         RepoRecord {
             path: PathBuf::from(path),
             name: name.to_string(),
@@ -172,7 +186,13 @@ mod tests {
 
     #[test]
     fn notes_match() {
-        let r = make_repo("x", "/Users/me/c/x", Some("main"), Some("deployment pipeline"), vec![]);
+        let r = make_repo(
+            "x",
+            "/Users/me/c/x",
+            Some("main"),
+            Some("deployment pipeline"),
+            vec![],
+        );
         assert!(fuzzy_match("pipeline", &r));
     }
 

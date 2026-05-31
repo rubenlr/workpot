@@ -7,8 +7,8 @@
 #![allow(clippy::disallowed_methods)]
 
 use std::path::PathBuf;
-use workpot_core::services::repo_fuzzy::{fuzzy_match, fuzzy_score};
 use workpot_core::RepoRecord;
+use workpot_core::services::repo_fuzzy::{fuzzy_match, fuzzy_score};
 
 // ---------------------------------------------------------------------------
 // Fixture builder — mirrors the `repo(...)` helper in fuzzy.test.ts
@@ -86,7 +86,13 @@ fn rejects_query_over_256_chars() {
 /// fuzzy.test.ts: matches path segment
 #[test]
 fn matches_path_segment() {
-    let r = repo("other", Some("/Users/me/c/workpot"), Some("main"), None, vec![]);
+    let r = repo(
+        "other",
+        Some("/Users/me/c/workpot"),
+        Some("main"),
+        None,
+        vec![],
+    );
     assert!(fuzzy_match("workpot", &r));
 }
 
@@ -169,10 +175,22 @@ mod fuzzy_golden_vectors {
             // --- name: no match ---
             gold("zzz", named("workpot"), false),
             // --- branch match ---
-            gold("main", repo("other", None, Some("main"), None, vec![]), true),
-            gold("feat", repo("other", None, Some("feat/login"), None, vec![]), true),
+            gold(
+                "main",
+                repo("other", None, Some("main"), None, vec![]),
+                true,
+            ),
+            gold(
+                "feat",
+                repo("other", None, Some("feat/login"), None, vec![]),
+                true,
+            ),
             // --- branch no match ---
-            gold("zzz", repo("other", None, Some("main"), None, vec![]), false),
+            gold(
+                "zzz",
+                repo("other", None, Some("main"), None, vec![]),
+                false,
+            ),
             // --- empty query → always match ---
             gold("", named("x"), true),
             gold("", named("workpot"), true),
@@ -192,12 +210,24 @@ mod fuzzy_golden_vectors {
             // --- path match ---
             gold(
                 "workpot",
-                repo("other", Some("/Users/me/c/workpot"), Some("main"), None, vec![]),
+                repo(
+                    "other",
+                    Some("/Users/me/c/workpot"),
+                    Some("main"),
+                    None,
+                    vec![],
+                ),
                 true,
             ),
             gold(
                 "zzz",
-                repo("other", Some("/Users/me/c/workpot"), Some("main"), None, vec![]),
+                repo(
+                    "other",
+                    Some("/Users/me/c/workpot"),
+                    Some("main"),
+                    None,
+                    vec![],
+                ),
                 false,
             ),
             // --- notes match ---
@@ -217,9 +247,21 @@ mod fuzzy_golden_vectors {
                 false,
             ),
             // --- tag match ---
-            gold("backend", repo("x", None, Some("main"), None, vec!["backend"]), true),
-            gold("end", repo("x", None, Some("main"), None, vec!["backend"]), true),
-            gold("zzz", repo("x", None, Some("main"), None, vec!["backend"]), false),
+            gold(
+                "backend",
+                repo("x", None, Some("main"), None, vec!["backend"]),
+                true,
+            ),
+            gold(
+                "end",
+                repo("x", None, Some("main"), None, vec!["backend"]),
+                true,
+            ),
+            gold(
+                "zzz",
+                repo("x", None, Some("main"), None, vec!["backend"]),
+                false,
+            ),
             // --- None branch (no panic) ---
             gold("main", repo("x", None, None, None, vec![]), false),
             // --- None notes (no panic) ---
@@ -230,12 +272,24 @@ mod fuzzy_golden_vectors {
             ),
             // --- case insensitivity ---
             gold("WP", named("workpot"), true),
-            gold("MAIN", repo("other", None, Some("main"), None, vec![]), true),
-            gold("BACKEND", repo("x", None, Some("main"), None, vec!["backend"]), true),
+            gold(
+                "MAIN",
+                repo("other", None, Some("main"), None, vec![]),
+                true,
+            ),
+            gold(
+                "BACKEND",
+                repo("x", None, Some("main"), None, vec!["backend"]),
+                true,
+            ),
             // --- name prefix bonus exists (score check only) ---
             // (match correctness — score comparison tested separately below)
             gold("work", named("workpot"), true),
-            gold("work", repo("x", Some("/tmp/workpot-extra"), Some("main"), None, vec![]), true),
+            gold(
+                "work",
+                repo("x", Some("/tmp/workpot-extra"), Some("main"), None, vec![]),
+                true,
+            ),
         ]
     }
 
@@ -246,13 +300,9 @@ mod fuzzy_golden_vectors {
             let got_match = fuzzy_match(row.query, &row.repo);
             let got_score = fuzzy_score(row.query, &row.repo);
             assert_eq!(
-                got_match,
-                row.expected_match,
+                got_match, row.expected_match,
                 "Row {i}: query={:?} name={:?} expected_match={}; got fuzzy_match={}",
-                row.query,
-                row.repo.name,
-                row.expected_match,
-                got_match
+                row.query, row.repo.name, row.expected_match, got_match
             );
             // Score invariant: score > 0 iff match
             if row.expected_match {
@@ -265,12 +315,9 @@ mod fuzzy_golden_vectors {
                 );
             } else {
                 assert_eq!(
-                    got_score,
-                    0,
+                    got_score, 0,
                     "Row {i}: query={:?} name={:?} expected no match but score={}",
-                    row.query,
-                    row.repo.name,
-                    got_score
+                    row.query, row.repo.name, got_score
                 );
             }
         }

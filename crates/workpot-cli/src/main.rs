@@ -352,9 +352,7 @@ fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result
         0 => Err(anyhow::anyhow!("repo not found: {identifier}")),
         1 => Ok(matches[0].path.display().to_string()),
         _ => {
-            let mut msg = format!(
-                "error: ambiguous repo name '{identifier}'; matches:\n"
-            );
+            let mut msg = format!("error: ambiguous repo name '{identifier}'; matches:\n");
             for (i, r) in matches.iter().enumerate() {
                 msg.push_str(&format!("{}. {}\n", i + 1, r.path.display()));
             }

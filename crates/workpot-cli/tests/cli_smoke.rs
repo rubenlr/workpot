@@ -607,10 +607,7 @@ fn search_filters_by_fuzzy_query() {
         .args(["search", "alpha"])
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("alpha")
-                .and(predicate::str::contains("beta").not()),
-        );
+        .stdout(predicate::str::contains("alpha").and(predicate::str::contains("beta").not()));
 }
 
 #[test]
@@ -693,9 +690,7 @@ fn open_resolves_by_name_and_prints_full_path() {
         .args(["open", "sample-repo"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            canon.to_str().expect("utf8"),
-        ));
+        .stdout(predicate::str::contains(canon.to_str().expect("utf8")));
 }
 
 #[test]

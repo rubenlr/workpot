@@ -82,8 +82,8 @@ pub fn launch_repo(ctx: &AppContext, path: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use crate::AppContext;
+    use std::fs;
 
     #[test]
     fn build_command_cursor_template() {

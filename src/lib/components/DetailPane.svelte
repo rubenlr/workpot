@@ -146,12 +146,12 @@
   }
 </script>
 
+<svelte:window onkeydown={onPaneKeydown} />
+
 <div
   role="region"
   aria-label="Repository details"
   class="flex h-full flex-col gap-4 overflow-y-auto p-4"
-  tabindex="-1"
-  onkeydown={onPaneKeydown}
 >
   <div class="flex items-center gap-2">
     <button
