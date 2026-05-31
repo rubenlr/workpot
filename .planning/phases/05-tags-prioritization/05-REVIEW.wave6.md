@@ -21,19 +21,19 @@ status: clean
 
 **Reviewed:** 2026-05-31T11:05:00Z  
 **Depth:** standard  
-**Scope:** Post–wave-5 tag filter delta  
+**Scope:** Post–wave-5 delta after WR-01 fix  
 **Files Reviewed:** 3  
 **Status:** clean
 
 ## Summary
 
-Wave 6 fixed Unicode/emoji trailing autocomplete (WR-01). Re-review clean. Tests: `npm test` 109/109.
+Wave 6 found one Unicode autocomplete gap; fixed and covered by tests. Shared trailing-tag helper keeps filter bar prefix and autocomplete replacement aligned with `parseTagFilter` token rules.
 
 ## Prior findings — verification
 
 | ID | Status | Evidence |
 |----|--------|----------|
-| WR-01 | **Fixed** | Shared `TRAILING_TAG_PARTIAL_RE` + `trailingTagAutocompletePrefix()` |
+| WR-01 | **Fixed** | `TRAILING_TAG_PARTIAL_RE` / `trailingTagAutocompletePrefix()`; +page uses shared helper |
 
 ---
 
