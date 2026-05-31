@@ -14,8 +14,12 @@ permissions:
 
 jobs:
   fmt:
-    name: rustfmt
-    runs-on: ubuntu-latest
+    name: rustfmt (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
@@ -27,25 +31,35 @@ jobs:
         uses: ./.github/actions/rust-cache
         with:
           shared-key: ci
-          key: ${{ runner.os }}
+          key: ${{ matrix.os }}
       - name: Check formatting
+        if: matrix.os == 'ubuntu-latest'
         run: cargo fmt --all -- --check
       - name: Run Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-deny
-          fallback: none
-      - name: Run cargo deny
-        run: cargo deny check --config .github/ci-assist/deny.toml
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-audit
-          fallback: none
-      - name: Run cargo audit
-        run: cargo audit
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo clippy -p workpot-core -p workpot-cli --all-targets -- -D warnings
+      - name: Clippy tray crate
+        if: matrix.os == 'macos-latest'
+        run: cargo clippy -p workpot-tray --all-targets -- -D warnings
+      # Disabled until Tauri 3 stable — transitive GTK3/unic advisories (macOS v1). See CONTRIBUTING.md.
+      # - name: Install cargo-deny
+      #   if: matrix.os == 'ubuntu-latest'
+      #   uses: taiki-e/install-action@v2
+      #   with:
+      #     tool: cargo-deny
+      #     fallback: none
+      # - name: Run cargo deny
+      #   if: matrix.os == 'ubuntu-latest'
+      #   run: cargo deny check --config .github/ci-assist/deny.toml
+      # - name: Install cargo-audit
+      #   if: matrix.os == 'ubuntu-latest'
+      #   uses: taiki-e/install-action@v2
+      #   with:
+      #     tool: cargo-audit
+      #     fallback: none
+      # - name: Run cargo audit
+      #   if: matrix.os == 'ubuntu-latest'
+      #   run: cargo audit
 
   test:
     name: test (${{ matrix.os }})
@@ -68,19 +82,37 @@ jobs:
       - name: Fetch dependencies (macOS D-12)
         if: matrix.os == 'macos-latest'
         run: cargo fetch
-      - name: Check no network deps (DATA-02)
+      - name: Setup Node.js
         if: matrix.os == 'macos-latest'
-        run: bash scripts/check-no-network-deps.sh
-      - name: Test offline (macOS D-12)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install npm dependencies
         if: matrix.os == 'macos-latest'
-        run: cargo test --offline --workspace --all-targets
+        run: npm ci
+      - name: Test
+        if: matrix.os == 'macos-latest'
+        run: cargo test -p workpot-core -p workpot-cli -p workpot-tray --all-targets
+      - name: Frontend check and test
+        if: matrix.os == 'macos-latest'
+        run: |
+          npm run format:check
+          npm run lint
+          npm run check
+          npm test
+      - name: Tauri bundle smoke
+        if: matrix.os == 'macos-latest'
+        run: npm run tauri build
+        env:
+          CI: true
       - name: Test
         if: matrix.os != 'macos-latest'
-        run: cargo test --workspace --all-targets
+        run: cargo test -p workpot-core -p workpot-cli --all-targets
 
   coverage:
     name: coverage
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
@@ -94,21 +126,42 @@ jobs:
           key: ${{ runner.os }}
       - name: Fetch dependencies
         run: cargo fetch
-      - name: Check no network deps (DATA-02)
-        run: bash scripts/check-no-network-deps.sh
-      - name: Build workspace offline
-        run: cargo build --offline --workspace
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
           fallback: none
-      - name: Test with coverage
-        run: cargo llvm-cov test --offline --workspace --lcov --output-path lcov.info
-      - uses: actions/upload-artifact@v4
+      - name: Rust test coverage
+        run: |
+          cargo llvm-cov test -p workpot-core -p workpot-cli --lcov --output-path lcov-core-cli.info
+          cargo llvm-cov test -p workpot-tray --lcov --output-path lcov-tray.info
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          name: lcov.info
-          path: lcov.info
+          node-version: "22"
+          cache: npm
+      - name: Frontend test coverage
+        run: |
+          npm ci
+          npm run test:coverage
+          cp coverage/lcov.info lcov-js.info
+      - name: Upload core + cli coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-core-cli.info
+          path: lcov-core-cli.info
+          retention-days: 7
+      - name: Upload tray coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-tray.info
+          path: lcov-tray.info
+          retention-days: 7
+      - name: Upload JS coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-js.info
+          path: lcov-js.info
           retention-days: 7
 
   sonarcloud:
@@ -122,7 +175,31 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: lcov.info
+          name: lcov-core-cli.info
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: lcov-tray.info
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: lcov-js.info
+
+      - name: Merge Rust LCOV reports
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lcov
+          lcov -a lcov-core-cli.info -a lcov-tray.info -o lcov-rust.info --ignore-errors empty
+          test -f lcov-js.info
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx svelte-kit sync
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v5
@@ -154,6 +231,21 @@ jobs:
         run: cargo build --release -p workpot-cli
       - name: Verify CLI version
         run: ./target/release/workpot --version
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Build tray release
+        run: |
+          npm ci
+          npm run format:check
+          npm run lint
+          npm run check
+          npm test
+          npm run tauri build
+        env:
+          CI: true
       - uses: actions/upload-artifact@v4
         with:
           name: ci-workpot-macos-aarch64

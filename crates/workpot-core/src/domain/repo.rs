@@ -17,4 +17,5 @@ pub struct RepoRecord {
     pub behind: Option<i64>,    // None = no upstream (D-04)
     pub git_refreshed_at: Option<i64>, // None = never refreshed (D-06)
     pub git_state_error: Option<String>, // last failure message (D-09)
+    pub last_opened_at: Option<i64>, // None = never opened from tray (D-25)
 }

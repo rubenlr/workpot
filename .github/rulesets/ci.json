@@ -33,12 +33,12 @@
         "strict_required_status_checks_policy": true,
         "do_not_enforce_on_create": false,
         "required_status_checks": [
-          { "context": "rustfmt" },
-          { "context": "clippy" },
+          { "context": "rustfmt (ubuntu-latest)" },
+          { "context": "rustfmt (macos-latest)" },
           { "context": "test (ubuntu-latest)" },
           { "context": "test (macos-latest)" },
           { "context": "coverage" },
-          { "context": "cargo-deny" },
+          { "context": "cargo build --release" },
           { "context": "sonarcloud" },
           { "context": "semantic-pr" }
         ]

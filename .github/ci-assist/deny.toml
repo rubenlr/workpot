@@ -1,3 +1,6 @@
+# Used when cargo-deny is re-enabled (target: stable Tauri 3).
+# [advisories].ignore below covers transitive Tauri 2 Linux GTK3 + unic until then.
+#
 # cargo-deny configuration.
 # Goal: reject GPL/AGPL transitive deps and pin to the official crates.io registry.
 
@@ -10,7 +13,25 @@ feature-depth = 1
 
 [advisories]
 version = 2
-ignore = []
+# Transitive Tauri / Linux tray stack (macOS v1 ships Tauri; no GTK upgrade path yet).
+ignore = [
+    "RUSTSEC-2024-0370",
+    "RUSTSEC-2024-0411",
+    "RUSTSEC-2024-0412",
+    "RUSTSEC-2024-0413",
+    "RUSTSEC-2024-0414",
+    "RUSTSEC-2024-0415",
+    "RUSTSEC-2024-0416",
+    "RUSTSEC-2024-0417",
+    "RUSTSEC-2024-0418",
+    "RUSTSEC-2024-0419",
+    "RUSTSEC-2024-0420",
+    "RUSTSEC-2025-0075",
+    "RUSTSEC-2025-0080",
+    "RUSTSEC-2025-0081",
+    "RUSTSEC-2025-0098",
+    "RUSTSEC-2025-0100",
+]
 
 [licenses]
 version = 2
@@ -19,6 +40,8 @@ allow = [
     "MIT",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "ISC",
     "Unlicense",
     "Unicode-3.0",
     "Zlib",

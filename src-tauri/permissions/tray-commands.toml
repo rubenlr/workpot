@@ -1,0 +1,19 @@
+[[permission]]
+identifier = "allow-list-repos"
+description = "Allows list_repos IPC."
+commands.allow = ["list_repos"]
+
+[[permission]]
+identifier = "allow-get-tray-config"
+description = "Allows get_tray_config IPC."
+commands.allow = ["get_tray_config"]
+
+[[permission]]
+identifier = "allow-refresh-all-git-state"
+description = "Allows refresh_all_git_state IPC."
+commands.allow = ["refresh_all_git_state"]
+
+[[permission]]
+identifier = "allow-open-in-cursor"
+description = "Allows open_in_cursor IPC."
+commands.allow = ["open_in_cursor"]

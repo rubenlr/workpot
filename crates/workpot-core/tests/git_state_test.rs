@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 use std::path::{Path, PathBuf};
 use workpot_core::domain::BRANCH_UNBORN;
 use workpot_core::services::git_state::refresh_git_state;
