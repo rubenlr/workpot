@@ -69,7 +69,6 @@
 
   $effect(() => {
     filterQuery;
-    flatVisible.length;
     selectedIndex = 0;
   });
 
@@ -510,12 +509,16 @@
                       {#each repo.tags as tag (tag)}
                         <TagChip
                           {tag}
-                          onRemove={() => {
-                            void invoke("remove_tag", {
-                              repoPath: repo.path,
-                              tag,
-                            });
-                            void loadRepos();
+                          onRemove={async () => {
+                            try {
+                              await invoke("remove_tag", {
+                                repoPath: repo.path,
+                                tag,
+                              });
+                              await refreshReposAndDetail();
+                            } catch (e) {
+                              error = String(e);
+                            }
                           }}
                           onFilter={() => appendTagFilter(tag)}
                         />
