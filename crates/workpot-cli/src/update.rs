@@ -5,10 +5,13 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 const RELEASE_API: &str = "https://api.github.com/repos/rubenlr/workpot/releases/latest";
 const CLI_ASSET_NAME: &str = "workpot-macos-aarch64.tar.gz";
 const CLI_CHECKSUM_NAME: &str = "workpot-macos-aarch64.tar.gz.sha256";
+const HTTP_CONNECT_TIMEOUT_SECS: u64 = 10;
+const HTTP_REQUEST_TIMEOUT_SECS: u64 = 120;
 
 #[derive(Debug, Clone, Copy)]
 pub struct UpdateArgs {
@@ -84,10 +87,7 @@ pub fn run_update(args: UpdateArgs) -> Result<()> {
         TargetKind::Tray => 1,
     });
 
-    println!(
-        "scope: {}",
-        if args.global { "global" } else { "user" }
-    );
+    println!("scope: {}", if args.global { "global" } else { "user" });
     println!(
         "targets: {}",
         targets
@@ -190,10 +190,9 @@ fn selected_targets(args: UpdateArgs, paths: &InstallPaths) -> Result<Vec<Target
         targets.push(TargetKind::Tray);
     }
     if targets.is_empty() {
-        return Err(UpdateFailed::install(
-            "nothing to update; install CLI and/or tray first",
-        )
-        .into());
+        return Err(
+            UpdateFailed::install("nothing to update; install CLI and/or tray first").into(),
+        );
     }
     Ok(targets)
 }
@@ -208,9 +207,7 @@ fn fetch_release_metadata() -> Result<Release> {
             .map_err(Into::into);
     }
 
-    let client = reqwest::blocking::Client::builder()
-        .build()
-        .map_err(|e| UpdateFailed::network(format!("failed to create HTTP client: {e}")))?;
+    let client = build_http_client()?;
     let response = client
         .get(RELEASE_API)
         .header(reqwest::header::USER_AGENT, "workpot-cli-update")
@@ -228,6 +225,14 @@ fn fetch_release_metadata() -> Result<Release> {
         .json::<Release>()
         .map_err(|e| UpdateFailed::network(format!("release metadata parse failed: {e}")))
         .map_err(Into::into)
+}
+
+fn build_http_client() -> Result<reqwest::blocking::Client> {
+    reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(HTTP_REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| UpdateFailed::network(format!("failed to create HTTP client: {e}")).into())
 }
 
 fn find_asset_url<'a>(release: &'a Release, name: &str) -> Result<&'a str> {
@@ -275,7 +280,10 @@ fn update_cli(release: &Release, latest: &str, paths: &InstallPaths) -> Result<U
         .parent()
         .ok_or_else(|| UpdateFailed::install("invalid CLI target path"))?;
     fs::create_dir_all(parent).map_err(|e| {
-        UpdateFailed::install(format!("failed to create CLI install dir {}: {e}", parent.display()))
+        UpdateFailed::install(format!(
+            "failed to create CLI install dir {}: {e}",
+            parent.display()
+        ))
     })?;
 
     let staged = parent.join(".workpot.new");
@@ -301,15 +309,12 @@ fn update_cli(release: &Release, latest: &str, paths: &InstallPaths) -> Result<U
 }
 
 fn update_tray(release: &Release, latest: &str, paths: &InstallPaths) -> Result<UpdateState> {
-    if tray_is_running()? {
-        return Err(UpdateFailed::install(
-            "quit Workpot first before updating tray app",
-        )
-        .into());
-    }
     let current = detect_tray_version(&paths.tray)?;
     if current.as_deref() == Some(latest) {
         return Ok(UpdateState::AlreadyCurrent);
+    }
+    if tray_is_running()? {
+        return Err(UpdateFailed::install("quit Workpot first before updating tray app").into());
     }
 
     let dmg_name = format!("Workpot-{latest}-aarch64.dmg");
@@ -351,7 +356,11 @@ fn update_tray(release: &Release, latest: &str, paths: &InstallPaths) -> Result<
     Ok(UpdateState::Updated)
 }
 
-fn download_verified_asset(release: &Release, asset_name: &str, checksum_name: &str) -> Result<VerifiedAsset> {
+fn download_verified_asset(
+    release: &Release,
+    asset_name: &str,
+    checksum_name: &str,
+) -> Result<VerifiedAsset> {
     let temp = tempfile::tempdir().context("failed to create temp dir")?;
     let asset_path = temp.path().join(asset_name);
     let checksum_path = temp.path().join(checksum_name);
@@ -365,10 +374,9 @@ fn download_verified_asset(release: &Release, asset_name: &str, checksum_name: &
 }
 
 fn detect_cli_version(path: &Path) -> Result<Option<String>> {
-    let output = Command::new(path)
-        .arg("--version")
-        .output()
-        .map_err(|e| UpdateFailed::install(format!("failed to execute CLI {}: {e}", path.display())))?;
+    let output = Command::new(path).arg("--version").output().map_err(|e| {
+        UpdateFailed::install(format!("failed to execute CLI {}: {e}", path.display()))
+    })?;
     if !output.status.success() {
         return Err(UpdateFailed::install(format!(
             "failed to read CLI version from {}",
@@ -389,9 +397,8 @@ fn detect_tray_version(path: &Path) -> Result<Option<String>> {
     if !plist.exists() {
         return Ok(None);
     }
-    let content = fs::read_to_string(&plist).map_err(|e| {
-        UpdateFailed::install(format!("failed to read {}: {e}", plist.display()))
-    })?;
+    let content = fs::read_to_string(&plist)
+        .map_err(|e| UpdateFailed::install(format!("failed to read {}: {e}", plist.display())))?;
     let marker = "<key>CFBundleShortVersionString</key>";
     if let Some(idx) = content.find(marker) {
         let tail = &content[idx + marker.len()..];
@@ -419,11 +426,9 @@ fn tray_is_running() -> Result<bool> {
 
 fn replace_app_bundle(source_app: &Path, target_app: &Path) -> Result<()> {
     if !source_app.exists() {
-        return Err(UpdateFailed::install(format!(
-            "mounted DMG missing {}",
-            source_app.display()
-        ))
-        .into());
+        return Err(
+            UpdateFailed::install(format!("mounted DMG missing {}", source_app.display())).into(),
+        );
     }
     let parent = target_app
         .parent()
@@ -479,7 +484,11 @@ fn download_to_path(url: &str, destination: &Path) -> Result<()> {
         })?;
         return Ok(());
     }
-    let mut response = reqwest::blocking::get(url)
+    let client = build_http_client()?;
+    let mut response = client
+        .get(url)
+        .header(reqwest::header::USER_AGENT, "workpot-cli-update")
+        .send()
         .map_err(|e| UpdateFailed::network(format!("asset download failed: {e}")))?;
     if !response.status().is_success() {
         return Err(UpdateFailed::network(format!(
@@ -499,14 +508,20 @@ fn download_to_path(url: &str, destination: &Path) -> Result<()> {
 
 fn verify_checksum(asset_path: &Path, checksum_path: &Path) -> Result<()> {
     let checksum = fs::read_to_string(checksum_path).map_err(|e| {
-        UpdateFailed::network(format!("failed to read checksum file {}: {e}", checksum_path.display()))
+        UpdateFailed::network(format!(
+            "failed to read checksum file {}: {e}",
+            checksum_path.display()
+        ))
     })?;
     let expected = checksum
         .split_whitespace()
         .next()
         .ok_or_else(|| UpdateFailed::network("checksum file missing hash value"))?;
     let bytes = fs::read(asset_path).map_err(|e| {
-        UpdateFailed::install(format!("failed to read downloaded asset {}: {e}", asset_path.display()))
+        UpdateFailed::install(format!(
+            "failed to read downloaded asset {}: {e}",
+            asset_path.display()
+        ))
     })?;
     let mut hasher = Sha256::new();
     hasher.update(bytes);
@@ -516,7 +531,83 @@ fn verify_checksum(asset_path: &Path, checksum_path: &Path) -> Result<()> {
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     if actual != expected {
-        return Err(UpdateFailed::install("checksum mismatch; leaving existing install untouched").into());
+        return Err(
+            UpdateFailed::install("checksum mismatch; leaving existing install untouched").into(),
+        );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn write_sha256_file(path: &Path, asset_name: &str, hash: &str) {
+        let mut file = fs::File::create(path).expect("checksum file");
+        writeln!(file, "{hash}  {asset_name}").expect("checksum line");
+    }
+
+    #[test]
+    fn verify_checksum_accepts_matching_hash() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let asset = dir.path().join("asset.bin");
+        fs::write(&asset, b"payload").expect("asset");
+        let digest = {
+            let mut hasher = Sha256::new();
+            hasher.update(b"payload");
+            hasher
+                .finalize()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        };
+        let checksum = dir.path().join("asset.bin.sha256");
+        write_sha256_file(&checksum, "asset.bin", &digest);
+        verify_checksum(&asset, &checksum).expect("matching checksum should pass");
+    }
+
+    #[test]
+    fn verify_checksum_rejects_mismatch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let asset = dir.path().join("asset.bin");
+        fs::write(&asset, b"payload").expect("asset");
+        let checksum = dir.path().join("asset.bin.sha256");
+        write_sha256_file(
+            &checksum,
+            "asset.bin",
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        );
+        let err = verify_checksum(&asset, &checksum).expect_err("mismatch should fail");
+        assert!(
+            err.to_string().contains("checksum mismatch"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn find_asset_url_resolves_named_asset() {
+        let release = Release {
+            tag_name: "v1.2.3".to_string(),
+            assets: vec![Asset {
+                name: "workpot-macos-aarch64.tar.gz".to_string(),
+                browser_download_url: "file:///tmp/workpot.tar.gz".to_string(),
+            }],
+        };
+        let url = find_asset_url(&release, "workpot-macos-aarch64.tar.gz").expect("asset url");
+        assert_eq!(url, "file:///tmp/workpot.tar.gz");
+    }
+
+    #[test]
+    fn find_asset_url_errors_when_asset_missing() {
+        let release = Release {
+            tag_name: "v1.2.3".to_string(),
+            assets: vec![],
+        };
+        let err = find_asset_url(&release, "missing.tar.gz").expect_err("missing asset");
+        assert!(
+            err.to_string().contains("missing release asset"),
+            "unexpected error: {err}"
+        );
+    }
 }

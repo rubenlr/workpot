@@ -45,12 +45,7 @@ fn write_cli_install(home: &Path, version: &str, global: bool) -> PathBuf {
     path
 }
 
-fn write_tray_install(home: &Path, version: &str, global: bool) -> PathBuf {
-    let path = if global {
-        home.join("global-apps").join("Workpot.app")
-    } else {
-        home.join("Applications").join("Workpot.app")
-    };
+fn write_tray_bundle(path: &Path, version: &str) {
     let plist_path = path.join("Contents").join("Info.plist");
     fs::create_dir_all(plist_path.parent().expect("plist parent")).expect("mkdir plist");
     fs::write(
@@ -68,10 +63,24 @@ fn write_tray_install(home: &Path, version: &str, global: bool) -> PathBuf {
         ),
     )
     .expect("write plist");
+}
+
+fn write_tray_install(home: &Path, version: &str, global: bool) -> PathBuf {
+    let path = if global {
+        home.join("global-apps").join("Workpot.app")
+    } else {
+        home.join("Applications").join("Workpot.app")
+    };
+    write_tray_bundle(&path, version);
     path
 }
 
-fn write_release_fixture(root: &Path, version: &str, cli_payload: &[u8], bad_checksum: bool) -> PathBuf {
+fn write_release_fixture(
+    root: &Path,
+    version: &str,
+    cli_payload: &[u8],
+    bad_checksum: bool,
+) -> PathBuf {
     fs::create_dir_all(root).expect("fixture dir");
     let cli_asset = root.join("workpot-macos-aarch64.tar.gz");
     let payload_dir = root.join("cli-payload");
@@ -108,10 +117,12 @@ fn write_release_fixture(root: &Path, version: &str, cli_payload: &[u8], bad_che
     )
     .expect("write cli checksum");
 
-    fs::write(root.join(format!("Workpot-{version}-aarch64.dmg")), b"fake-dmg").expect("write dmg");
+    let dmg_asset = root.join(format!("Workpot-{version}-aarch64.dmg"));
+    fs::write(&dmg_asset, b"fake-dmg").expect("write dmg");
+    let dmg_sha = cli_sha256(&dmg_asset);
     fs::write(
         root.join(format!("Workpot-{version}-aarch64.dmg.sha256")),
-        "fakedmgchecksum000000000000000000000000000000000000000000000000000000  Workpot.dmg\n",
+        format!("{dmg_sha}  Workpot-{version}-aarch64.dmg\n"),
     )
     .expect("write dmg checksum");
 
@@ -140,8 +151,10 @@ fn write_release_fixture(root: &Path, version: &str, cli_payload: &[u8], bad_che
 "#,
         cli_asset.display(),
         root.join("workpot-macos-aarch64.tar.gz.sha256").display(),
-        root.join(format!("Workpot-{version}-aarch64.dmg")).display(),
-        root.join(format!("Workpot-{version}-aarch64.dmg.sha256")).display(),
+        root.join(format!("Workpot-{version}-aarch64.dmg"))
+            .display(),
+        root.join(format!("Workpot-{version}-aarch64.dmg.sha256"))
+            .display(),
     );
 
     let release = root.join("release.json");
@@ -195,19 +208,26 @@ fn only_flags_and_global_are_deterministic() {
         .env("WORKPOT_UPDATE_TEST_RELEASE_JSON", &release_json)
         .assert()
         .success()
-        .stdout(predicate::str::contains("targets: cli").and(predicate::str::contains("tray").not()));
+        .stdout(
+            predicate::str::contains("targets: cli").and(predicate::str::contains("tray").not()),
+        );
 
     workpot_cmd(home.path())
         .args(["update", "--only-tray"])
         .env("WORKPOT_UPDATE_TEST_RELEASE_JSON", &release_json)
         .assert()
         .success()
-        .stdout(predicate::str::contains("targets: tray").and(predicate::str::contains("cli").not()));
+        .stdout(
+            predicate::str::contains("targets: tray").and(predicate::str::contains("cli").not()),
+        );
 
     workpot_cmd(home.path())
         .args(["update", "--global", "--only-cli"])
         .env("WORKPOT_UPDATE_TEST_RELEASE_JSON", &release_json)
-        .env("WORKPOT_UPDATE_TEST_GLOBAL_CLI_PATH", home.path().join("global-bin").join("workpot"))
+        .env(
+            "WORKPOT_UPDATE_TEST_GLOBAL_CLI_PATH",
+            home.path().join("global-bin").join("workpot"),
+        )
         .env(
             "WORKPOT_UPDATE_TEST_GLOBAL_TRAY_PATH",
             home.path().join("global-apps").join("Workpot.app"),
@@ -233,6 +253,22 @@ fn already_current_is_exit_zero_without_download() {
 }
 
 #[test]
+fn already_current_tray_with_running_app_still_exits_zero() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let fixtures = release_fixture_dir(home.path());
+    let release_json = write_release_fixture(&fixtures, "0.0.1", b"fake-cli-tar", false);
+    write_tray_install(home.path(), "0.0.1", false);
+
+    workpot_cmd(home.path())
+        .arg("update")
+        .env("WORKPOT_UPDATE_TEST_RELEASE_JSON", &release_json)
+        .env("WORKPOT_UPDATE_TEST_RUNNING_TRAY", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("already up to date"));
+}
+
+#[test]
 fn network_and_install_failures_map_to_distinct_exit_codes() {
     let home = tempfile::tempdir().expect("tempdir");
     write_cli_install(home.path(), "0.0.0", false);
@@ -240,7 +276,10 @@ fn network_and_install_failures_map_to_distinct_exit_codes() {
 
     workpot_cmd(home.path())
         .arg("update")
-        .env("WORKPOT_UPDATE_TEST_RELEASE_JSON", home.path().join("missing.json"))
+        .env(
+            "WORKPOT_UPDATE_TEST_RELEASE_JSON",
+            home.path().join("missing.json"),
+        )
         .assert()
         .code(2)
         .stderr(predicate::str::contains("release metadata"));
@@ -272,5 +311,59 @@ fn checksum_mismatch_fails_closed_and_preserves_install() {
         .stderr(predicate::str::contains("checksum mismatch"));
 
     let after = fs::read(&installed).expect("read after");
-    assert_eq!(before, after, "installer must preserve current binary on failure");
+    assert_eq!(
+        before, after,
+        "installer must preserve current binary on failure"
+    );
+}
+
+#[test]
+fn cli_update_replaces_binary_when_newer_release_is_available() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let fixtures = release_fixture_dir(home.path());
+    let release_json = write_release_fixture(&fixtures, "0.0.1", b"fake-cli-tar", false);
+    let cli_install = write_cli_install(home.path(), "0.0.0", false);
+
+    workpot_cmd(home.path())
+        .args(["update", "--only-cli"])
+        .env("WORKPOT_UPDATE_TEST_RELEASE_JSON", &release_json)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("update complete"));
+
+    let version_out = StdCommand::new(&cli_install)
+        .arg("--version")
+        .output()
+        .expect("run updated cli");
+    assert!(version_out.status.success());
+    let stdout = String::from_utf8_lossy(&version_out.stdout);
+    assert!(
+        stdout.contains("0.0.1"),
+        "CLI should report updated version, got: {stdout}"
+    );
+}
+
+#[test]
+fn tray_update_replaces_app_when_newer_release_is_available() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let fixtures = release_fixture_dir(home.path());
+    let release_json = write_release_fixture(&fixtures, "0.0.1", b"fake-cli-tar", false);
+    let tray_install = write_tray_install(home.path(), "0.0.0", false);
+    let source_app = home.path().join("source").join("Workpot.app");
+    write_tray_bundle(&source_app, "0.0.1");
+
+    workpot_cmd(home.path())
+        .args(["update", "--only-tray"])
+        .env("WORKPOT_UPDATE_TEST_RELEASE_JSON", &release_json)
+        .env("WORKPOT_UPDATE_TEST_TRAY_APP_SOURCE", &source_app)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("update complete"));
+
+    let plist = fs::read_to_string(tray_install.join("Contents").join("Info.plist"))
+        .expect("read tray plist");
+    assert!(
+        plist.contains("<string>0.0.1</string>"),
+        "tray app should be replaced with newer version"
+    );
 }

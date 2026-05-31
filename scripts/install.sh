@@ -3,6 +3,8 @@ set -euo pipefail
 
 DEFAULT_REPO="rubenlr/workpot"
 DEFAULT_API_BASE="https://api.github.com"
+CURL_CONNECT_TIMEOUT="${WORKPOT_CURL_CONNECT_TIMEOUT:-10}"
+CURL_MAX_TIME="${WORKPOT_CURL_MAX_TIME:-120}"
 
 CLI_ASSET_NAME="workpot-macos-aarch64.tar.gz"
 CLI_CHECKSUM_NAME="${CLI_ASSET_NAME}.sha256"
@@ -76,13 +78,24 @@ run_with_sudo_if_needed() {
 }
 
 parse_args() {
+  local selected_target="both"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --only-cli)
+        if [[ "$selected_target" == "tray" ]]; then
+          err "--only-cli and --only-tray are mutually exclusive"
+          exit 1
+        fi
+        selected_target="cli"
         INSTALL_CLI=true
         INSTALL_TRAY=false
         ;;
       --only-tray)
+        if [[ "$selected_target" == "cli" ]]; then
+          err "--only-cli and --only-tray are mutually exclusive"
+          exit 1
+        fi
+        selected_target="tray"
         INSTALL_CLI=false
         INSTALL_TRAY=true
         ;;
@@ -103,6 +116,13 @@ parse_args() {
   done
 }
 
+curl_fetch() {
+  curl -fsSL \
+    --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+    --max-time "$CURL_MAX_TIME" \
+    "$@"
+}
+
 verify_macos() {
   if [[ "$(uname -s)" != "Darwin" ]]; then
     err "this installer currently supports macOS only"
@@ -119,7 +139,7 @@ fetch_latest_release_json() {
     return
   fi
 
-  curl -fsSL \
+  curl_fetch \
     -H "Accept: application/vnd.github+json" \
     "${api_base}/repos/${repo}/releases/latest"
 }
@@ -132,18 +152,10 @@ asset_url_by_name() {
   ' | head -n 1
 }
 
-asset_url_by_pattern() {
-  local release_json="$1"
-  local pattern="$2"
-  printf '%s' "$release_json" | jq -r --arg pattern "$pattern" '
-    .assets[] | select(.name | test($pattern)) | .browser_download_url
-  ' | head -n 1
-}
-
 download_file() {
   local url="$1"
   local output="$2"
-  curl -fsSL "$url" -o "$output"
+  curl_fetch -o "$output" "$url"
 }
 
 verify_sha256() {
@@ -191,11 +203,20 @@ stage_tray_app() {
   local stage_root="$2"
   local mount_point="${stage_root}/dmg-mount"
   local staged_app="${stage_root}/Workpot.app"
+  local mounted=false
+
+  cleanup_mount() {
+    if [[ "$mounted" == true ]]; then
+      hdiutil detach "$mount_point" -quiet >/dev/null 2>&1 || true
+    fi
+    trap - RETURN
+  }
+  trap cleanup_mount RETURN
 
   mkdir -p "$mount_point"
   hdiutil attach "$dmg_file" -mountpoint "$mount_point" -nobrowse -quiet
+  mounted=true
   cp -R "${mount_point}/Workpot.app" "$staged_app"
-  hdiutil detach "$mount_point" -quiet
 
   if [[ ! -d "$staged_app" ]]; then
     err "failed to stage Workpot.app from DMG"
@@ -219,11 +240,33 @@ install_tray_app() {
   local staged_app="$1"
   local target_app_path="$2"
   local target_parent
+  local staged_target
+  local backup_target
+  local had_existing=false
   target_parent="$(dirname "$target_app_path")"
+  staged_target="${target_parent}/.Workpot.app.new.$$"
+  backup_target="${target_parent}/.Workpot.app.backup.$$"
 
   run_with_sudo_if_needed "$target_parent" mkdir -p "$target_parent"
-  run_with_sudo_if_needed "$target_app_path" rm -rf "$target_app_path"
-  run_with_sudo_if_needed "$target_parent" cp -R "$staged_app" "$target_app_path"
+  run_with_sudo_if_needed "$target_parent" rm -rf "$staged_target" "$backup_target"
+  run_with_sudo_if_needed "$target_parent" cp -R "$staged_app" "$staged_target"
+
+  if [[ -e "$target_app_path" ]]; then
+    had_existing=true
+    run_with_sudo_if_needed "$target_parent" mv "$target_app_path" "$backup_target"
+  fi
+
+  if ! run_with_sudo_if_needed "$target_parent" mv "$staged_target" "$target_app_path"; then
+    if [[ "$had_existing" == true ]]; then
+      run_with_sudo_if_needed "$target_parent" mv "$backup_target" "$target_app_path" || true
+    fi
+    err "failed to install tray app at ${target_app_path}"
+    exit 1
+  fi
+
+  if [[ "$had_existing" == true && -e "$backup_target" ]]; then
+    run_with_sudo_if_needed "$target_parent" rm -rf "$backup_target" || true
+  fi
 }
 
 print_next_steps() {
@@ -300,14 +343,15 @@ main() {
   fi
 
   if [[ "$INSTALL_TRAY" == true ]]; then
-    local dmg_name_pattern='^Workpot-.*-aarch64\.dmg$'
-    local dmg_checksum_name_pattern='^Workpot-.*-aarch64\.dmg\.sha256$'
+    local release_version="${release_tag#v}"
+    local dmg_asset_name="Workpot-${release_version}-aarch64.dmg"
+    local dmg_checksum_asset_name="${dmg_asset_name}.sha256"
     local dmg_url
     local dmg_checksum_url
-    dmg_url="$(asset_url_by_pattern "$release_json" "$dmg_name_pattern")"
-    dmg_checksum_url="$(asset_url_by_pattern "$release_json" "$dmg_checksum_name_pattern")"
+    dmg_url="$(asset_url_by_name "$release_json" "$dmg_asset_name")"
+    dmg_checksum_url="$(asset_url_by_name "$release_json" "$dmg_checksum_asset_name")"
     if [[ -z "$dmg_url" || -z "$dmg_checksum_url" ]]; then
-      err "latest release is missing DMG assets (Workpot-<version>-aarch64.dmg + .sha256)"
+      err "latest release is missing DMG assets (${dmg_asset_name} + ${dmg_checksum_asset_name})"
       exit 1
     fi
 

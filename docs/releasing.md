@@ -59,12 +59,12 @@ When a PR changes `version` or `CHANGELOG.md`, CI runs `scripts/check-release-pr
 
 ## Artifacts per release
 
-| Artifact                            | Runner         | Contents                                  |
-| ----------------------------------- | -------------- | ----------------------------------------- |
-| `workpot-macos-aarch64.tar.gz`      | `macos-latest` | `workpot` binary, `README.md`, `LICENSE` |
+| Artifact                              | Runner         | Contents                                 |
+| ------------------------------------- | -------------- | ---------------------------------------- |
+| `workpot-macos-aarch64.tar.gz`        | `macos-latest` | `workpot` binary, `README.md`, `LICENSE` |
 | `workpot-macos-aarch64.tar.gz.sha256` | `macos-latest` | SHA-256 checksum for CLI tarball         |
-| `Workpot-X.Y.Z-aarch64.dmg`         | `macos-latest` | Drag-installable Workpot app bundle       |
-| `Workpot-X.Y.Z-aarch64.dmg.sha256`  | `macos-latest` | SHA-256 checksum for DMG                  |
+| `Workpot-X.Y.Z-aarch64.dmg`           | `macos-latest` | Drag-installable Workpot app bundle      |
+| `Workpot-X.Y.Z-aarch64.dmg.sha256`    | `macos-latest` | SHA-256 checksum for DMG                 |
 
 ## Signing and notarization policy
 
@@ -104,9 +104,9 @@ If any of these three disagree on tag or artifact names, treat the release as fa
 | ------------ | ----------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------- |
 | **PR**       | [release-smoke.yml](../.github/workflows/release-smoke.yml) on release-path changes | aarch64-only tarball + DMG names/checksums match contract | Tag, GitHub Release |
 | **PR**       | [ci.yml](../.github/workflows/ci.yml) `release-build`                               | Fast compile + `--version` on aarch64                     | Release assets      |
-| **PR**       | `release-check` (when bumping version)                                              | Version sync + changelog               | Tag                 |
-| **master**   | Push with increased `version`                                                       | Tag + GitHub Release + artifact upload | —                   |
-| **Recovery** | `workflow_dispatch` on `release.yml`                                                | Re-upload artifacts for existing tag   | New version         |
+| **PR**       | `release-check` (when bumping version)                                              | Version sync + changelog                                  | Tag                 |
+| **master**   | Push with increased `version`                                                       | Tag + GitHub Release + artifact upload                    | —                   |
+| **Recovery** | `workflow_dispatch` on `release.yml`                                                | Re-upload artifacts for existing tag                      | New version         |
 
 ### PR smoke (`dry_run`)
 

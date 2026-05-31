@@ -262,6 +262,24 @@ test_global_install() {
   pass "--global uses global cli path"
 }
 
+test_conflicting_only_flags() {
+  local base="$1"
+  local home_dir="${base}/home-conflict"
+  local fixture="${base}/fixture-conflict"
+  mkdir -p "$home_dir"
+  local release_json
+  release_json="$(create_release_fixture "$fixture" "9.9.9-smoke")"
+
+  set +e
+  HOME="$home_dir" WORKPOT_RELEASE_JSON="$(cat "$release_json")" \
+    bash "$INSTALLER" --only-cli --only-tray >/dev/null 2>&1
+  local exit_code=$?
+  set -e
+
+  [[ "$exit_code" -ne 0 ]] || fail "conflicting --only-* flags should fail non-zero"
+  pass "conflicting --only-cli and --only-tray are rejected"
+}
+
 test_checksum_failure() {
   local base="$1"
   local version="$2"
@@ -293,6 +311,7 @@ main() {
   test_only_cli "$workspace" "$version"
   test_only_tray "$workspace" "$version"
   test_global_install "$workspace" "$version"
+  test_conflicting_only_flags "$workspace"
   test_checksum_failure "$workspace" "$version"
 
   pass "all install smoke checks passed"
