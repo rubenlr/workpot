@@ -15,7 +15,7 @@
 | 2 | Repo discovery | 5/5 | Complete |
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
 | 4 | 4/4 | Complete |
-| 5 | Tags & prioritization | 4/4 | Complete (2026-05-31) |
+| 5 | Tags & prioritization | 4/4 | In progress (UAT gap 05-09) |
 | 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
 | 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
 
@@ -174,7 +174,7 @@ Plans:
 3. Dirty and recently opened repos rank higher than stale clean repos
 4. User can save notes on a repo and search matches note text
 
-**Plans:** 8/8 plans executed (2026-05-31)
+**Plans:** 8/9 plans (gap closure 05-09 pending)
 
 Plans:
 **Wave 0**
@@ -199,6 +199,10 @@ Plans:
 **Wave 4** *(gap closure — UAT IPC blocked; blocked on 05-04 + 05-06)*
 
 - [x] 05-08-PLAN.md — Tauri capabilities: allow-org-commands for Phase 5 IPC (ORG-01..04, 05-HUMAN-UAT) (2026-05-31)
+
+**Wave 5** *(gap closure — tag save/edit UAT)*
+
+- [ ] 05-09-PLAN.md — Tray tag persistence: refresh allTags, blur-save, duplicate feedback, context menu remove (ORG-01)
 
 ---
 

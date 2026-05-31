@@ -2,7 +2,7 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to plan
+status: Ready to execute
 last_updated: "2026-05-31T12:00:00Z"
 progress:
   total_phases: 7
@@ -20,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 06 — CLI parity
+**Current focus:** Phase 05 — gap plan 05-09 (tag save/edit UAT)
 
 ## Phase Status
 
@@ -30,13 +30,13 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 2 | Repo discovery | Complete — 5/5 plans (2026-05-29) |
 | 3 | Git state | Complete — 3/3 plans, UAT 10/10 (2026-05-30) |
 | 4 | Tray finder MVP | Complete — 4/4 plans (2026-05-30) |
-| 5 | Tags & prioritization | Complete — 8/8 plans, UAT 4/4 (2026-05-31) |
+| 5 | Tags & prioritization | Gap closure — 05-09 pending (UAT: tags not saved) |
 | 6 | CLI parity | Not started |
 | 7 | Recipes | Not started |
 
 ## Session Notes
 
-- Phase 5 complete (2026-05-31): UAT 4/4 after 05-08 ACL; verification `passed`
+- Phase 5 gap 05-09 (2026-05-31): UAT reports tags not saved/edited — plan created
 - Phase 5 plan 05-08 (2026-05-31): `allow-org-commands` — commits `1070e7a`, `ffd36e4`
 - Phase 5 plan 05-06 (2026-05-31): +page.svelte four-section tray, detail pane, tags, context menu, pin reorder; commit `ac9ac08`
 - Phase 5 plan 05-07 (2026-05-31): CLI `workpot tag` add/remove/list; commit `6ac7b8e`

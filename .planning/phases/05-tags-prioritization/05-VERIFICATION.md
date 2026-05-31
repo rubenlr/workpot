@@ -1,7 +1,7 @@
 ---
 phase: 05-tags-prioritization
 verified: 2026-05-31T12:00:00Z
-status: passed
+status: human_needed
 score: 4/4 roadmap truths verified
 decision_coverage:
   honored: 29
@@ -19,9 +19,9 @@ deferred:
 
 **Verified:** 2026-05-31T11:15:00Z
 
-**Status:** passed
+**Status:** human_needed
 
-**Re-verification:** Yes — after 05-08 ACL gap closure and human UAT (4/4)
+**Re-verification:** Pending — UAT gap (tags not saved/edited); fix plan 05-09
 
 ## Goal Achievement
 
@@ -119,7 +119,7 @@ Completed via `05-HUMAN-UAT.md` (4/4 passed, 2026-05-31) after plan 05-08 `allow
 
 ## Gaps Summary
 
-**No gaps.** Automated verification and human UAT both passed.
+**UAT gap (2026-05-31):** Tags not persisting visibly in tray after add (detail pane / context menu). Gap plan: `05-09-PLAN.md`.
 
 ## Verification Metadata
 
