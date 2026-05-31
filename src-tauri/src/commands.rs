@@ -223,7 +223,17 @@ pub fn set_pin_order(
 }
 
 #[tauri::command]
-pub async fn list_branches(repo_path: String) -> Result<Vec<String>, String> {
+pub async fn list_branches(
+    repo_path: String,
+    state: State<'_, Arc<Mutex<AppContext>>>,
+) -> Result<Vec<String>, String> {
+    {
+        let ctx = state
+            .lock()
+            .map_err(|_| "AppContext lock poisoned".to_string())?;
+        ctx.indexed_launch_path(Path::new(&repo_path))
+            .map_err(|e| e.to_string())?;
+    }
     tauri::async_runtime::spawn_blocking(move || list_branches_sync(&repo_path))
         .await
         .map_err(|e| e.to_string())?
