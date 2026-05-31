@@ -8,7 +8,7 @@ progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 23
-  completed_plans: 22
+  completed_plans: 23
   percent: 57
 ---
 
@@ -30,12 +30,13 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 2 | Repo discovery | Complete — 5/5 plans (2026-05-29) |
 | 3 | Git state | Complete — 3/3 plans, UAT 10/10 (2026-05-30) |
 | 4 | Tray finder MVP | Complete — 4/4 plans (2026-05-30) |
-| 5 | Tags & prioritization | In progress — 6/7 plans |
+| 5 | Tags & prioritization | In progress — 7/7 plans (UAT checkpoint pending 05-06) |
 | 6 | CLI parity | Not started |
 | 7 | Recipes | Not started |
 
 ## Session Notes
 
+- Phase 5 plan 05-06 (2026-05-31): +page.svelte four-section tray, detail pane, tags, context menu, pin reorder; commit `ac9ac08` — human UAT checkpoint open
 - Phase 5 plan 05-07 (2026-05-31): CLI `workpot tag` add/remove/list, repo resolution, add validation; commit `6ac7b8e`
 - Phase 5 plan 05-04 (2026-05-31): Tauri org IPC, RepoDto fields, context menu event, tray config org keys; commits `abfe95c`, `a7aa876`
 - Phase 5 plan 05-05 (2026-05-31): DetailPane, TagChip, TagAutocomplete, SectionHeader; commits `b50fa4d`, `f4d65f5`, `c97f574`

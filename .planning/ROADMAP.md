@@ -193,7 +193,7 @@ Plans:
 
 **Wave 3** *(parallel — no shared files)*
 
-- [ ] 05-06-PLAN.md — +page.svelte: four-section list, detail pane nav, drag-to-reorder, context menu, #tag autocomplete (ORG-01,02,03,04)
+- [x] 05-06-PLAN.md — +page.svelte: four-section list, detail pane nav, drag-to-reorder, context menu, #tag autocomplete (ORG-01,02,03,04) — UAT checkpoint pending
 - [x] 05-07-PLAN.md — CLI: workpot tag add/remove/list subcommand (ORG-01)
 
 ---
