@@ -18,7 +18,7 @@
 | 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
 | 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
 | 06.1 | Release & distribution *(INSERTED)* | 3/3 | Complete   | 2026-05-31 |
-| 06.2 | Tray UX polish *(INSERTED)* | Icons, panel chrome, alias, interaction | — | 8 |
+| 06.2 | Tray UX polish *(INSERTED)* | Icons, panel chrome, alias, interaction | — | 9 |
 
 ---
 
@@ -289,7 +289,7 @@ Plans:
 7. Storybook documents list-row and detail-header visual states (same milestone; not a merge gate for interaction fixes)
 8. Automated tests cover stale-dirty tray logic and alias in core/CLI fuzzy where applicable
 
-**Plans:** 8 plans
+**Plans:** 9 plans
 
 Plans:
 **Wave 1** *(parallel — no shared files)*
@@ -303,11 +303,12 @@ Plans:
 - [ ] 06.2-04-PLAN.md — Tray interaction model + icon state machine (click handlers, bare-branch, info badge, stale-dirty/syncing icons)
 - [ ] 06.2-05-PLAN.md — CLI alias display parity (format_list_row alias-first + branch omission, search/open display)
 - [ ] 06.2-06-PLAN.md — Visual polish + input hardening (panel chrome CSS, detail header pin toggle, tag/notes attributes)
+- [ ] 06.2-08-PLAN.md — Interaction test stub / RED gate (RepoListRow.test.ts — sampling continuity before Plans 05/06 complete)
 
 **Wave 3** *(depends on Wave 2)*
 
-- [ ] 06.2-07-PLAN.md — Storybook scaffold + RepoListRow component + stories (non-gating)
-- [ ] 06.2-08-PLAN.md — Integration + E2E tests (CLI alias, bare-branch, row interaction, Vitest)
+- [ ] 06.2-07-PLAN.md — Storybook scaffold + RepoListRow component + stories (non-gating; human checkpoint for package installs)
+- [ ] 06.2-09-PLAN.md — Integration + E2E tests, GREEN phase (CLI alias/bare-branch, row interaction Vitest, has_stale_dirty_dto bridge)
 
 ## Backlog
 
@@ -347,7 +348,7 @@ Plans:
 | 5 | Not started | 0/0 |
 | 6 | Not started | 0/0 |
 | 06.1 | Not started | 0/0 |
-| 06.2 | Not started | 0/8 |
+| 06.2 | Not started | 0/9 |
 
 ---
 *Roadmap created: 2026-05-28*
