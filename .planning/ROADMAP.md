@@ -174,7 +174,27 @@ Plans:
 3. Dirty and recently opened repos rank higher than stale clean repos
 4. User can save notes on a repo and search matches note text
 
-**Plans:** TBD via `/gsd-plan-phase 5`
+**Plans:** 7 plans
+
+Plans:
+**Wave 0**
+
+- [ ] 05-01-PLAN.md — Test stubs: org_test.rs, tagFilter.ts+test, pinOrder.ts+test (ORG-01,02,04)
+
+**Wave 1** *(parallel — no shared files)*
+
+- [ ] 05-02-PLAN.md — Migration 006, FK pragma, RepoRecord+Config extension, org.rs service, AppContext delegation, catalog JOIN (ORG-01,02,03,04)
+- [ ] 05-03-PLAN.md — TypeScript: RepoDto extension, sectionSort, fuzzy notes+tags, filterAndSectionRepos (ORG-01,02,03,04)
+
+**Wave 2** *(parallel — no shared files)*
+
+- [ ] 05-04-PLAN.md — Tauri IPC commands: set_tags, set_notes, set_pin, set_pin_order, list_branches, show_repo_context_menu (ORG-01,02,03,04)
+- [ ] 05-05-PLAN.md — Svelte components: DetailPane, TagChip, TagAutocomplete, SectionHeader (ORG-01,02,03,04)
+
+**Wave 3** *(parallel — no shared files)*
+
+- [ ] 05-06-PLAN.md — +page.svelte: four-section list, detail pane nav, drag-to-reorder, context menu, #tag autocomplete (ORG-01,02,03,04)
+- [ ] 05-07-PLAN.md — CLI: workpot tag add/remove/list subcommand (ORG-01)
 
 ---
 
