@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Phase 05 shipped — PR #4
-last_updated: "2026-05-31T14:00:00Z"
+status: "Phase 05 shipped — PR #4"
+last_updated: "2026-05-31T14:44:43.416Z"
 progress:
   total_phases: 7
   completed_phases: 5
-  total_plans: 24
-  completed_plans: 24
+  total_plans: 30
+  completed_plans: 25
   percent: 71
 ---
 
@@ -20,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 06 — CLI parity (PR #4 in review)
+**Current focus:** Phase 06 — cli-parity
 
 ## Phase Status
 

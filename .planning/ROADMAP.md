@@ -16,7 +16,7 @@
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
 | 4 | 4/4 | Complete |
 | 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
-| 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
+| 6 | CLI parity | 2/5 | In Progress|  |
 | 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
 
 ---
@@ -220,12 +220,12 @@ Plans:
 2. `workpot search <query>` returns the same results as tray filter
 3. `workpot open <name|path>` opens Cursor for the matched repo
 
-**Plans:** 5 plans in 3 waves
+**Plans:** 2/5 plans executed
 
 **Wave 1** *(parallel — no shared files)*
 
-- [ ] 06-01-PLAN.md — Core `repo_priority`: section sort + flat tray order (CLI-01, CLI-03)
-- [ ] 06-02-PLAN.md — Core `repo_fuzzy`: port tray fuzzy matcher (CLI-02, CLI-03)
+- [x] 06-01-PLAN.md — Core `repo_priority`: section sort + flat tray order (CLI-01, CLI-03)
+- [x] 06-02-PLAN.md — Core `repo_fuzzy`: port tray fuzzy matcher (CLI-02, CLI-03)
 
 **Wave 2** *(parallel — depends on 06-01)*
 
