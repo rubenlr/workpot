@@ -283,9 +283,10 @@ fn run_repo(sub: RepoCommands) -> anyhow::Result<()> {
             let ctx = AppContext::open().context("failed to open workpot")?;
             let repos = ctx.list_repos().context("repo list failed")?;
             for repo in repos {
+                let display_name = repo.alias.as_deref().unwrap_or(&repo.name);
                 println!(
                     "{}  {}  {}",
-                    repo.name,
+                    display_name,
                     repo.path.display(),
                     format_git_state(&repo)
                 );
@@ -391,6 +392,23 @@ fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result
             .map(|r| r.path.display().to_string())
     {
         return Ok(path_key);
+    }
+
+    let alias_matches: Vec<&RepoRecord> = repos
+        .iter()
+        .filter(|r| r.alias.as_deref() == Some(identifier))
+        .collect();
+    match alias_matches.len() {
+        0 => {}
+        1 => return Ok(alias_matches[0].path.display().to_string()),
+        _ => {
+            let mut msg = format!("error: ambiguous repo alias '{identifier}'; matches:\n");
+            for (i, r) in alias_matches.iter().enumerate() {
+                msg.push_str(&format!("{}. {}\n", i + 1, r.path.display()));
+            }
+            msg.push_str("use the full path from 'workpot list'");
+            return Err(anyhow::anyhow!("{msg}"));
+        }
     }
 
     let matches: Vec<&RepoRecord> = repos.iter().filter(|r| r.name == identifier).collect();
