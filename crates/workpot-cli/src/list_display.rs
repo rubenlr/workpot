@@ -32,15 +32,14 @@ pub fn priority_icon(section: PrioritySection) -> &'static str {
 pub fn shorten_parent_dir(path: &Path) -> String {
     let parent = path.parent().unwrap_or(path);
     let home = home_dir();
-    if let Some(ref h) = home {
-        if let Ok(stripped) = parent.strip_prefix(h) {
+    if let Some(ref h) = home
+        && let Ok(stripped) = parent.strip_prefix(h) {
             let tail = stripped.to_string_lossy();
             if tail.is_empty() {
                 return "~".to_string();
             }
             return format!("~/{tail}");
         }
-    }
     parent.to_string_lossy().into_owned()
 }
 
