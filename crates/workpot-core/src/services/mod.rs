@@ -9,3 +9,4 @@ pub mod paths;
 pub mod repo_fuzzy;
 pub mod repo_priority;
 pub mod roots;
+pub mod stale_dirty;
