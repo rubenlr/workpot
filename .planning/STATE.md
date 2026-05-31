@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-last_updated: "2026-05-31T17:25:32.558Z"
+last_updated: "2026-05-31T17:47:23.150Z"
 progress:
   total_phases: 9
   completed_phases: 6
-  total_plans: 30
-  completed_plans: 30
+  total_plans: 33
+  completed_plans: 31
   percent: 67
 ---
 
@@ -20,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 06.1 — release & distribution; Phase 06.2 — tray UX polish (inserted, parallel)
+**Current focus:** Phase 06.1 — release-distribution-and-install-github-release-tarballs-sta
 
 ## Phase Status
 
