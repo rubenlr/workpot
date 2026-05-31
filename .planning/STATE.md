@@ -62,6 +62,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 ### Pending Todos
 
 1. **Add shell installer with update subcommand** — [todo](todos/pending/2026-05-31-add-shell-installer-with-update-subcommand.md)
+2. **Add macOS DMG distribution at MVP** — [todo](todos/pending/2026-05-31-add-macos-dmg-distribution-at-mvp.md)
 
 ## Blockers
 
