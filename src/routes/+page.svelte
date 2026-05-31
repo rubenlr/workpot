@@ -132,18 +132,33 @@
       void startBackgroundRefresh();
       return;
     }
+    if (detailRepo !== null) {
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        detailRepo = null;
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        detailRepo = null;
+        void hidePanel();
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        const repo = flatVisible[selectedIndex];
+        if (repo) {
+          e.preventDefault();
+          detailRepo = repo;
+        }
+        return;
+      }
+      return;
+    }
     if (e.key === "ArrowRight") {
       const repo = flatVisible[selectedIndex];
       if (repo) {
         e.preventDefault();
         detailRepo = repo;
-      }
-      return;
-    }
-    if (e.key === "ArrowLeft") {
-      if (detailRepo !== null) {
-        e.preventDefault();
-        detailRepo = null;
       }
       return;
     }
@@ -182,18 +197,33 @@
       void startBackgroundRefresh();
       return;
     }
+    if (detailRepo !== null) {
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        detailRepo = null;
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        detailRepo = null;
+        void hidePanel();
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        const repo = flatVisible[selectedIndex];
+        if (repo) {
+          e.preventDefault();
+          detailRepo = repo;
+        }
+        return;
+      }
+      return;
+    }
     if (e.key === "ArrowRight") {
       const repo = flatVisible[selectedIndex];
       if (repo) {
         e.preventDefault();
         detailRepo = repo;
-      }
-      return;
-    }
-    if (e.key === "ArrowLeft") {
-      if (detailRepo !== null) {
-        e.preventDefault();
-        detailRepo = null;
       }
       return;
     }
