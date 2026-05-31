@@ -115,3 +115,9 @@ None — no external service configuration required.
 - `workpot open <name|path>` fully operational; tray Enter-open behavior unchanged (shared core)
 - CLI-02, CLI-03, LAUNCH-01 requirements complete
 - Phase 6 open slice ready for final integration and phase wrap-up
+
+## Self-Check: PASSED
+
+- All key files exist on disk
+- All task commits (32ec3c3, 7ebac32) found in git log
+- SUMMARY.md committed (ebb140d)
