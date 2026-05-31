@@ -289,10 +289,25 @@ Plans:
 7. Storybook documents list-row and detail-header visual states (same milestone; not a merge gate for interaction fixes)
 8. Automated tests cover stale-dirty tray logic and alias in core/CLI fuzzy where applicable
 
-**Plans:** 0 plans — run `/gsd-plan-phase 06.2`
+**Plans:** 8 plans
 
 Plans:
-- [ ] TBD via `/gsd-plan-phase 06.2`
+**Wave 1** *(parallel — no shared files)*
+
+- [ ] 06.2-01-PLAN.md — Alias schema + core DTO propagation (migration 007, RepoRecord.alias, catalog list_repos, org::set_alias, RepoDto.alias, TrayConfigDto.stale_dirty_days)
+- [ ] 06.2-02-PLAN.md — TDD: stale-dirty detection logic (Config.stale_dirty_days + validation, has_stale_dirty fn with fallback for never-opened)
+- [ ] 06.2-03-PLAN.md — TDD: fuzzy dual-field match with alias (alias_score with name_bonus=true)
+
+**Wave 2** *(parallel — depends on Wave 1)*
+
+- [ ] 06.2-04-PLAN.md — Tray interaction model + icon state machine (click handlers, bare-branch, info badge, stale-dirty/syncing icons)
+- [ ] 06.2-05-PLAN.md — CLI alias display parity (format_list_row alias-first + branch omission, search/open display)
+- [ ] 06.2-06-PLAN.md — Visual polish + input hardening (panel chrome CSS, detail header pin toggle, tag/notes attributes)
+
+**Wave 3** *(depends on Wave 2)*
+
+- [ ] 06.2-07-PLAN.md — Storybook scaffold + RepoListRow component + stories (non-gating)
+- [ ] 06.2-08-PLAN.md — Integration + E2E tests (CLI alias, bare-branch, row interaction, Vitest)
 
 ## Backlog
 
@@ -332,7 +347,7 @@ Plans:
 | 5 | Not started | 0/0 |
 | 6 | Not started | 0/0 |
 | 06.1 | Not started | 0/0 |
-| 06.2 | Not started | 0/0 |
+| 06.2 | Not started | 0/8 |
 
 ---
 *Roadmap created: 2026-05-28*
