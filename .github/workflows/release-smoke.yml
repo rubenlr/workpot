@@ -16,6 +16,10 @@ permissions:
 jobs:
   smoke:
     name: release smoke
+    # Reusable release.yml declares github-release (contents: write); required even
+    # though dry_run skips upload — GHA validates all nested jobs at parse time.
+    permissions:
+      contents: write
     uses: ./.github/workflows/release.yml
     with:
       tag: v0.0.0-smoke

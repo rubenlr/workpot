@@ -1,11 +1,33 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "include-component-in-tag": false,
+  "bootstrap-sha": "1aa9666a83dbcca4a1e672d658a368ce188a3602",
   "packages": {
-    ".": {
+    "crates/workpot-cli": {
       "release-type": "rust",
+      "component": "workpot-cli",
       "changelog-path": "CHANGELOG.md",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true
+    },
+    "crates/workpot-core": {
+      "release-type": "rust",
+      "component": "workpot-core"
+    },
+    "src-tauri": {
+      "release-type": "rust",
+      "component": "workpot-tray"
     }
-  }
+  },
+  "plugins": [
+    {
+      "type": "cargo-workspace",
+      "merge": false
+    },
+    {
+      "type": "linked-versions",
+      "groupName": "workpot",
+      "components": ["workpot-cli", "workpot-core", "workpot-tray"]
+    }
+  ]
 }

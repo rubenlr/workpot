@@ -1,0 +1,21 @@
+name: release-artifacts
+
+# Runs when release-please (or a maintainer) publishes a GitHub Release — e.g. after
+# merging the Release PR to master. Builds macOS tarballs and uploads to that release.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    name: upload release binaries
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ github.event.release.tag_name }}
+    secrets: inherit
