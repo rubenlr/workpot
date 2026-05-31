@@ -57,6 +57,12 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 - Migration 005 for `last_opened_at` (04-01)
 - Tauri org IPC requires explicit `allow-org-commands` capability (05-08; same class as 04 `get_tray_config`)
 
+## Accumulated Context
+
+### Pending Todos
+
+1. **Add shell installer with update subcommand** — [todo](todos/pending/2026-05-31-add-shell-installer-with-update-subcommand.md)
+
 ## Blockers
 
 None.
