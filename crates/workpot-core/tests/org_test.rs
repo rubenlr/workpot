@@ -265,6 +265,25 @@ fn test_tags_cascade_on_repo_delete() {
 }
 
 #[test]
+fn test_list_all_tags_omits_excluded_repos() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-excluded-tags";
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'excluded', 1, 'manual', '.git', 1)",
+        params![path],
+    )
+    .expect("insert excluded repo");
+    org::set_tags(&conn, path, &["hidden-tag"]).expect("set_tags on excluded");
+    let path_visible = "/tmp/org-visible-tags";
+    insert_repo(&conn, path_visible);
+    org::set_tags(&conn, path_visible, &["visible-tag"]).expect("set_tags on visible");
+
+    let tags = org::list_all_tags(&conn).expect("list_all_tags");
+    assert_eq!(tags, vec!["visible-tag"]);
+}
+
+#[test]
 fn test_list_repos_hydrates_tags() {
     let (_dir, conn) = temp_db();
     let path_a = "/tmp/org-list-a";
