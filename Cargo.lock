@@ -5140,6 +5140,7 @@ name = "workpot-tray"
 version = "0.0.1"
 dependencies = [
  "directories",
+ "git2",
  "log",
  "serde",
  "serde_json",
