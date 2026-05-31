@@ -3,9 +3,10 @@ mod list_display;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
+use std::ffi::OsStr;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::process::{ExitCode, exit};
+use std::process::ExitCode;
 use workpot_core::services::launch::launch_repo;
 use workpot_core::services::repo_fuzzy::fuzzy_match;
 use workpot_core::{AppContext, RepoRecord, WorkpotError};
@@ -295,13 +296,12 @@ fn run_tag(action: TagAction) -> anyhow::Result<()> {
     let ctx = AppContext::open().context("failed to open workpot")?;
     match action {
         TagAction::Add { repo, tag } => {
-            validate_tag_for_add(&tag)?;
             let path_key = resolve_repo_identifier(&ctx, &repo)?;
-            ctx.add_tag(&path_key, tag.trim())?;
+            ctx.add_tag(&path_key, &tag).map_err(map_tag_error)?;
         }
         TagAction::Remove { repo, tag } => {
             let path_key = resolve_repo_identifier(&ctx, &repo)?;
-            ctx.remove_tag(&path_key, &tag)?;
+            ctx.remove_tag(&path_key, &tag).map_err(map_tag_error)?;
         }
         TagAction::List { repo } => {
             let path_key = resolve_repo_identifier(&ctx, &repo)?;
@@ -325,23 +325,6 @@ fn run_open(identifier: &str) -> anyhow::Result<()> {
     // D-10: print full canonical path before launch
     println!("opening: {path_key}");
     launch_repo(&ctx, &path_key).map_err(LaunchFailed)?;
-    Ok(())
-}
-
-fn validate_tag_for_add(tag: &str) -> anyhow::Result<()> {
-    let trimmed = tag.trim();
-    if trimmed.is_empty() {
-        eprintln!("tag cannot be empty");
-        exit(1);
-    }
-    if trimmed.chars().count() > 64 {
-        eprintln!("tag too long (max 64 chars)");
-        exit(1);
-    }
-    if trimmed.contains('#') {
-        eprintln!("tag may not contain '#'");
-        exit(1);
-    }
     Ok(())
 }
 
@@ -382,10 +365,29 @@ fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result
 }
 
 fn match_repo_path_key(repos: &[RepoRecord], identifier: &str) -> Option<String> {
+    let id = OsStr::new(identifier);
     repos
         .iter()
-        .find(|r| r.path.to_str().is_some_and(|s| s == identifier))
+        .find(|r| r.path.as_os_str() == id)
         .map(|r| r.path.display().to_string())
+}
+
+fn map_tag_error(err: WorkpotError) -> anyhow::Error {
+    match err {
+        WorkpotError::InvalidInput(ref msg) => {
+            let cli_msg = if msg.contains("must not contain '#'") {
+                "tag may not contain '#'"
+            } else if msg.contains("exceeds 64 characters") {
+                "tag too long (max 64 chars)"
+            } else if msg.contains("must not be empty") {
+                "tag cannot be empty"
+            } else {
+                return err.into();
+            };
+            anyhow::anyhow!(cli_msg)
+        }
+        other => other.into(),
+    }
 }
 
 fn map_roots_error(err: WorkpotError) -> anyhow::Error {
