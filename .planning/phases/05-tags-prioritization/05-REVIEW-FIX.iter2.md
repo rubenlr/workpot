@@ -1,81 +1,75 @@
 ---
 phase: 05-tags-prioritization
-fixed_at: 2026-05-31T10:05:00Z
+fixed_at: 2026-05-31T10:30:00Z
 review_path: .planning/phases/05-tags-prioritization/05-REVIEW.md
 iteration: 1
-findings_in_scope: 8
-fixed: 8
+findings_in_scope: 7
+fixed: 7
 skipped: 0
 status: all_fixed
 ---
 
 # Phase 5: Code Review Fix Report
 
-**Fixed at:** 2026-05-31T10:05:00Z  
+**Fixed at:** 2026-05-31T10:30:00Z  
 **Source review:** `.planning/phases/05-tags-prioritization/05-REVIEW.md`  
 **Iteration:** 1
 
 **Summary:**
-- Findings in scope: 8 (CR-01 + WR-01 through WR-07)
-- Fixed: 8
+- Findings in scope: 7
+- Fixed: 7
 - Skipped: 0
+
+**Verification:**
+- `cargo test -p workpot-tray --lib` — 17 passed
+- `npm run check` — 0 errors (1 pre-existing a11y warning on DetailPane)
 
 ## Fixed Issues
 
-### CR-01: Recent padding can place never-opened repos in Recent
+### CR-01: `set_notes` IPC uses byte length; core uses grapheme count
 
-**Files modified:** `src/lib/sort.ts`, `src/lib/sort.test.ts`  
-**Commit:** `3fc0033`  
-**Applied fix:** Padding candidates require `last_opened_at != null`; Vitest case for three never-opened repos with `minRecentCount: 3`.
+**Files modified:** `src-tauri/src/commands.rs`  
+**Commit:** `9788ba5`  
+**Applied fix:** Notes IPC validation uses `n.chars().count() > 500` instead of byte `len()`.
 
-### WR-01: `set_pin` does not enforce `max_pinned` (D-15)
+### CR-02: `validate_tag` IPC uses byte length; core uses grapheme count
 
-**Files modified:** `crates/workpot-core/src/error.rs`, `crates/workpot-core/src/services/org.rs`, `crates/workpot-core/src/lib.rs`, `crates/workpot-core/tests/org_test.rs`  
-**Commit:** `d319eb0`, `509eac8`  
-**Applied fix:** `PinCapExceeded` error; count pinned repos before `0 → 1` transition; `AppContext` passes `config.max_pinned`.
+**Files modified:** `src-tauri/src/commands.rs`  
+**Commit:** `9788ba5`  
+**Applied fix:** Tag IPC validation uses `trimmed.chars().count() > 64`. Landed in the same commit as CR-01 (both hunks staged together).
 
-### WR-02: `set_notes` has no 500-character limit (D-25)
+### CR-03: `list_branches` effect has no stale-response guard
 
-**Files modified:** `crates/workpot-core/src/error.rs`, `crates/workpot-core/src/services/org.rs`, `crates/workpot-core/tests/org_test.rs`  
-**Commit:** `d319eb0`, `509eac8`  
-**Applied fix:** Reject notes over 500 chars with `InvalidInput`.
+**Files modified:** `src/lib/components/DetailPane.svelte`  
+**Commit:** `9fad91e`  
+**Applied fix:** Async branch/tag loads use a `cancelled` flag and effect cleanup to ignore stale responses after `repo.path` changes.
 
-### WR-03: Tag mutations lack input hygiene and consistent NotFound errors
+### CR-04: Notes `$effect` overwrites in-progress edits on `onMutated`
 
-**Files modified:** `crates/workpot-core/src/services/org.rs`, `crates/workpot-core/tests/org_test.rs`  
-**Commit:** `d319eb0`, `509eac8`  
-**Applied fix:** `ensure_repo_exists` before tag writes; trim/reject empty tags; `NotFound` for missing repo.
+**Files modified:** `src/lib/components/DetailPane.svelte`  
+**Commit:** `52e84b9`  
+**Applied fix:** Sync `notesValue` from `repo.notes` only when the notes textarea is not focused (`bind:this` + `document.activeElement` check).
 
-### WR-04: Re-pinning an already-pinned repo allocates a new `pin_order`
+### WR-01: `TagAutocomplete` cannot reflect partial `#` token from filter bar
 
-**Files modified:** `crates/workpot-core/src/services/org.rs`, `crates/workpot-core/tests/org_test.rs`  
-**Commit:** `d319eb0`, `509eac8`  
-**Applied fix:** Early return when already pinned; `test_pin_repin_is_idempotent`.
+**Files modified:** `src/lib/components/TagAutocomplete.svelte`  
+**Commit:** `0117b3e`  
+**Applied fix:** Added optional `prefix` prop; `filtered` applies `prefix` then inner `inputValue` via `$derived.by`.
 
-### WR-05: Rest section sorts by name, not `registered_at` (spec discretion)
+### WR-02: `list_branches` does not require indexed repo path
 
-**Files modified:** `.planning/phases/05-tags-prioritization/05-CONTEXT.md`  
-**Commit:** `713fee5`  
-**Applied fix:** Documented deliberate name sort for Rest in wave 1 (no `registered_at` on tray DTO yet).
+**Files modified:** `src-tauri/src/commands.rs`  
+**Commit:** `d55ee80`  
+**Applied fix:** `list_branches` takes `AppContext` state and calls `indexed_launch_path` before `spawn_blocking`.
 
-### WR-06: Plan 05-02 must-have tests missing (CASCADE, `list_repos` tags)
+### WR-03: `highlightedIndex` not reset when filter narrows
 
-**Files modified:** `crates/workpot-core/tests/org_test.rs`  
-**Commit:** `509eac8`  
-**Applied fix:** `test_tags_cascade_on_repo_delete` and `test_list_repos_hydrates_tags`.
-
-### WR-07: `sectionSort` / padding not tested for D-21 never-opened case
-
-**Files modified:** `src/lib/sort.test.ts`  
-**Commit:** `3fc0033`  
-**Applied fix:** `does not pad recent with never-opened repos (D-21)` test.
-
-## Skipped Issues
-
-None — all in-scope findings were fixed.
+**Files modified:** `src/lib/components/TagAutocomplete.svelte`  
+**Commit:** `448932c`  
+**Applied fix:** `$effect` resets `highlightedIndex` to `-1` when `inputValue` or `prefix` changes.
 
 ---
 
-_Fixed: 2026-05-31T10:05:00Z_  
+_Fixed: 2026-05-31T10:30:00Z_  
 _Fixer: Claude (gsd-code-fixer)_  
 _Iteration: 1_
