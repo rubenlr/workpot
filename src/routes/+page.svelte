@@ -272,8 +272,12 @@
       targetIdx,
     );
     dragSourceIdx = null;
-    await invoke("set_pin_order", { items: toPinOrderPayload(newOrder) });
-    await refreshReposAndDetail();
+    try {
+      await invoke("set_pin_order", { items: toPinOrderPayload(newOrder) });
+      await refreshReposAndDetail();
+    } catch (e) {
+      error = String(e);
+    }
   }
 
   function appendTagFilter(tag: string) {
