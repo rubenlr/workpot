@@ -180,10 +180,71 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Build aarch64 DMG bundle
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - id: signing
+        name: Resolve signing policy
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         run: |
           set -euo pipefail
-          npm ci
+          required_vars=(
+            APPLE_CERTIFICATE
+            APPLE_CERTIFICATE_PASSWORD
+            APPLE_SIGNING_IDENTITY
+            APPLE_API_ISSUER
+            APPLE_API_KEY_ID
+            APPLE_API_KEY
+          )
+          present=0
+          missing=()
+          for key in "${required_vars[@]}"; do
+            if [ -n "${!key:-}" ]; then
+              present=$((present + 1))
+            else
+              missing+=("$key")
+            fi
+          done
+
+          if [ "$present" -eq 0 ]; then
+            echo "mode=unsigned" >> "$GITHUB_OUTPUT"
+            echo "::warning::APPLE signing secrets not configured. Building unsigned DMG (codesign/notarytool/stapler skipped by design)."
+            exit 0
+          fi
+
+          if [ "$present" -ne "${#required_vars[@]}" ]; then
+            echo "::error::Partial APPLE_ signing configuration detected. Missing: ${missing[*]}"
+            echo "::error::Refusing release to avoid partially signed artifacts."
+            exit 1
+          fi
+
+          echo "mode=signed" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed aarch64 DMG bundle
+        if: steps.signing.outputs.mode == 'signed'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          set -euo pipefail
+          echo "Building signed/notarized DMG (codesign + notarytool + stapler enabled)."
+          npm run tauri:build -- --bundles dmg
+
+      - name: Build unsigned aarch64 DMG bundle
+        if: steps.signing.outputs.mode == 'unsigned'
+        run: |
+          set -euo pipefail
+          echo "::warning::Continuing with unsigned DMG because APPLE_ secrets are absent."
           npm run tauri:build -- --bundles dmg
 
       - name: Rename DMG and create checksum

@@ -22,7 +22,7 @@ Updates: `crates/workpot-cli/Cargo.toml`, `crates/workpot-core/Cargo.toml`, `src
 3. Run `just version` and commit `version`, `CHANGELOG.md`, and all synced files.
 4. Merge when CI is green (including **release-check**).
 
-On push to `master`, [`release-publish.yml`](../.github/workflows/release-publish.yml) compares `version` to the latest tag. If it increased, it creates tag `vX.Y.Z` and a GitHub Release from the changelog section. [`release-artifacts.yml`](../.github/workflows/release-artifacts.yml) then builds and uploads macOS tarballs via [`release.yml`](../.github/workflows/release.yml).
+On push to `master`, [`release-publish.yml`](../.github/workflows/release-publish.yml) compares `version` to the latest tag. If it increased, it creates tag `vX.Y.Z` and a GitHub Release from the changelog section. [`release-artifacts.yml`](../.github/workflows/release-artifacts.yml) then builds and uploads macOS release artifacts via [`release.yml`](../.github/workflows/release.yml).
 
 **Feature PRs** that do not touch `version` or `CHANGELOG.md`: `release-check` skips — no bump required.
 
@@ -59,12 +59,28 @@ When a PR changes `version` or `CHANGELOG.md`, CI runs `scripts/check-release-pr
 
 ## Artifacts per release
 
-| Artifact                       | Runner           | Contents                                 |
-| ------------------------------ | ---------------- | ---------------------------------------- |
-| `workpot-macos-aarch64.tar.gz` | `macos-latest`   | `workpot` binary, `README.md`, `LICENSE` |
-| `workpot-macos-x86_64.tar.gz`  | `macos-15-intel` | same                                     |
+| Artifact                            | Runner         | Contents                                  |
+| ----------------------------------- | -------------- | ----------------------------------------- |
+| `workpot-macos-aarch64.tar.gz`      | `macos-latest` | `workpot` binary, `README.md`, `LICENSE` |
+| `workpot-macos-aarch64.tar.gz.sha256` | `macos-latest` | SHA-256 checksum for CLI tarball         |
+| `Workpot-X.Y.Z-aarch64.dmg`         | `macos-latest` | Drag-installable Workpot app bundle       |
+| `Workpot-X.Y.Z-aarch64.dmg.sha256`  | `macos-latest` | SHA-256 checksum for DMG                  |
 
-Each tarball has a `.sha256` checksum on the release page.
+## Signing and notarization policy
+
+`release.yml` uses a secret-aware split for DMG signing/notarization:
+
+- **Signed path (all APPLE secrets present):** DMG build runs with `APPLE_*` env vars so `codesign`, `notarytool`, and `stapler` execute in the Tauri signing pipeline.
+- **Unsigned fallback (no APPLE secrets present):** build continues and logs this warning exactly:
+  - `APPLE signing secrets not configured. Building unsigned DMG (codesign/notarytool/stapler skipped by design).`
+- **Partial secret configuration (some but not all APPLE secrets present):** release fails intentionally with:
+  - `Partial APPLE_ signing configuration detected. Missing: ...`
+  - `Refusing release to avoid partially signed artifacts.`
+
+Maintainer interpretation:
+
+- Warning-only unsigned log lines mean unsigned-by-design output (expected for forks/local experimentation).
+- Partial-secret errors are hard failures and must be fixed before publishing.
 
 ## Testing releases
 
