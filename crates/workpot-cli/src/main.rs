@@ -228,15 +228,16 @@ fn run() -> anyhow::Result<()> {
 }
 
 fn validate_tag_for_add(tag: &str) -> anyhow::Result<()> {
-    if tag.trim().is_empty() {
+    let trimmed = tag.trim();
+    if trimmed.is_empty() {
         eprintln!("tag cannot be empty");
         exit(1);
     }
-    if tag.len() > 64 {
+    if trimmed.chars().count() > 64 {
         eprintln!("tag too long (max 64 chars)");
         exit(1);
     }
-    if tag.starts_with('#') {
+    if trimmed.contains('#') {
         eprintln!("tag may not contain '#'");
         exit(1);
     }
