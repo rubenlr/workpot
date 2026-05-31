@@ -1,8 +1,8 @@
 ---
 phase: 05-tags-prioritization
-verified: 2026-05-31T12:00:00Z
+verified: 2026-05-31T12:05:00Z
 status: human_needed
-score: 4/4 roadmap truths verified
+score: 4/4 roadmap truths verified (automated)
 decision_coverage:
   honored: 29
   total: 29
@@ -11,17 +11,26 @@ deferred:
   - truth: "CLI pin/unpin commands"
     addressed_in: "Phase 6"
     evidence: "05-CONTEXT.md D-18; 05-07-PLAN.md decisions_covered D-18"
+gaps:
+  - truth: "User can remove tags from tray with a visible affordance (ORG-01 / D-05)"
+    status: partial
+    reason: "UAT 2026-05-31 — removal only via Cmd+Click; user reported no option. Auto-fix added × on TagChip."
+    artifacts:
+      - path: src/lib/components/TagChip.svelte
+        issue: "Had no visible remove control before verify-phase --gap --auto"
+    missing:
+      - "Human re-run: click × on list row and detail pane; context menu Remove tag on single-tag repo"
 ---
 
 # Phase 5: Tags & prioritization Verification Report
 
 **Phase Goal:** Help users manage 20+ repos with tags, pins, notes, and smart ordering.
 
-**Verified:** 2026-05-31T11:15:00Z
+**Verified:** 2026-05-31T12:05:00Z
 
 **Status:** human_needed
 
-**Re-verification:** Pending — UAT gap (tags not saved/edited); fix plan 05-09
+**Re-verification:** Yes — gap closure after 05-09 + UAT remove-tag affordance fix
 
 ## Goal Achievement
 
@@ -29,110 +38,118 @@ deferred:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | User can add tags to a repo and filter by tag in the tray | ✓ VERIFIED | `org.rs` + `org_test.rs` tag CRUD; `tagFilter.ts` AND filter + 25 Vitest cases; `+page.svelte` uses `filterAndSectionRepos`, `TagAutocomplete`, context-menu tag actions; CLI `tag add/list/remove` in `cli_smoke.rs` |
-| 2 | Pinned repos stay above unpinned regardless of other signals | ✓ VERIFIED | `sectionSort` puts `pinned` tier first (`sort.ts`); `sort.test.ts` asserts pinned ordering; tray renders `SectionHeader` + pinned section in `+page.svelte` |
-| 3 | Dirty and recently opened repos rank higher than stale clean repos | ✓ VERIFIED | `sectionSort` Dirty > Recent (window + `minRecentCount` pad) > Rest; covered by `sort.test.ts` dirty/recent/rest cases |
-| 4 | User can save notes on a repo and search matches note text | ✓ VERIFIED | `set_notes` + 500-char validation in `org_test.rs`; `fuzzy.ts` scores `repo.notes`; `fuzzy.test.ts` "matches notes text"; `DetailPane.svelte` blur-save via `set_notes` IPC |
+| 1 | User can add tags to a repo and filter by tag in the tray | ✓ VERIFIED | org.rs + tests; tagFilter; DetailPane Enter/blur add; `refreshReposAndDetail` + `loadAllTags` (05-09); CLI tag subcommand |
+| 2 | Pinned repos stay above unpinned regardless of other signals | ✓ VERIFIED | `sectionSort` pinned tier first; `sort.test.ts` |
+| 3 | Dirty and recently opened repos rank higher than stale clean repos | ✓ VERIFIED | `sectionSort` Dirty > Recent > Rest; `sort.test.ts` |
+| 4 | User can save notes on a repo and search matches note text | ✓ VERIFIED | `set_notes` + validation; `fuzzy.ts` notes scoring; DetailPane blur-save |
 
 **Score:** 4/4 roadmap truths verified at code/test level
 
+### Gap-closure truths (05-08, 05-09)
+
+| Truth | Status | Evidence |
+|-------|--------|----------|
+| Org IPC allowed from panel (05-08) | ✓ VERIFIED | `allow-org-commands` in `tray-commands.toml` + `default.json` |
+| Tag add persists + catalog refresh (05-09) | ✓ VERIFIED | `refreshReposAndDetail` calls `loadAllTags`; blur/Enter + duplicate guard in DetailPane |
+| Context menu single-tag remove (05-09) | ✓ VERIFIED | `+page.svelte` `remove_tag` invokes IPC when `repo.tags.length === 1` |
+| Visible tag remove affordance (UAT gap) | ⚠️ FIXED — NEEDS HUMAN | `TagChip.svelte` × button when `onRemove` set; Cmd+Click retained per D-05 |
+
 ### Required Artifacts
 
-SDK `verify.artifacts` on all 7 plans: **22/22 passed** (exists + substantive checks).
+SDK `verify.artifacts` on plans 05-01 … 05-09: **all passed** (substantive checks).
 
-| Plan | Artifacts | Status |
-|------|-----------|--------|
-| 05-01 | org_test.rs, tagFilter, pinOrder + tests | ✓ |
-| 05-02 | 006_org.sql, org.rs, store FK, repo/config extensions | ✓ |
-| 05-03 | types.ts, sort.ts, trayList.ts, fuzzy.ts | ✓ |
-| 05-04 | commands.rs, lib.rs | ✓ |
-| 05-05 | DetailPane, TagChip, TagAutocomplete, SectionHeader | ✓ |
-| 05-06 | +page.svelte | ✓ |
-| 05-07 | CLI main.rs Tag subcommand | ✓ |
+| Plan | Status |
+|------|--------|
+| 05-01 … 05-07 | ✓ |
+| 05-08 | ✓ ACL files |
+| 05-09 | ✓ DetailPane, +page |
 
 ### Key Link Verification
 
 | From | To | Status | Details |
 |------|----|--------|---------|
-| trayList → tagFilter/sort | imports | ✓ WIRED | `verify.key-links` passed (05-03) |
-| +page → trayList/components | filterAndSectionRepos, DetailPane | ✓ WIRED | `verify.key-links` passed (05-06) |
-| commands.rs → workpot-core | ctx.set_* / add_tag | ✓ WIRED | SDK pattern `ctx\.set_` false negative; manual: `commands.rs` lines 132–227 call `ctx.set_tags`, `add_tag`, `set_notes`, `set_pin`, `set_pin_order` |
-| CLI → workpot-core | ctx.add_tag | ✓ WIRED | SDK pattern false negative; manual: `main.rs` lines 207–215 |
-| DetailPane → Tauri invoke | set_notes, set_pin, tags | ✓ WIRED | `verify.key-links` passed (05-05) |
+| trayList → tagFilter/sort | ✓ | SDK verified |
+| +page → trayList/components | ✓ | SDK verified |
+| DetailPane → Tauri invoke | ✓ | `invoke("add_tag"`, `remove_tag`, `set_notes`, …) in source |
+| commands.rs → workpot-core | ✓ | Manual: `ctx.remove_tag`, `add_tag`, etc. |
+| CLI → workpot-core | ✓ | Manual: `main.rs` tag subcommand |
 
-**Wiring:** All critical paths verified (2 SDK false negatives resolved manually)
+**SDK false negatives (pattern drift):** 05-04 `ctx\.set_`, 05-07 `ctx\.add_tag`, 05-08 DetailPane→commands.rs path, 05-09 `add_tag` target — resolved manually.
 
 ## Requirements Coverage
 
 | Requirement | Status | Blocking Issue |
 |-------------|--------|----------------|
-| ORG-01: Assign tags + filter | ✓ SATISFIED | Tray filter needs human UAT |
-| ORG-02: Pin repos to top | ✓ SATISFIED | Drag reorder needs human UAT |
-| ORG-03: Rank by dirty/recent/pinned | ✓ SATISFIED | Section headers need human UAT |
-| ORG-04: Free-text notes + search | ✓ SATISFIED | Detail pane notes UX needs human UAT |
-
-**Coverage:** 4/4 requirements satisfied in implementation; tray integration pending human pass
+| ORG-01: Assign tags + filter | ✓ SATISFIED (code) | Human: confirm × remove + context menu remove |
+| ORG-02: Pin repos to top | ✓ SATISFIED | Human: drag reorder (UAT pass 2026-05-31) |
+| ORG-03: Rank dirty/recent/pinned | ✓ SATISFIED | — |
+| ORG-04: Notes + search | ✓ SATISFIED | — |
 
 ## Behavioral Verification
 
 | Check | Result | Detail |
 |-------|--------|--------|
-| `npm test` (Vitest) | ✓ 120/120 passed | 17 files, ~0.7s |
-| `cargo test --workspace` | ✓ all passed | org_test 23/23; cli_smoke tag roundtrip; tray unit tests |
-| `workpot tag` CLI | ✓ | `cli_smoke.rs` tag_add_list_remove_roundtrip + validation cases |
+| `npm test` (Vitest) | ✓ 123/123 | After TagChip × affordance |
+| `cargo test --workspace` | ✓ all passed | org_test, cli_smoke, tray |
 
 ## Test Quality Audit
 
 | Test File | Linked Req | Active | Skipped | Verdict |
 |-----------|-----------|--------|---------|---------|
-| org_test.rs | ORG-01,02,04 | 23 | 0 | ✓ Value-level DB assertions |
-| tagFilter.test.ts | ORG-01 | 25 | 0 | ✓ AND filter + unicode |
-| sort.test.ts | ORG-03 | 12 | 0 | ✓ Section tier assignment |
-| fuzzy.test.ts | ORG-04 | 11 | 0 | ✓ Notes/tags scoring |
-| trayList.test.ts | ORG-01,03 | 11 | 0 | ✓ Integrated filter+section |
+| org_test.rs | ORG-01,02,04 | 23 | 0 | ✓ |
+| tagFilter.test.ts | ORG-01 | 25 | 0 | ✓ |
+| sort.test.ts | ORG-03 | 12 | 0 | ✓ |
+| fuzzy.test.ts | ORG-04 | 11 | 0 | ✓ |
+| trayList.test.ts | ORG-01,03 | 11 | 0 | ✓ |
+| orgClient.test.ts | ORG-01 | 10 | 0 | ✓ |
 
 **Disabled tests on requirements:** 0
 
-**Circular patterns:** None detected
-
 ## Anti-Patterns Found
 
-| File | Pattern | Severity | Impact |
-|------|---------|----------|--------|
-| — | — | — | No blockers; UI `placeholder=` attrs only |
-
-**Anti-patterns:** 0 blockers
+None blocking (placeholder attrs in UI only).
 
 ### Decision Coverage
 
-All trackable CONTEXT.md decisions are honored by shipped artifacts. (29/29)
+All trackable CONTEXT.md decisions honored (29/29).
 
 ## Deferred Items
 
 | Item | Addressed In | Evidence |
 |------|-------------|----------|
-| CLI pin/unpin | Phase 6 | D-18 in 05-CONTEXT.md; explicit in 05-07-PLAN |
+| CLI pin/unpin | Phase 6 | D-18 |
 
 ## Human Verification
 
-Completed via `05-HUMAN-UAT.md` (4/4 passed, 2026-05-31) after plan 05-08 `allow-org-commands` ACL.
+Prior UAT (`05-HUMAN-UAT.md`): 3/4 automated items passed; **gap** — tag remove not discoverable.
+
+**Required re-check after auto-fix:**
+
+1. List row: click **×** on a tag chip — tag disappears and survives tray reload.
+2. Detail pane: **×** on tag chip — same.
+3. Context menu **Remove tag…** on single-tag repo — removes without opening detail.
+4. Multi-tag repo: context menu **Remove tag…** opens detail; use **×** or Cmd+Click to remove one tag.
+
+Reply **approved** in chat or update `05-HUMAN-UAT.md` when green.
 
 ## Gaps Summary
 
-**UAT gap (2026-05-31):** Tags not persisting visibly in tray after add (detail pane / context menu). Gap plan: `05-09-PLAN.md`.
+| Gap | Resolution |
+|-----|------------|
+| Tags not persisting (pre-05-09) | Closed in 05-09 |
+| IPC ACL (pre-05-08) | Closed in 05-08 |
+| No visible remove option (UAT 2026-05-31) | **Auto-fixed** in verify-phase: `TagChip` × button |
+
+No new code gaps pending automated closure. Phase blocked on human UAT re-run only.
 
 ## Verification Metadata
 
-**Verification approach:** Goal-backward (ROADMAP success criteria + plan must_haves)
+**Approach:** Goal-backward re-verification (gap mode) after waves 4–5.
 
-**Must-haves source:** PLAN frontmatter (7 plans) + ROADMAP success criteria
+**Automated checks:** artifacts pass, tests green, decision coverage 29/29.
 
-**Automated checks:** artifacts 22/22, tests green, decision coverage 29/29
-
-**Human checks required:** 4
-
-**Total verification time:** ~5 min
+**Human checks required:** 4 (tag remove affordance re-test)
 
 ---
-*Verified: 2026-05-31T11:15:00Z*
-*Verifier: Claude (gsd-verify-phase)*
+*Verified: 2026-05-31T12:05:00Z*
+*Verifier: gsd-verify-phase 5 --gap --auto*

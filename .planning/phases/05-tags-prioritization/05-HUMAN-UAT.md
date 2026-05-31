@@ -1,14 +1,16 @@
 ---
-status: complete
+status: partial
 phase: 05-tags-prioritization
 source: [05-VERIFICATION.md]
 started: 2026-05-31T11:15:00Z
-updated: 2026-05-31T12:00:00Z
+updated: 2026-05-31T12:05:00Z
 ---
 
 ## Current Test
 
-[testing complete]
+### Re-verify tag remove (after × on TagChip)
+expected: × on list/detail chips removes tag; single-tag context menu Remove tag… removes without detail
+result: pending
 
 ## Tests
 
@@ -34,13 +36,13 @@ result_note: add_tag path works; AND filter via tagFilter
 
 ## Summary
 
-total: 4
+total: 5
 passed: 3
 issues: 1
-pending: 0
+pending: 1
 skipped: 0
 blocked: 0
 
 ## Gaps
 
-can't remove tags, there is no option for it
+~~can't remove tags, there is no option for it~~ — auto-fix 2026-05-31: visible × on `TagChip` (list + detail). Re-test pending.
