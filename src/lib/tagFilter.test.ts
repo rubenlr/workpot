@@ -128,6 +128,15 @@ describe("appendTagToFilterQuery", () => {
     expect(appendTagToFilterQuery("x #Backend", "backend")).toBe("x #Backend");
     expect(appendTagToFilterQuery("x #backend", "Backend")).toBe("x #backend");
   });
+
+  it("does not duplicate an existing unicode tag token", () => {
+    const tag = "后端";
+    expect(appendTagToFilterQuery(`x #${tag}`, tag)).toBe(`x #${tag}`);
+  });
+
+  it("appends a distinct unicode tag", () => {
+    expect(appendTagToFilterQuery("find", "后端")).toBe("find #后端");
+  });
 });
 
 describe("replaceTrailingTagAutocomplete", () => {
