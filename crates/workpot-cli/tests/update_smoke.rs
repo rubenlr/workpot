@@ -74,7 +74,27 @@ fn write_tray_install(home: &Path, version: &str, global: bool) -> PathBuf {
 fn write_release_fixture(root: &Path, version: &str, cli_payload: &[u8], bad_checksum: bool) -> PathBuf {
     fs::create_dir_all(root).expect("fixture dir");
     let cli_asset = root.join("workpot-macos-aarch64.tar.gz");
-    fs::write(&cli_asset, cli_payload).expect("write cli tarball");
+    let payload_dir = root.join("cli-payload");
+    fs::create_dir_all(&payload_dir).expect("mkdir payload");
+    let payload_bin = payload_dir.join("workpot");
+    write_executable(
+        &payload_bin,
+        &format!(
+            "#!/usr/bin/env bash\nif [[ \"$1\" == \"--version\" ]]; then\n  echo \"workpot {version}\"\nelse\n  echo \"updated {version}\"\nfi\n"
+        ),
+    );
+    if !cli_payload.is_empty() {
+        fs::write(payload_dir.join("notes.txt"), cli_payload).expect("notes");
+    }
+    let tar_status = StdCommand::new("tar")
+        .arg("-czf")
+        .arg(&cli_asset)
+        .arg("-C")
+        .arg(&payload_dir)
+        .arg(".")
+        .status()
+        .expect("tar create");
+    assert!(tar_status.success(), "tar create should succeed");
 
     let cli_sha = cli_sha256(&cli_asset);
     let cli_sha_value = if bad_checksum {
@@ -187,6 +207,11 @@ fn only_flags_and_global_are_deterministic() {
     workpot_cmd(home.path())
         .args(["update", "--global", "--only-cli"])
         .env("WORKPOT_UPDATE_TEST_RELEASE_JSON", &release_json)
+        .env("WORKPOT_UPDATE_TEST_GLOBAL_CLI_PATH", home.path().join("global-bin").join("workpot"))
+        .env(
+            "WORKPOT_UPDATE_TEST_GLOBAL_TRAY_PATH",
+            home.path().join("global-apps").join("Workpot.app"),
+        )
         .assert()
         .success()
         .stdout(predicate::str::contains("scope: global"));
@@ -211,6 +236,7 @@ fn already_current_is_exit_zero_without_download() {
 fn network_and_install_failures_map_to_distinct_exit_codes() {
     let home = tempfile::tempdir().expect("tempdir");
     write_cli_install(home.path(), "0.0.0", false);
+    write_tray_install(home.path(), "0.0.0", false);
 
     workpot_cmd(home.path())
         .arg("update")
