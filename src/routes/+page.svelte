@@ -47,6 +47,7 @@
   let detailRepo = $state<RepoDto | null>(null);
   let allTags = $state<string[]>([]);
   let dragSourceIdx = $state<number | null>(null);
+  let focusTagOnDetailOpen = $state(false);
   let trayConfig = $state<{
     max_recent_days: number;
     min_recent_count: number;
@@ -200,6 +201,13 @@
     if (e.target instanceof HTMLInputElement && e.target.id === "repo-filter") {
       return;
     }
+    if (
+      detailRepo !== null &&
+      (e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement)
+    ) {
+      return;
+    }
     if (e.metaKey && (e.key === "r" || e.key === "R")) {
       e.preventDefault();
       void startBackgroundRefresh();
@@ -269,6 +277,7 @@
 
   async function refreshReposAndDetail(clearError = true) {
     await loadRepos(clearError);
+    await loadAllTags();
     detailRepo = resyncDetailIfOpen(repos, detailRepo);
   }
 
@@ -383,10 +392,30 @@
           });
         }
         await refreshReposAndDetail();
-      } else if (action === "add_tag" || action === "remove_tag") {
+      } else if (action === "remove_tag") {
+        const repo = repos.find((r) => r.path === repo_path);
+        if (!repo) {
+          return;
+        }
+        if (repo.tags.length === 1) {
+          try {
+            await invoke("remove_tag", {
+              repoPath: repo_path,
+              tag: repo.tags[0],
+            });
+            await refreshReposAndDetail();
+          } catch (e) {
+            error = String(e);
+          }
+        } else {
+          detailRepo = repo;
+          focusTagOnDetailOpen = true;
+        }
+      } else if (action === "add_tag") {
         const repo = repos.find((r) => r.path === repo_path);
         if (repo) {
           detailRepo = repo;
+          focusTagOnDetailOpen = true;
         }
       }
     });
@@ -459,6 +488,10 @@
     {#if detailRepo}
       <DetailPane
         repo={detailRepo}
+        requestTagFocus={focusTagOnDetailOpen}
+        onTagFocusDone={() => {
+          focusTagOnDetailOpen = false;
+        }}
         onClose={() => {
           detailRepo = null;
         }}
