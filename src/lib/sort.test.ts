@@ -105,6 +105,17 @@ describe("sectionSort", () => {
     expect(sections.recent).toHaveLength(0);
   });
 
+  it("does not pad recent with never-opened repos (D-21)", () => {
+    const never = [
+      repo({ name: "a", is_dirty: false, last_opened_at: null }),
+      repo({ name: "b", is_dirty: false, last_opened_at: null }),
+      repo({ name: "c", is_dirty: false, last_opened_at: null }),
+    ];
+    const sections = sectionSort(never, config, now);
+    expect(sections.recent).toHaveLength(0);
+    expect(sections.rest.map((r) => r.name).sort()).toEqual(["a", "b", "c"]);
+  });
+
   it("partitions every repo exactly once", () => {
     const repos = [
       repo({ name: "p", pinned: true, pin_order: 0 }),

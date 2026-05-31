@@ -76,7 +76,9 @@ export function sectionSort(
   const recent = [...recentByTime];
   if (recent.length < config.minRecentCount) {
     const inRecent = new Set(recent);
-    const candidates = nonDirty.filter((r) => !inRecent.has(r)).sort(byLastOpenedDesc);
+    const candidates = nonDirty
+      .filter((r) => !inRecent.has(r) && r.last_opened_at != null)
+      .sort(byLastOpenedDesc);
     for (const r of candidates) {
       if (recent.length >= config.minRecentCount) {
         break;
