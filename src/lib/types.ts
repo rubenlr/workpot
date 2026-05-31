@@ -1,5 +1,8 @@
 export interface TrayConfigDto {
   max_visible_rows: number;
+  max_recent_days: number;
+  min_recent_count: number;
+  max_pinned: number;
 }
 
 export interface GitRefreshSummary {
