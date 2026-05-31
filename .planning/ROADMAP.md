@@ -174,7 +174,7 @@ Plans:
 3. Dirty and recently opened repos rank higher than stale clean repos
 4. User can save notes on a repo and search matches note text
 
-**Plans:** 6/7 plans executed
+**Plans:** 7/8 plans executed (1 gap-closure pending)
 
 Plans:
 **Wave 0**
@@ -195,6 +195,10 @@ Plans:
 
 - [x] 05-06-PLAN.md — +page.svelte: four-section list, detail pane nav, drag-to-reorder, context menu, #tag autocomplete (ORG-01,02,03,04) — UAT checkpoint pending
 - [x] 05-07-PLAN.md — CLI: workpot tag add/remove/list subcommand (ORG-01)
+
+**Wave 4** *(gap closure — UAT IPC blocked; blocked on 05-04 + 05-06)*
+
+- [ ] 05-08-PLAN.md — Tauri capabilities: allow-org-commands for Phase 5 IPC (ORG-01..04, 05-HUMAN-UAT)
 
 ---
 
