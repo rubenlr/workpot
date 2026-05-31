@@ -162,17 +162,19 @@
     >
       ←
     </button>
-    <h2 class="truncate text-lg font-semibold">{repo.name}</h2>
+    <h2 class="min-w-0 flex-1 truncate text-lg font-semibold">
+      {repo.alias ?? repo.name}
+    </h2>
+    <button
+      type="button"
+      class="shrink-0 text-lg leading-none"
+      aria-label={repo.pinned ? "Unpin" : "Pin"}
+      aria-pressed={repo.pinned}
+      onclick={() => void handlePinChange()}
+    >
+      {repo.pinned ? "📌" : "📍"}
+    </button>
   </div>
-
-  <label class="flex cursor-pointer items-center gap-2 text-sm">
-    <input
-      type="checkbox"
-      checked={repo.pinned}
-      onchange={() => void handlePinChange()}
-    />
-    Pinned
-  </label>
 
   <section>
     <h3 class="mb-1 text-sm font-medium text-neutral-600 dark:text-neutral-400">
@@ -213,6 +215,10 @@
       bind:this={tagInputEl}
       bind:value={tagInput}
       placeholder="Add tag…"
+      autocomplete="off"
+      autocapitalize="off"
+      autocorrect="off"
+      spellcheck="false"
       class="mt-2 w-full rounded-md border border-neutral-200 bg-transparent px-2 py-1 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
       onkeydown={onTagInputKeydown}
       onblur={() => {
@@ -236,6 +242,10 @@
       maxlength="500"
       bind:value={notesValue}
       placeholder="Add notes..."
+      autocomplete="off"
+      autocapitalize="off"
+      autocorrect="off"
+      spellcheck="false"
       class="w-full resize-none rounded-md border border-neutral-200 bg-transparent p-2 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
       style="max-height: calc(5 * 1.5rem)"
       onblur={() => void handleNotesSave()}
