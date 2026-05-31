@@ -74,7 +74,7 @@ Deliver repository organization for 20+ repo collections: tags (store, filter, e
 ### Claude's Discretion
 - Exact `max_pinned` default value in config.toml (suggest 5).
 - Exact `max_recent_days` default (suggest 14) and `min_recent_count` default (suggest 3).
-- Within-section sort order (suggest `last_opened_at DESC` for Dirty and Recent; `registered_at DESC` for Rest).
+- Within-section sort order: `last_opened_at DESC` for Dirty and Recent; **Rest sorts by repo name** (stable alphabetical browse — `registered_at` is not exposed on the tray DTO in wave 1).
 - Drag-to-reorder implementation details (CSS draggable, Svelte drag-and-drop library choice).
 - Exact Tailwind styling for section headers (font size, color, spacing).
 - Tag chip styling in dropdown autocomplete.
