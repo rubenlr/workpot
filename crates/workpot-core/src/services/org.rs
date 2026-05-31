@@ -68,6 +68,7 @@ pub fn remove_tag(conn: &Connection, repo_path: &str, tag: &str) -> Result<()> {
 }
 
 pub fn list_tags_for_repo(conn: &Connection, repo_path: &str) -> Result<Vec<String>> {
+    ensure_repo_exists(conn, repo_path)?;
     let mut stmt = conn.prepare(
         "SELECT tag FROM repo_tags WHERE repo_path = ?1 ORDER BY tag COLLATE NOCASE",
     )?;
