@@ -20,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 05 — gap plan 05-09 (tag save/edit UAT)
+**Current focus:** Phase 05 — human re-UAT for 05-09 tag save/edit
 
 ## Phase Status
 
@@ -30,13 +30,13 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 2 | Repo discovery | Complete — 5/5 plans (2026-05-29) |
 | 3 | Git state | Complete — 3/3 plans, UAT 10/10 (2026-05-30) |
 | 4 | Tray finder MVP | Complete — 4/4 plans (2026-05-30) |
-| 5 | Tags & prioritization | Gap closure — 05-09 pending (UAT: tags not saved) |
+| 5 | Tags & prioritization | 05-09 shipped — human re-UAT pending |
 | 6 | CLI parity | Not started |
 | 7 | Recipes | Not started |
 
 ## Session Notes
 
-- Phase 5 gap 05-09 (2026-05-31): UAT reports tags not saved/edited — plan created
+- Phase 5 gap 05-09 (2026-05-31): tag blur-save, duplicate feedback, allTags refresh; commits `dbacbbb`, `e359e42`, `a01eb99`
 - Phase 5 plan 05-08 (2026-05-31): `allow-org-commands` — commits `1070e7a`, `ffd36e4`
 - Phase 5 plan 05-06 (2026-05-31): +page.svelte four-section tray, detail pane, tags, context menu, pin reorder; commit `ac9ac08`
 - Phase 5 plan 05-07 (2026-05-31): CLI `workpot tag` add/remove/list; commit `6ac7b8e`

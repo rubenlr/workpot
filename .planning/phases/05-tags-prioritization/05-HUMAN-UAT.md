@@ -43,4 +43,4 @@ blocked: 0
 
 ## Gaps
 
-tags are not being saved or edited
+can't remove tags, there is no option for it

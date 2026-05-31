@@ -15,7 +15,7 @@
 | 2 | Repo discovery | 5/5 | Complete |
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
 | 4 | 4/4 | Complete |
-| 5 | Tags & prioritization | 4/4 | In progress (UAT gap 05-09) |
+| 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
 | 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
 | 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
 
@@ -174,7 +174,7 @@ Plans:
 3. Dirty and recently opened repos rank higher than stale clean repos
 4. User can save notes on a repo and search matches note text
 
-**Plans:** 8/9 plans (gap closure 05-09 pending)
+**Plans:** 9/9 executed (05-09 human re-UAT pending)
 
 Plans:
 **Wave 0**
@@ -202,7 +202,7 @@ Plans:
 
 **Wave 5** *(gap closure — tag save/edit UAT)*
 
-- [ ] 05-09-PLAN.md — Tray tag persistence: refresh allTags, blur-save, duplicate feedback, context menu remove (ORG-01)
+- [x] 05-09-PLAN.md — Tray tag persistence: refresh allTags, blur-save, duplicate feedback, context menu remove (ORG-01) (2026-05-31; human Task 3 pending)
 
 ---
 

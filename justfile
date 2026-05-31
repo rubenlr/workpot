@@ -13,7 +13,7 @@ build:
 install: build
     cargo install --path crates/workpot-cli -q
 
-launch:
+launch: build
     npm run tauri dev
 
 # Rewrite formatting (run before clippy / tests)
