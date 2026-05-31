@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-last_updated: "2026-05-31T20:34:09.285Z"
+last_updated: "2026-05-31T20:34:56.253Z"
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 42
-  completed_plans: 38
-  percent: 78
+  completed_plans: 40
+  percent: 80
 ---
 
 # Project State
@@ -33,10 +33,11 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 5 | Tags & prioritization | Shipped — PR https://github.com/rubenlr/workpot/pull/4 (2026-05-31) |
 | 6 | CLI parity | Complete — 5/5 plans, UAT 5/6 auto (2026-05-31) |
 | 06.1 | Release & distribution | Not started — inserted 2026-05-31 |
-| 06.2 | Tray UX polish | In progress — 5/9 plans (2026-05-31) |
+| 06.2 | Tray UX polish | In progress — 6/9 plans (2026-05-31) |
 
 ## Session Notes
 
+- Phase 06.2 plan 06.2-08 (2026-05-31): RepoListRow interaction test RED gate; commit `2637fa2`
 - Phase 06.2 plan 06.2-04 (2026-05-31): tray row click model, alias display, tri-state icon; commits `9082057`, `da98d25`, docs `90a73fa`
 - Phase 06.2 plan 06.2-05 (2026-05-31): CLI alias-first list_display, bare branch omission, open-by-alias; commits `61a3858`, `85607f1`
 - Phase 06.2 plan 06.2-03 (2026-05-31): alias_score in fuzzy_score; TDD RED `d27d3b4`, GREEN `dff06c0`

@@ -306,7 +306,7 @@ Plans:
 **Wave 3** *(parallel — depends on Wave 2; requires Plan 04 alias field)*
 
 - [ ] 06.2-06-PLAN.md — Visual polish + input hardening (panel chrome CSS, detail header pin toggle, tag/notes attributes)
-- [ ] 06.2-08-PLAN.md — Interaction test stub / RED gate (RepoListRow.test.ts — sampling continuity before Plans 05/06 complete)
+- [x] 06.2-08-PLAN.md — Interaction test stub / RED gate (RepoListRow.test.ts — sampling continuity before Plans 05/06 complete)
 
 **Wave 4** *(depends on Wave 3)*
 
