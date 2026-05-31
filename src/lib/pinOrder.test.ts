@@ -15,7 +15,11 @@ function repo(
     parent_dir: "",
     last_opened_at: partial.last_opened_at ?? null,
     git_state_error: null,
+    pinned: partial.pinned ?? false,
     pin_order: partial.pin_order ?? null,
+    notes: partial.notes ?? null,
+    tags: partial.tags ?? [],
+    branches: partial.branches ?? [],
   };
 }
 
