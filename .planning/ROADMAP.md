@@ -15,7 +15,7 @@
 | 2 | Repo discovery | 5/5 | Complete |
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
 | 4 | 4/4 | Complete |
-| 5 | Tags & prioritization | 3/7 | In Progress|  |
+| 5 | Tags & prioritization | 4/7 | In Progress|  |
 | 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
 | 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
 
@@ -174,7 +174,7 @@ Plans:
 3. Dirty and recently opened repos rank higher than stale clean repos
 4. User can save notes on a repo and search matches note text
 
-**Plans:** 3/7 plans executed
+**Plans:** 5/7 plans executed
 
 Plans:
 **Wave 0**
@@ -188,8 +188,8 @@ Plans:
 
 **Wave 2** *(parallel — no shared files)*
 
-- [ ] 05-04-PLAN.md — Tauri IPC commands: set_tags, set_notes, set_pin, set_pin_order, list_branches, show_repo_context_menu (ORG-01,02,03,04)
-- [ ] 05-05-PLAN.md — Svelte components: DetailPane, TagChip, TagAutocomplete, SectionHeader (ORG-01,02,03,04)
+- [x] 05-04-PLAN.md — Tauri IPC commands: set_tags, set_notes, set_pin, set_pin_order, list_branches, show_repo_context_menu (ORG-01,02,03,04)
+- [x] 05-05-PLAN.md — Svelte components: DetailPane, TagChip, TagAutocomplete, SectionHeader (ORG-01,02,03,04)
 
 **Wave 3** *(parallel — no shared files)*
 
