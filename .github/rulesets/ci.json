@@ -40,7 +40,8 @@
           { "context": "coverage" },
           { "context": "cargo build --release" },
           { "context": "sonarcloud" },
-          { "context": "semantic-pr" }
+          { "context": "semantic-pr" },
+          { "context": "release-check" }
         ]
       }
     }

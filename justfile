@@ -8,7 +8,7 @@ build:
     cargo fetch
     cargo build --release -p workpot-cli
     npm ci
-    CI=true npm run tauri build
+    npm run tauri:build
 
 install: build
     cargo install --path crates/workpot-cli -q
@@ -46,3 +46,11 @@ coverage:
 # precommit: build + check (no cargo deny/audit until Tauri 3 — see CONTRIBUTING.md) + fmt-check
 precommit: build fix fmt-check
     ./target/release/workpot --version
+
+# Sync version from repo-root version file into all manifests and lockfiles
+version:
+    bash scripts/sync-version.sh
+
+# Verify manifests match version file (no writes)
+version-check:
+    bash scripts/sync-version.sh --check

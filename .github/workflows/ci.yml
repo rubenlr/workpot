@@ -110,7 +110,7 @@ jobs:
           npm run test:coverage
           cp coverage/lcov.info lcov-js.info
       - name: Tauri bundle smoke
-        run: npm run tauri build
+        run: npm run tauri:build
         env:
           CI: true
       - name: Upload JS coverage
@@ -228,3 +228,16 @@ jobs:
         with:
           name: ci-workpot-macos-aarch64
           path: target/release/workpot
+
+  release-check:
+    name: release-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96
+      - run: bash scripts/check-release-pr.sh

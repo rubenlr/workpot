@@ -1,23 +1,13 @@
 #!/usr/bin/env bash
-# Print the release version from crates/workpot-cli/Cargo.toml [package].version.
+# Print the release version from the repo-root version file.
 set -euo pipefail
 
-FILE="${1:-crates/workpot-cli/Cargo.toml}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VERSION_FILE="${1:-$ROOT/version}"
 
-read_version() {
-  awk -F ' *= *' '
-    /^\[package\]$/ { in_pkg = 1; next }
-    /^\[/ { in_pkg = 0 }
-    in_pkg && $1 == "version" {
-      gsub(/"/, "", $2)
-      print $2
-      exit
-    }
-  '
-}
-
-if [[ "$FILE" == "-" ]]; then
-  read_version
-else
-  read_version <"$FILE"
+if [[ ! -f "$VERSION_FILE" ]]; then
+  echo "version file not found: $VERSION_FILE" >&2
+  exit 1
 fi
+
+tr -d '[:space:]' <"$VERSION_FILE"

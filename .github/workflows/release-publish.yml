@@ -1,0 +1,106 @@
+name: release-publish
+
+# On push to master: tag vX.Y.Z and create GitHub Release when version file exceeds
+# the latest v* tag. release-artifacts.yml builds macOS binaries on release: published.
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96
+
+      - name: Decide whether to publish
+        id: gate
+        run: |
+          set -euo pipefail
+          VERSION="$(bash scripts/read-workspace-version.sh)"
+          if [[ -z "$VERSION" ]]; then
+            echo "version file is empty" >&2
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          LATEST="$(bash scripts/latest-released-version.sh || true)"
+          if [[ -n "$LATEST" ]]; then
+            if [[ "$(printf '%s\n' "$VERSION" "$LATEST" | sort -V | tail -1)" != "$VERSION" ]] || [[ "$VERSION" == "$LATEST" ]]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "version ${VERSION} is not greater than latest release ${LATEST}; skipping"
+              exit 0
+            fi
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "will publish v${VERSION} (latest released: ${LATEST:-none})"
+
+      - name: Validate release metadata
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.gate.outputs.version }}
+        run: |
+          set -euo pipefail
+          bash scripts/sync-version.sh --check
+          if ! awk -v ver="$VERSION" '
+            BEGIN { found = 0; bullets = 0 }
+            $0 ~ "^## \\[" ver "\\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found && /^- / { bullets++ }
+            END { exit(found && bullets > 0 ? 0 : 1) }
+          ' CHANGELOG.md; then
+            echo "CHANGELOG.md must contain ## [$VERSION] with at least one \"- \" bullet" >&2
+            exit 1
+          fi
+
+      - name: Extract release notes
+        if: steps.gate.outputs.skip != 'true'
+        id: notes
+        env:
+          VERSION: ${{ steps.gate.outputs.version }}
+        run: |
+          set -euo pipefail
+          NOTES="$(awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md | sed '/^[[:space:]]*$/d')"
+          if [[ -z "$NOTES" ]]; then
+            echo "no release notes found for $VERSION" >&2
+            exit 1
+          fi
+          {
+            echo "body<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create tag and GitHub Release
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.gate.outputs.version }}
+          RELEASE_BODY: ${{ steps.notes.outputs.body }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "tag ${TAG} already exists; skipping gh release create"
+            exit 0
+          fi
+          gh release create "$TAG" --title "Workpot ${VERSION}" --notes "$RELEASE_BODY"

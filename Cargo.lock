@@ -2054,9 +2054,9 @@ dependencies = [
 
 [[package]]
 name = "libz-sys"
-version = "1.1.28"
+version = "1.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc3a226e576f50782b3305c5ccf458698f92798987f551c6a02efe8276721e22"
+checksum = "85bc9657773828b90eeb625adff10eeac83cc21bbfd8e23a03eaa8a33c9e28d9"
 dependencies = [
  "cc",
  "libc",
@@ -5105,7 +5105,7 @@ dependencies = [
 
 [[package]]
 name = "workpot-cli"
-version = "0.0.2"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -5119,7 +5119,7 @@ dependencies = [
 
 [[package]]
 name = "workpot-core"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "directories",
  "git2",
@@ -5137,7 +5137,7 @@ dependencies = [
 
 [[package]]
 name = "workpot-tray"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "directories",
  "git2",

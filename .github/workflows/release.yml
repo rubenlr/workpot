@@ -3,7 +3,7 @@ name: release
 # Builds macOS tarballs and uploads them to an existing GitHub Release.
 # Invoked by release-artifacts.yml on release: published, release-smoke (dry_run),
 # or manually via workflow_dispatch.
-# release-please owns the GitHub Release record and CHANGELOG.
+# release-publish.yml creates the GitHub Release and tag on master when version increases.
 
 on:
   workflow_call:
@@ -101,11 +101,11 @@ jobs:
           tag_version="${RELEASE_TAG#v}"
           manifest_version="$(bash scripts/read-workspace-version.sh)"
           if [ -z "$manifest_version" ]; then
-            echo "could not read crates/workpot-cli/Cargo.toml package.version" >&2
+            echo "could not read version file (scripts/read-workspace-version.sh)" >&2
             exit 1
           fi
           if [ "$tag_version" != "$manifest_version" ]; then
-            echo "tag version v${tag_version} does not match Cargo.toml version ${manifest_version}" >&2
+            echo "tag version v${tag_version} does not match version file ${manifest_version}" >&2
             exit 1
           fi
           echo "version=${tag_version}" >> "$GITHUB_OUTPUT"

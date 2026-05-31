@@ -10,6 +10,7 @@
     "clear": "rm -rf build .svelte-kit src-tauri/gen",
     "dev": "vite dev",
     "build": "node --no-warnings ./node_modules/vite/bin/vite.js build",
+    "tauri:build": "npm run build && tauri build --config src-tauri/tauri.ci-build.json",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "format": "prettier --write .",

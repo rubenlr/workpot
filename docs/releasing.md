@@ -1,44 +1,107 @@
 # Releasing Workpot
 
-## CLI releases (Release Please)
+Manual version control — no Release Please, no separate release PR. Bump the version in the **same PR** you use to ship.
 
-Releases are automated with [Release Please](https://github.com/googleapis/release-please) (`googleapis/release-please-action@v5`). Config lives under [`.github/ci-assist/`](../.github/ci-assist/) (`release-please-config.json`, `.release-please-manifest.json`). No manual version labels or `bin/release`.
+## Source of truth
 
-### Repository prerequisites (once per repo)
+Repo-root [`version`](../version) holds the workspace semver (no `v` prefix), e.g. `0.0.2`.
 
-Release Please needs permission to open and update its Release PR:
+One command syncs every manifest and lockfile:
 
 ```bash
-bash scripts/configure-github-actions-permissions.sh
+just version          # write/sync
+just version-check    # verify only (CI uses this via release-check)
 ```
 
-Manual: **Settings → Actions → General → Workflow permissions** → _Read and write permissions_, and enable **Allow GitHub Actions to create and approve pull requests**.
+Updates: `crates/workpot-cli/Cargo.toml`, `crates/workpot-core/Cargo.toml`, `src-tauri/Cargo.toml` (including `workpot-core` path deps), `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, and `Cargo.lock`.
 
-### Flow
+## Ship checklist
 
-1. Merge feature PRs to `master` via **squash** (only allowed merge method).
-2. Push to `master` runs the **`release-pr`** job: opens or updates a **Release PR** (`chore: release …`) with version + `CHANGELOG.md` (does **not** tag yet).
-3. Review and merge the Release PR to `master` (squash subject must contain `chore: release` — use the bot PR title).
-4. That merge push runs **`publish-release`** only: tag `vX.Y.Z` + GitHub Release (does **not** open another Release PR on the same commit).
-5. **`release: published`** triggers **[release-artifacts.yml](../.github/workflows/release-artifacts.yml)** → **[release.yml](../.github/workflows/release.yml)** builds macOS tarballs and uploads them to that release.
+1. Edit [`version`](../version) — must be **strictly greater** than the latest `v*` tag and than `master`'s current `version`.
+2. Add a `## [X.Y.Z]` section to [`CHANGELOG.md`](../CHANGELOG.md) with at least one `- ` bullet.
+3. Run `just version` and commit `version`, `CHANGELOG.md`, and all synced files.
+4. Merge when CI is green (including **release-check**).
 
-The next Release PR appears only after **new** conventional commits land on `master` (step 2 again).
+On push to `master`, [`release-publish.yml`](../.github/workflows/release-publish.yml) compares `version` to the latest tag. If it increased, it creates tag `vX.Y.Z` and a GitHub Release from the changelog section. [`release-artifacts.yml`](../.github/workflows/release-artifacts.yml) then builds and uploads macOS tarballs via [`release.yml`](../.github/workflows/release.yml).
 
-### Avoiding release loops
+**Feature PRs** that do not touch `version` or `CHANGELOG.md`: `release-check` skips — no bump required.
 
-| Push to `master` | Job that runs | `skip-*` flag |
-| ---------------- | ------------- | ------------- |
-| `feat:` / `fix:` squash merge | `release-pr` | `skip-github-release` |
-| `chore: release …` squash merge (Release PR) | `publish-release` | `skip-github-pull-request` |
-| `workflow_dispatch` | `release-pr` only (recovery) | neither |
+## Flow
 
-Do **not** add `pull_request` triggers for `release-please--branches--*` — bot branch updates can self-trigger loops if you use a PAT that re-fires Actions. Stay on `push` to `master` only.
+```mermaid
+flowchart LR
+  subgraph pr [Release PR]
+    V[Edit version]
+    C[Edit CHANGELOG]
+    J[just version]
+    V --> J
+    C --> J
+    J --> CI[release-check]
+  end
+  CI --> Merge[Merge to master]
+  Merge --> Pub[release-publish]
+  Pub -->|"version gt latest tag"| Tag["tag vX.Y.Z + GitHub Release"]
+  Tag --> Art[release-artifacts]
+  Art --> Bin[release.yml macOS tarballs]
+```
 
-Do not push `v*` tags manually for routine releases. Use `workflow_dispatch` on `release.yml` only to **re-upload** artifacts for an existing release-please tag (see [Recovery](#recovery)).
+## PR gate: release-check
 
-### Squash commit = PR title + description
+When a PR changes `version` or `CHANGELOG.md`, CI runs `scripts/check-release-pr.sh`:
 
-Configure the repository once so squash merges **default** to PR title and description (not individual branch commits):
+| Check | Rule |
+| ----- | ---- |
+| Skip | No `version` or `CHANGELOG.md` in PR diff |
+| Not below any release | `version` > latest `v*` tag (if any) |
+| Ahead of master | `version` > `origin/master:version` |
+| Sync drift | All manifests/lockfiles match `version` (`just version-check`) |
+| Release notes | `## [version]` with at least one `- ` bullet before the next `## [` |
+
+## Artifacts per release
+
+| Artifact | Runner | Contents |
+| -------- | ------ | -------- |
+| `workpot-macos-aarch64.tar.gz` | `macos-latest` | `workpot` binary, `README.md`, `LICENSE` |
+| `workpot-macos-x86_64.tar.gz` | `macos-15-intel` | same |
+
+Each tarball has a `.sha256` checksum on the release page.
+
+## Testing releases
+
+| Phase | Trigger | Proves | Does not create |
+| ----- | ------- | ------ | --------------- |
+| **PR** | [release-smoke.yml](../.github/workflows/release-smoke.yml) on release-path changes | Full macOS matrix, tarball layout | Tag, GitHub Release |
+| **PR** | [ci.yml](../.github/workflows/ci.yml) `release-build` | Fast compile + `--version` on aarch64 | Tarball / x86_64 |
+| **PR** | `release-check` (when bumping version) | Version sync + changelog | Tag |
+| **master** | Push with increased `version` | Tag + GitHub Release + artifact upload | — |
+| **Recovery** | `workflow_dispatch` on `release.yml` | Re-upload artifacts for existing tag | New version |
+
+### PR smoke (`dry_run`)
+
+[release-smoke.yml](../.github/workflows/release-smoke.yml) calls `release.yml` with `dry_run: true`: checks out the PR head, skips tag validation and `gh release upload`, uploads smoke artifacts (7-day retention).
+
+### Recovery
+
+| Situation | Action |
+| --------- | ------ |
+| Artifacts failed but tag + GitHub Release exist | **Actions → release → Run workflow** — set `tag` to `vX.Y.Z`, `dry_run` false |
+| Wrong tag vs `version` file | Upload fails at `validate-version` (expected) |
+| Re-test full matrix on a PR | Open/update PR; **release-smoke** runs on path changes |
+
+Do **not** push `v*` tags manually for routine releases.
+
+## Workflows reference
+
+| Workflow | Role |
+| -------- | ---- |
+| [release-publish.yml](../.github/workflows/release-publish.yml) | Push to `master` → tag + GitHub Release when `version` increases |
+| [release-artifacts.yml](../.github/workflows/release-artifacts.yml) | `release: published` → macOS build + upload |
+| [release.yml](../.github/workflows/release.yml) | Guardrails, macOS builds, `gh release upload` (or smoke when `dry_run`) |
+| [release-smoke.yml](../.github/workflows/release-smoke.yml) | PR-only `dry_run` wrapper |
+
+## Squash commit = PR title + description
+
+Configure once so squash merges default to PR title and description:
 
 ```bash
 bash scripts/configure-github-merge-defaults.sh
@@ -46,136 +109,8 @@ bash scripts/configure-github-merge-defaults.sh
 
 Manual: **Settings → General → Pull requests** → _Allow squash merging_ → **Default to pull request title and description**.
 
-Then authors only maintain a conventional **PR title**; GitHub copies it (plus ` (#n)`) and the PR body into the commit on `master`.
+Conventional **PR titles** (`feat:`, `fix:`, …) group changelog entries you write manually; they do not auto-bump the version.
 
-### Semver from commits
+## Phase 4: Tauri tray app + code signing (future)
 
-| PR title / commit subject                          | Bump  |
-| -------------------------------------------------- | ----- |
-| `fix:`                                             | patch |
-| `feat:`                                            | minor |
-| `feat!:` / `fix!:` / `BREAKING CHANGE:` in PR body | major |
-
-Branch commit messages are ignored for versioning once the squash default above is set.
-
-### Version source of truth
-
-- Released version: `.github/ci-assist/.release-please-manifest.json` and `crates/workpot-cli/Cargo.toml` after the Release PR merges.
-- `release.yml` validates that the tag matches `Cargo.toml` at that ref before building.
-
-### Two PR types
-
-| PR               | Who merges        | Contains            |
-| ---------------- | ----------------- | ------------------- |
-| Feature / fix    | You               | Code only           |
-| Release PR (bot) | You, after review | Version + changelog |
-
-## Artifacts per release
-
-| Artifact                       | Runner         | Contents                                 |
-| ------------------------------ | -------------- | ---------------------------------------- |
-| `workpot-macos-aarch64.tar.gz` | `macos-latest` | `workpot` binary, `README.md`, `LICENSE` |
-| `workpot-macos-x86_64.tar.gz`  | `macos-15-intel` | same                                   |
-
-Each tarball has a `.sha256` checksum file on the release page.
-
-## Testing releases
-
-Validate in layers before the first real Release PR merge. Do **not** cut a real `v0.0.1` GitHub Release from a feature branch — merge release plumbing to `master` first.
-
-| Phase             | Trigger                                                                                   | Proves                                                     | Does not create                         |
-| ----------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------- |
-| **0 – PR**        | [release-smoke.yml](../.github/workflows/release-smoke.yml) on PRs touching release paths | Full macOS matrix, `cargo build --release`, tarball layout | Tag, GitHub Release, upload to Releases |
-| **0b – PR**       | [ci.yml](../.github/workflows/ci.yml) `release-build`                                     | Fast compile + `--version` on aarch64                      | Tarball / x86_64                        |
-| **1 – master**    | Push to `master` → release-please                                                         | Config, permissions, Release PR opened/updated             | Tag (until Release PR merges)           |
-| **2 – master**    | Merge Release PR                                                                          | tag, GitHub Release, then `release-artifacts` upload       | —                                       |
-| **3 – recovery**  | `workflow_dispatch` on `release.yml`                                                      | Re-run failed matrix/upload only                           | New version                             |
-| **3b – recovery** | `workflow_dispatch` on `release-please.yml`                                               | Re-run bot without empty commit                            | Release (unless commits warrant it)     |
-
-### PR smoke (`dry_run`)
-
-[release-smoke.yml](../.github/workflows/release-smoke.yml) calls `release.yml` with `dry_run: true`:
-
-- Checks out the PR head (`github.sha`), not a tag.
-- Skips `ensure-master`, `validate-version`, and `gh release upload`.
-- Uploads `smoke-workpot-macos-aarch64` and `smoke-workpot-macos-x86_64` as workflow artifacts (7-day retention).
-
-Filter Actions runs by workflow name **release-smoke**.
-
-### Recovery
-
-| Situation                                       | Action                                                                        |
-| ----------------------------------------------- | ----------------------------------------------------------------------------- |
-| Artifacts failed but tag + GitHub Release exist | **Actions → release → Run workflow** — set `tag` to `vX.Y.Z`, `dry_run` false |
-| Wrong tag vs `Cargo.toml`                       | Upload should fail at `validate-version` (expected)                           |
-| release-please stuck after config fix           | **Actions → release-please → Run workflow** (no noop commit required)         |
-| release-smoke queued forever on `macos x86_64`  | `macos-13` is retired — workflow uses `macos-15-intel`; cancel stale runs     |
-| Re-test full matrix on a PR                     | Open/update PR; **release-smoke** runs on path changes                        |
-
-## Workflows reference
-
-| Workflow                                                            | Role                                                                              |
-| ------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [release-please.yml](../.github/workflows/release-please.yml)       | `release-pr` / `publish-release` jobs; see [Avoiding release loops](#avoiding-release-loops) |
-| [release-artifacts.yml](../.github/workflows/release-artifacts.yml) | `release: published` → macOS build + upload                                       |
-| [release.yml](../.github/workflows/release.yml)                     | Guardrails, macOS builds, `gh release upload` (or smoke artifacts when `dry_run`) |
-| [release-smoke.yml](../.github/workflows/release-smoke.yml)         | PR-only `dry_run` wrapper                                                         |
-
-## Phase 4: Tauri tray app + code signing (not yet implemented)
-
-When `src-tauri/` lands, extend the release workflow with a macOS Tauri build
-job. Planned additions:
-
-### CI smoke job
-
-Add a `tauri-build` job to `.github/workflows/ci.yml` (macOS only):
-
-```yaml
-- run: pnpm install --frozen-lockfile
-- run: pnpm tauri build
-```
-
-Runs on every PR/push to catch frontend + native packaging regressions early.
-
-### Release artifacts
-
-Extend `.github/workflows/release.yml` to upload in addition to CLI tarballs:
-
-- `Workpot.app` (signed + notarized)
-- `Workpot_X.Y.Z_aarch64.dmg` (or `.app.tar.gz` until DMG packaging is wired)
-
-### Required GitHub Actions secrets
-
-| Secret                       | Purpose                                       |
-| ---------------------------- | --------------------------------------------- |
-| `APPLE_CERTIFICATE`          | Base64-encoded `.p12` signing certificate     |
-| `APPLE_CERTIFICATE_PASSWORD` | Password for the `.p12`                       |
-| `APPLE_SIGNING_IDENTITY`     | e.g. `Developer ID Application: …`            |
-| `APPLE_ID`                   | Apple ID for notarization                     |
-| `APPLE_PASSWORD`             | App-specific password or notarization API key |
-| `APPLE_TEAM_ID`              | Apple Developer team ID                       |
-
-Tauri documents the exact import/sign/notarize steps in their
-[macOS code signing guide](https://v2.tauri.app/distribute/sign/macos/).
-
-### Release profile alignment
-
-The workspace already uses a release profile tuned for shipping binaries:
-
-```toml
-[profile.release]
-lto = "thin"
-codegen-units = 1
-strip = "symbols"
-```
-
-Apply the same profile to the Tauri build so CLI and tray app share LTO/strip
-settings.
-
-### Distribution channels
-
-| Channel                              | v1 CLI               | Phase 4 tray                              |
-| ------------------------------------ | -------------------- | ----------------------------------------- |
-| GitHub Releases                      | tarballs + checksums | `.app` / `.dmg` + CLI tarballs            |
-| `cargo install --git … --tag vX.Y.Z` | yes                  | CLI only; tray app is a separate download |
-| Homebrew cask                        | optional follow-up   | primary install path for tray app         |
+When distribution requires signed `.app` / `.dmg`, extend `release.yml` with Tauri build jobs and Apple signing secrets. See [Tauri macOS code signing](https://v2.tauri.app/distribute/sign/macos/).

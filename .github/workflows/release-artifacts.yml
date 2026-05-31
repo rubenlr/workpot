@@ -1,7 +1,7 @@
 name: release-artifacts
 
-# Runs when release-please (or a maintainer) publishes a GitHub Release — e.g. after
-# merging the Release PR to master. Builds macOS tarballs and uploads to that release.
+# Runs when release-publish (or a maintainer) publishes a GitHub Release — builds
+# macOS tarballs and uploads them to that release.
 
 on:
   release:
