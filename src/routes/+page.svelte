@@ -24,6 +24,7 @@
   import {
     appendTagToFilterQuery,
     replaceTrailingTagAutocomplete,
+    trailingTagAutocompletePrefix,
   } from "$lib/tagFilter";
   import { filterAndSectionRepos, flatSectioned } from "$lib/trayList";
   import type { GitRefreshSummary, RepoDto, TrayConfigDto } from "$lib/types";
@@ -64,10 +65,9 @@
   );
   let flatVisible = $derived(flatSectioned(sectionedRepos));
   let activeTagsDetected = $derived(filterQuery.includes("#"));
-  let tagAutocompletePrefix = $derived.by(() => {
-    const m = filterQuery.match(/#([\w-]*)$/);
-    return m ? m[1] : "";
-  });
+  let tagAutocompletePrefix = $derived(
+    trailingTagAutocompletePrefix(filterQuery),
+  );
 
   let listView = $derived(
     trayListView(error, repos.length, filterQuery, flatVisible.length),

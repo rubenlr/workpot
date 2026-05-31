@@ -7,6 +7,9 @@ export type TagFilterParse = {
 
 type RepoWithTags = RepoDto & { tags?: string[] };
 
+/** Trailing `#partial` in the filter bar (D-10); aligned with parseTagFilter tokens. */
+export const TRAILING_TAG_PARTIAL_RE = /#([^\s#]*)$/;
+
 function repoTags(repo: RepoDto): string[] {
   return (repo as RepoWithTags).tags ?? [];
 }
@@ -18,9 +21,13 @@ export function parseTagFilter(query: string): TagFilterParse {
   }
 
   const tokens = trimmed.split(/\s+/);
-  const activeTags = tokens
-    .filter((t) => t.startsWith("#") && t.length > 1)
-    .map((t) => t.slice(1).toLowerCase());
+  const activeTags = [
+    ...new Set(
+      tokens
+        .filter((t) => t.startsWith("#") && t.length > 1)
+        .map((t) => t.slice(1).toLowerCase()),
+    ),
+  ];
   const baseQuery = tokens.filter((t) => !t.startsWith("#")).join(" ").trim();
 
   return { baseQuery, activeTags };
@@ -45,9 +52,14 @@ export function appendTagToFilterQuery(filterQuery: string, tag: string): string
 }
 
 /** Replace trailing `#partial` with a completed tag token (D-10 autocomplete). */
+export function trailingTagAutocompletePrefix(filterQuery: string): string {
+  const m = filterQuery.match(TRAILING_TAG_PARTIAL_RE);
+  return m ? m[1] : "";
+}
+
 export function replaceTrailingTagAutocomplete(
   filterQuery: string,
   tag: string,
 ): string {
-  return filterQuery.replace(/#([\w-]*)$/, "") + "#" + tag + " ";
+  return filterQuery.replace(TRAILING_TAG_PARTIAL_RE, "") + "#" + tag + " ";
 }

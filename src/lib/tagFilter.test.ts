@@ -4,6 +4,7 @@ import {
   matchesTags,
   parseTagFilter,
   replaceTrailingTagAutocomplete,
+  trailingTagAutocompletePrefix,
 } from "./tagFilter";
 import type { RepoDto } from "./types";
 
@@ -70,6 +71,13 @@ describe("parseTagFilter", () => {
       activeTags: [],
     });
   });
+
+  it("deduplicates repeated tag tokens", () => {
+    expect(parseTagFilter("x #foo #foo")).toEqual({
+      baseQuery: "x",
+      activeTags: ["foo"],
+    });
+  });
 });
 
 describe("matchesTags", () => {
@@ -126,5 +134,18 @@ describe("replaceTrailingTagAutocomplete", () => {
     expect(replaceTrailingTagAutocomplete("find #", "infra")).toBe(
       "find #infra ",
     );
+  });
+
+  it("replaces trailing partial when the tag contains emoji", () => {
+    const emoji = "🏷️";
+    expect(replaceTrailingTagAutocomplete(`find #${emoji.slice(0, 1)}`, emoji)).toBe(
+      `find #${emoji} `,
+    );
+  });
+});
+
+describe("trailingTagAutocompletePrefix", () => {
+  it("captures unicode partial after trailing hash", () => {
+    expect(trailingTagAutocompletePrefix("find #后")).toBe("后");
   });
 });
