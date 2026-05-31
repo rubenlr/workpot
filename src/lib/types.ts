@@ -3,6 +3,7 @@ export interface TrayConfigDto {
   max_recent_days: number;
   min_recent_count: number;
   max_pinned: number;
+  stale_dirty_days: number;
 }
 
 export interface GitRefreshSummary {
@@ -14,6 +15,7 @@ export interface GitRefreshSummary {
 export interface RepoDto {
   path: string;
   name: string;
+  alias: string | null;
   branch: string | null;
   is_dirty: boolean | null;
   parent_dir: string;

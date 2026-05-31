@@ -6,6 +6,7 @@ function repo(partial: Partial<RepoDto> & Pick<RepoDto, "name">): RepoDto {
   return {
     path: `/tmp/${partial.name}`,
     name: partial.name,
+    alias: partial.alias ?? null,
     branch: null,
     is_dirty: partial.is_dirty ?? null,
     parent_dir: "",

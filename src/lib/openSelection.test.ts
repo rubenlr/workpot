@@ -5,6 +5,7 @@ import type { RepoDto } from "./types";
 function repo(name: string, path?: string): RepoDto {
   return {
     name,
+    alias: null,
     path: path ?? `/tmp/${name}`,
     branch: null,
     is_dirty: null,

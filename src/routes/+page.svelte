@@ -52,6 +52,7 @@
     max_recent_days: number;
     min_recent_count: number;
     max_pinned: number;
+    stale_dirty_days: number;
   } | null>(null);
 
   let listMaxHeightPx = $derived(trayListMaxHeightPx(maxVisibleRows));
@@ -344,6 +345,7 @@
           max_recent_days: cfg.max_recent_days,
           min_recent_count: cfg.min_recent_count,
           max_pinned: cfg.max_pinned,
+          stale_dirty_days: cfg.stale_dirty_days,
         };
       })
       .catch((e) => {
@@ -515,8 +517,7 @@
             {#each sectionedRepos[key] as repo, i (repo.path)}
               {@const idx = rowIndex(repo)}
               <li role="presentation">
-                <button
-                  type="button"
+                <div
                   data-row-index={idx}
                   role="option"
                   aria-selected={idx === selectedIndex}
@@ -528,12 +529,10 @@
                   onclick={(e) => {
                     selectedIndex = idx;
                     if (e.metaKey) {
-                      void openSelected(true);
+                      detailRepo = repo;
+                    } else {
+                      void openSelected(false);
                     }
-                  }}
-                  ondblclick={() => {
-                    selectedIndex = idx;
-                    void openSelected(false);
                   }}
                   oncontextmenu={(e) => {
                     e.preventDefault();
@@ -556,14 +555,28 @@
                       )}"
                       aria-hidden="true"
                     ></span>
-                    <span class="truncate font-medium">{repo.name}</span>
-                    <span
-                      class="ml-auto truncate text-xs {idx === selectedIndex
-                        ? 'text-blue-100'
-                        : 'text-neutral-500'}"
+                    <span class="truncate font-medium">{repo.alias ?? repo.name}</span>
+                    {#if repo.branch}
+                      <span
+                        class="truncate text-xs {idx === selectedIndex
+                          ? 'text-blue-100'
+                          : 'text-neutral-500'}"
+                      >
+                        {repo.branch}
+                      </span>
+                    {/if}
+                    <button
+                      type="button"
+                      class="ml-auto shrink-0 rounded px-1 text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+                      aria-label="Open detail"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        selectedIndex = idx;
+                        detailRepo = repo;
+                      }}
                     >
-                      {repo.branch ?? "—"}
-                    </span>
+                      ⓘ
+                    </button>
                   </div>
                   {#if repo.parent_dir}
                     <div
@@ -595,7 +608,7 @@
                       {/each}
                     </div>
                   {/if}
-                </button>
+                </div>
               </li>
             {/each}
           {/if}
