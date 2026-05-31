@@ -49,32 +49,32 @@ flowchart LR
 
 When a PR changes `version` or `CHANGELOG.md`, CI runs `scripts/check-release-pr.sh`:
 
-| Check | Rule |
-| ----- | ---- |
-| Skip | No `version` or `CHANGELOG.md` in PR diff |
-| Not below any release | `version` > latest `v*` tag (if any) |
-| Ahead of master | `version` > `origin/master:version` |
-| Sync drift | All manifests/lockfiles match `version` (`just version-check`) |
-| Release notes | `## [version]` with at least one `- ` bullet before the next `## [` |
+| Check                 | Rule                                                                |
+| --------------------- | ------------------------------------------------------------------- |
+| Skip                  | No `version` or `CHANGELOG.md` in PR diff                           |
+| Not below any release | `version` > latest `v*` tag (if any)                                |
+| Ahead of master       | `version` > `origin/master:version`                                 |
+| Sync drift            | All manifests/lockfiles match `version` (`just version-check`)      |
+| Release notes         | `## [version]` with at least one `- ` bullet before the next `## [` |
 
 ## Artifacts per release
 
-| Artifact | Runner | Contents |
-| -------- | ------ | -------- |
-| `workpot-macos-aarch64.tar.gz` | `macos-latest` | `workpot` binary, `README.md`, `LICENSE` |
-| `workpot-macos-x86_64.tar.gz` | `macos-15-intel` | same |
+| Artifact                       | Runner           | Contents                                 |
+| ------------------------------ | ---------------- | ---------------------------------------- |
+| `workpot-macos-aarch64.tar.gz` | `macos-latest`   | `workpot` binary, `README.md`, `LICENSE` |
+| `workpot-macos-x86_64.tar.gz`  | `macos-15-intel` | same                                     |
 
 Each tarball has a `.sha256` checksum on the release page.
 
 ## Testing releases
 
-| Phase | Trigger | Proves | Does not create |
-| ----- | ------- | ------ | --------------- |
-| **PR** | [release-smoke.yml](../.github/workflows/release-smoke.yml) on release-path changes | Full macOS matrix, tarball layout | Tag, GitHub Release |
-| **PR** | [ci.yml](../.github/workflows/ci.yml) `release-build` | Fast compile + `--version` on aarch64 | Tarball / x86_64 |
-| **PR** | `release-check` (when bumping version) | Version sync + changelog | Tag |
-| **master** | Push with increased `version` | Tag + GitHub Release + artifact upload | — |
-| **Recovery** | `workflow_dispatch` on `release.yml` | Re-upload artifacts for existing tag | New version |
+| Phase        | Trigger                                                                             | Proves                                 | Does not create     |
+| ------------ | ----------------------------------------------------------------------------------- | -------------------------------------- | ------------------- |
+| **PR**       | [release-smoke.yml](../.github/workflows/release-smoke.yml) on release-path changes | Full macOS matrix, tarball layout      | Tag, GitHub Release |
+| **PR**       | [ci.yml](../.github/workflows/ci.yml) `release-build`                               | Fast compile + `--version` on aarch64  | Tarball / x86_64    |
+| **PR**       | `release-check` (when bumping version)                                              | Version sync + changelog               | Tag                 |
+| **master**   | Push with increased `version`                                                       | Tag + GitHub Release + artifact upload | —                   |
+| **Recovery** | `workflow_dispatch` on `release.yml`                                                | Re-upload artifacts for existing tag   | New version         |
 
 ### PR smoke (`dry_run`)
 
@@ -82,22 +82,22 @@ Each tarball has a `.sha256` checksum on the release page.
 
 ### Recovery
 
-| Situation | Action |
-| --------- | ------ |
+| Situation                                       | Action                                                                        |
+| ----------------------------------------------- | ----------------------------------------------------------------------------- |
 | Artifacts failed but tag + GitHub Release exist | **Actions → release → Run workflow** — set `tag` to `vX.Y.Z`, `dry_run` false |
-| Wrong tag vs `version` file | Upload fails at `validate-version` (expected) |
-| Re-test full matrix on a PR | Open/update PR; **release-smoke** runs on path changes |
+| Wrong tag vs `version` file                     | Upload fails at `validate-version` (expected)                                 |
+| Re-test full matrix on a PR                     | Open/update PR; **release-smoke** runs on path changes                        |
 
 Do **not** push `v*` tags manually for routine releases.
 
 ## Workflows reference
 
-| Workflow | Role |
-| -------- | ---- |
-| [release-publish.yml](../.github/workflows/release-publish.yml) | Push to `master` → tag + GitHub Release when `version` increases |
-| [release-artifacts.yml](../.github/workflows/release-artifacts.yml) | `release: published` → macOS build + upload |
-| [release.yml](../.github/workflows/release.yml) | Guardrails, macOS builds, `gh release upload` (or smoke when `dry_run`) |
-| [release-smoke.yml](../.github/workflows/release-smoke.yml) | PR-only `dry_run` wrapper |
+| Workflow                                                            | Role                                                                    |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [release-publish.yml](../.github/workflows/release-publish.yml)     | Push to `master` → tag + GitHub Release when `version` increases        |
+| [release-artifacts.yml](../.github/workflows/release-artifacts.yml) | `release: published` → macOS build + upload                             |
+| [release.yml](../.github/workflows/release.yml)                     | Guardrails, macOS builds, `gh release upload` (or smoke when `dry_run`) |
+| [release-smoke.yml](../.github/workflows/release-smoke.yml)         | PR-only `dry_run` wrapper                                               |
 
 ## Squash commit = PR title + description
 

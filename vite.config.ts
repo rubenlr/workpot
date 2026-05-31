@@ -1,33 +1,12 @@
 import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
 const isCi = process.env.CI === "true" || process.env.CI === "1";
 
-/** Avoid libuv kqueue assert on macOS when Node tears down after adapter-static. */
-function exitAfterProductionBuild(): Plugin {
-  let isSsrBuild = false;
-  return {
-    name: "workpot:exit-after-build",
-    apply: "build",
-    configResolved(config) {
-      isSsrBuild = !!config.build.ssr;
-    },
-    closeBundle: {
-      sequential: true,
-      async handler() {
-        // Adapter runs in SvelteKit's sequential SSR closeBundle; wait for it.
-        if (!isSsrBuild) return;
-        process.exit(0);
-      },
-    },
-  };
-}
-
 export default defineConfig({
-  // Registered after sveltekit so sequential closeBundle runs after adapter-static.
-  plugins: [tailwindcss(), sveltekit(), exitAfterProductionBuild()],
+  plugins: [tailwindcss(), sveltekit()],
   clearScreen: false,
   logLevel: isCi ? "warn" : "info",
   server: {

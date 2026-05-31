@@ -129,9 +129,7 @@ fn run_paths() -> anyhow::Result<()> {
     if roots.is_empty() {
         println!("watch_roots: (none)");
     } else {
-        println!(
-            "watch_roots: (first-run config may seed ~/code and ~/dev when those dirs exist)"
-        );
+        println!("watch_roots: (first-run config may seed ~/code and ~/dev when those dirs exist)");
         for root in roots {
             println!("  {}", root.display());
         }
@@ -144,11 +142,7 @@ fn run_index() -> anyhow::Result<()> {
     let summary = ctx.run_index()?;
     println!(
         "index: +{} -{} skipped {} / git: {} refreshed, {} errors",
-        summary.added,
-        summary.removed,
-        summary.skipped,
-        summary.git_refreshed,
-        summary.git_errors
+        summary.added, summary.removed, summary.skipped, summary.git_refreshed, summary.git_errors
     );
     Ok(())
 }

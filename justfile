@@ -17,7 +17,7 @@ launch: build
     npm run tauri dev
 
 # Rewrite formatting (run before clippy / tests)
-fmt:
+fmt-fix:
     cargo fmt --all -q
     npm run lint
     npm run format
@@ -25,14 +25,12 @@ fmt:
 # Strict fmt — CI parity; run after fmt if you want to verify
 fmt-check:
     cargo fmt --all -- --check
-
-fix: build fmt coverage
-    cargo clippy --workspace --fix --allow-dirty --allow-staged --all-targets -q -- -D warnings
-    # Disabled until Tauri 3 stable — transitive GTK3/unic advisories (macOS v1). See CONTRIBUTING.md.
-    # cargo deny check --config .github/ci-assist/deny.toml
-    # cargo audit
+    npm run lint:check
+    npm run format:check
     npm run check
-    npm run test:coverage
+    cargo clippy --workspace --fix --allow-dirty --allow-staged --all-targets -q -- -D warnings
+
+fix: fmt-fix
 
 # One-time: `just coverage-tools` (crate is cargo-llvm-cov; needs llvm-tools-preview)
 coverage-tools:
@@ -44,7 +42,7 @@ coverage:
     cargo llvm-cov test -q -p workpot-tray --all-targets --lcov --output-path lcov-tray.info
 
 # precommit: build + check (no cargo deny/audit until Tauri 3 — see CONTRIBUTING.md) + fmt-check
-precommit: build fix fmt-check
+pre: build fix fmt-check
     ./target/release/workpot --version
 
 # Sync version from repo-root version file into all manifests and lockfiles

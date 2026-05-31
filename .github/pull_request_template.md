@@ -10,10 +10,10 @@
 
 Squash merges use **this PR title + description** as the commit on `master`.
 
-| | Convention |
-| --- | --- |
-| **PR title** | [Conventional Commits](https://www.conventionalcommits.org/) — e.g. `feat: add repo fuzzy rank`, `fix: handle bare repos` |
-| **PR description** | Details, test notes; put `BREAKING CHANGE: …` here when needed |
+|                    | Convention                                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| **PR title**       | [Conventional Commits](https://www.conventionalcommits.org/) — e.g. `feat: add repo fuzzy rank`, `fix: handle bare repos` |
+| **PR description** | Details, test notes; put `BREAKING CHANGE: …` here when needed                                                            |
 
 ### Shipping a release (optional — same PR as your work)
 
