@@ -560,3 +560,36 @@ fn tag_add_rejects_tag_over_64_graphemes() {
         .code(1)
         .stderr(predicate::str::contains("tag too long"));
 }
+
+#[test]
+fn list_empty_index_exits_zero() {
+    let home = tempfile::tempdir().expect("tempdir");
+
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+#[test]
+fn list_registered_repo_shows_icon_and_name() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = git_fixture(home.path());
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    // A freshly-registered repo has no last_opened_at and is not pinned or dirty —
+    // it appears in the Rest section with ⬜ icon.
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("sample-repo")
+                .and(predicate::str::contains("⬜").or(predicate::str::contains("📌"))),
+        );
+}

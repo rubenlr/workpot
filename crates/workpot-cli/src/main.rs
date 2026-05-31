@@ -1,4 +1,5 @@
 mod git_display;
+mod list_display;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
@@ -21,6 +22,8 @@ enum Commands {
     Paths,
     /// Full rescan of configured watch roots.
     Index,
+    /// List repositories in priority order (Pinned > Dirty > Recent > Rest).
+    List,
     #[command(subcommand)]
     Repo(RepoCommands),
     #[command(subcommand)]
@@ -114,6 +117,7 @@ fn run() -> anyhow::Result<()> {
     match cli.command {
         Commands::Paths => run_paths(),
         Commands::Index => run_index(),
+        Commands::List => run_list(),
         Commands::Repo(sub) => run_repo(sub),
         Commands::Excludes(sub) => run_excludes(sub),
         Commands::Roots(sub) => run_roots(sub),
@@ -144,6 +148,20 @@ fn run_index() -> anyhow::Result<()> {
         "index: +{} -{} skipped {} / git: {} refreshed, {} errors",
         summary.added, summary.removed, summary.skipped, summary.git_refreshed, summary.git_errors
     );
+    Ok(())
+}
+
+fn run_list() -> anyhow::Result<()> {
+    let ctx = AppContext::open().context("failed to open workpot")?;
+    let repos = ctx.list_repos().context("list failed")?;
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let ordered = list_display::flat_tray_ordered_with_icons(repos, ctx.config(), now_secs);
+    for (repo, icon) in &ordered {
+        println!("{}", list_display::format_list_row(repo, icon));
+    }
     Ok(())
 }
 
