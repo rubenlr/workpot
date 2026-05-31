@@ -48,6 +48,13 @@ fn named(name: &str) -> RepoRecord {
     repo(name, None, Some("main"), None, vec![])
 }
 
+/// Repo with a user alias (06.2-03 dual-field fuzzy).
+fn aliased(name: &str, alias: &str) -> RepoRecord {
+    let mut r = named(name);
+    r.alias = Some(alias.to_string());
+    r
+}
+
 // ---------------------------------------------------------------------------
 // Ported test cases — one-to-one with `fuzzy.test.ts` `it(...)` blocks
 // ---------------------------------------------------------------------------
@@ -337,4 +344,80 @@ mod fuzzy_golden_vectors {
             fuzzy_score("work", &by_path)
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Alias dual-field fuzzy (06.2-03)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn alias_query_matches_alias_not_name() {
+    let r = aliased("workpot", "wp");
+    assert!(fuzzy_score("wp", &r) > 0);
+}
+
+#[test]
+fn alias_set_name_still_matches() {
+    let r = aliased("workpot", "wp");
+    assert!(fuzzy_score("workpot", &r) > 0);
+}
+
+#[test]
+fn alias_and_name_both_match_short_query() {
+    let by_alias = aliased("some-long-name", "sln");
+    let by_name = named("sln");
+    assert!(fuzzy_score("sln", &by_alias) > 0);
+    assert!(fuzzy_score("sln", &by_name) > 0);
+}
+
+#[test]
+fn alias_primary_match_full_alias_string() {
+    let r = aliased("alpha", "my-project");
+    assert!(fuzzy_score("my-project", &r) > 0);
+}
+
+#[test]
+fn alias_none_no_regression_vs_unaliased() {
+    let baseline = named("workpot");
+    let with_none = repo("workpot", None, Some("main"), None, vec![]);
+    assert_eq!(fuzzy_score("workpot", &baseline), fuzzy_score("workpot", &with_none));
+    assert!(fuzzy_score("workpot", &with_none) > 0);
+}
+
+#[test]
+fn alias_neither_name_nor_alias_matches() {
+    let r = aliased("alpha", "beta");
+    assert_eq!(fuzzy_score("zzz", &r), 0);
+    assert!(!fuzzy_match("zzz", &r));
+}
+
+#[test]
+fn alias_set_name_subsequence_still_scores() {
+    let r = aliased("alpha", "beta");
+    assert!(fuzzy_score("lph", &r) > 0);
+}
+
+#[test]
+fn alias_substring_match_scores() {
+    let r = aliased("alpha", "beta");
+    assert!(fuzzy_score("bet", &r) > 0);
+}
+
+#[test]
+fn alias_prefix_bonus_beats_path_only() {
+    let with_alias = aliased("x", "myproject");
+    let path_only = repo("x", Some("/myp/x"), Some("main"), None, vec![]);
+    assert!(
+        fuzzy_score("myp", &with_alias) > fuzzy_score("myp", &path_only),
+        "alias prefix ({}) should beat path-only ({})",
+        fuzzy_score("myp", &with_alias),
+        fuzzy_score("myp", &path_only)
+    );
+}
+
+#[test]
+fn alias_empty_query_still_matches_all() {
+    let r = aliased("anything", "shortcut");
+    assert_eq!(fuzzy_score("", &r), 1);
+    assert!(fuzzy_match("", &r));
 }
