@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to execute
-last_updated: "2026-05-31T12:00:00Z"
+status: Phase 05 shipped — PR #4
+last_updated: "2026-05-31T14:00:00Z"
 progress:
   total_phases: 7
   completed_phases: 5
@@ -20,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 05 — human re-UAT for 05-09 tag save/edit
+**Current focus:** Phase 06 — CLI parity (PR #4 in review)
 
 ## Phase Status
 
@@ -30,12 +30,13 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 2 | Repo discovery | Complete — 5/5 plans (2026-05-29) |
 | 3 | Git state | Complete — 3/3 plans, UAT 10/10 (2026-05-30) |
 | 4 | Tray finder MVP | Complete — 4/4 plans (2026-05-30) |
-| 5 | Tags & prioritization | 05-09 shipped — human re-UAT pending |
+| 5 | Tags & prioritization | Shipped — PR https://github.com/rubenlr/workpot/pull/4 (2026-05-31) |
 | 6 | CLI parity | Not started |
 | 7 | Recipes | Not started |
 
 ## Session Notes
 
+- Phase 5 shipped (2026-05-31): PR https://github.com/rubenlr/workpot/pull/4
 - Phase 5 gap 05-09 (2026-05-31): tag blur-save, duplicate feedback, allTags refresh; commits `dbacbbb`, `e359e42`, `a01eb99`
 - Phase 5 plan 05-08 (2026-05-31): `allow-org-commands` — commits `1070e7a`, `ffd36e4`
 - Phase 5 plan 05-06 (2026-05-31): +page.svelte four-section tray, detail pane, tags, context menu, pin reorder; commit `ac9ac08`
