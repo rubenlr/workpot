@@ -49,6 +49,11 @@ require_cmd() {
 run_with_sudo_if_needed() {
   local target="$1"
   shift
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    "$@"
+    return
+  fi
+
   if [[ -e "$target" ]]; then
     if [[ -w "$target" ]]; then
       "$@"
@@ -60,6 +65,9 @@ run_with_sudo_if_needed() {
 
   local parent
   parent="$(dirname "$target")"
+  while [[ ! -e "$parent" && "$parent" != "/" ]]; do
+    parent="$(dirname "$parent")"
+  done
   if [[ -w "$parent" ]]; then
     "$@"
   else
@@ -230,7 +238,7 @@ print_next_steps() {
     log "- CLI installed at: ${cli_path}"
     if [[ "$GLOBAL_INSTALL" == false && ":$PATH:" != *":${HOME}/.local/bin:"* ]]; then
       log "  PATH hint: add ~/.local/bin to PATH"
-      log "  Example (zsh): echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> ~/.zshrc"
+      log "  Example (zsh): echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc"
     fi
   fi
 
@@ -266,7 +274,7 @@ main() {
     tray_target_path="$GLOBAL_TRAY_PATH"
   fi
 
-  local temp_root
+  temp_root=""
   temp_root="$(mktemp -d)"
   trap 'rm -rf "$temp_root"' EXIT
 
