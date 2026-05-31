@@ -77,7 +77,7 @@ pub fn fuzzy_score(query: &str, repo: &RepoRecord) -> i32 {
     if q.is_empty() {
         return 1;
     }
-    if q.len() > MAX_QUERY_LEN {
+    if q.chars().count() > MAX_QUERY_LEN {
         return 0;
     }
 
