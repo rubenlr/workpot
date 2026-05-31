@@ -42,7 +42,7 @@ flowchart LR
   Merge --> Pub[release-publish]
   Pub -->|"version gt latest tag"| Tag["tag vX.Y.Z + GitHub Release"]
   Tag --> Art[release-artifacts]
-  Art --> Bin[release.yml macOS tarballs]
+  Art --> Bin[release.yml aarch64 tarball + DMG + checksums]
 ```
 
 ## PR gate: release-check
@@ -82,12 +82,28 @@ Maintainer interpretation:
 - Warning-only unsigned log lines mean unsigned-by-design output (expected for forks/local experimentation).
 - Partial-secret errors are hard failures and must be fixed before publishing.
 
+## Release tag contract checklist
+
+For every release tag (`vX.Y.Z`), keep these contracts aligned:
+
+1. **PR gate:** `release-smoke` must pass with `v0.0.0-smoke` and validate only:
+   - `workpot-macos-aarch64.tar.gz` + `.sha256`
+   - `Workpot-0.0.0-smoke-aarch64.dmg` + `.sha256`
+2. **Published release:** `release-artifacts` must run for the same `vX.Y.Z` tag and upload:
+   - `workpot-macos-aarch64.tar.gz` + `.sha256`
+   - `Workpot-X.Y.Z-aarch64.dmg` + `.sha256`
+3. **Installer publication:** publish installer URLs for that exact tag before announcing:
+   - versioned release URL: `https://github.com/rubenlr/workpot/releases/download/vX.Y.Z/install.sh`
+   - convenience URL: `https://raw.githubusercontent.com/rubenlr/workpot/main/scripts/install.sh`
+
+If any of these three disagree on tag or artifact names, treat the release as failed.
+
 ## Testing releases
 
-| Phase        | Trigger                                                                             | Proves                                 | Does not create     |
-| ------------ | ----------------------------------------------------------------------------------- | -------------------------------------- | ------------------- |
-| **PR**       | [release-smoke.yml](../.github/workflows/release-smoke.yml) on release-path changes | Full macOS matrix, tarball layout      | Tag, GitHub Release |
-| **PR**       | [ci.yml](../.github/workflows/ci.yml) `release-build`                               | Fast compile + `--version` on aarch64  | Tarball / x86_64    |
+| Phase        | Trigger                                                                             | Proves                                                    | Does not create     |
+| ------------ | ----------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------- |
+| **PR**       | [release-smoke.yml](../.github/workflows/release-smoke.yml) on release-path changes | aarch64-only tarball + DMG names/checksums match contract | Tag, GitHub Release |
+| **PR**       | [ci.yml](../.github/workflows/ci.yml) `release-build`                               | Fast compile + `--version` on aarch64                     | Release assets      |
 | **PR**       | `release-check` (when bumping version)                                              | Version sync + changelog               | Tag                 |
 | **master**   | Push with increased `version`                                                       | Tag + GitHub Release + artifact upload | —                   |
 | **Recovery** | `workflow_dispatch` on `release.yml`                                                | Re-upload artifacts for existing tag   | New version         |
