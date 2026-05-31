@@ -33,10 +33,11 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 5 | Tags & prioritization | Shipped — PR https://github.com/rubenlr/workpot/pull/4 (2026-05-31) |
 | 6 | CLI parity | Complete — 5/5 plans, UAT 5/6 auto (2026-05-31) |
 | 06.1 | Release & distribution | Not started — inserted 2026-05-31 |
-| 06.2 | Tray UX polish | In progress — 4/9 plans (2026-05-31) |
+| 06.2 | Tray UX polish | In progress — 5/9 plans (2026-05-31) |
 
 ## Session Notes
 
+- Phase 06.2 plan 06.2-04 (2026-05-31): tray row click model, alias display, tri-state icon; commits `9082057`, `da98d25`, docs `90a73fa`
 - Phase 06.2 plan 06.2-05 (2026-05-31): CLI alias-first list_display, bare branch omission, open-by-alias; commits `61a3858`, `85607f1`
 - Phase 06.2 plan 06.2-03 (2026-05-31): alias_score in fuzzy_score; TDD RED `d27d3b4`, GREEN `dff06c0`
 - Phase 06.2 plan 06.2-02 (2026-05-31): has_stale_dirty + 16-case tests; TDD RED `9252f6d`, GREEN `6e1aefc`
@@ -69,6 +70,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 - [Phase 06.2-01]: Alias is user-only (scan upsert does not touch alias); Config.stale_dirty_days default 7 added with plan 01 for TrayConfigDto IPC.
 - [Phase 06.2-02]: has_stale_dirty uses injectable now_secs; never-opened dirty repos use i64::MAX age (immediate stale).
 - [Phase 06.2-05]: CLI format_list_row matches tray: alias ?? name, omit branch when None; open resolves exact alias before folder name.
+- [Phase 06.2-04]: Row is div[role=option] with nested info button; tray icon uses has_stale_dirty_dto + syncing override (not any_dirty).
 
 ## Accumulated Context
 
