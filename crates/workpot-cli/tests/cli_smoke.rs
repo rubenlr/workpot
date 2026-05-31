@@ -759,3 +759,101 @@ fn list_registered_repo_shows_icon_and_name() {
                 .and(predicate::str::contains("⬜").or(predicate::str::contains("📌"))),
         );
 }
+
+/// Resolve the test database path the same way `workpot paths` does after bootstrap.
+fn database_path(home: &std::path::Path) -> PathBuf {
+    let out = workpot_cmd(home)
+        .arg("paths")
+        .output()
+        .expect("paths");
+    assert!(out.status.success(), "workpot paths failed");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix("database: ") {
+            return PathBuf::from(rest.trim());
+        }
+    }
+    panic!("database path not found in paths output:\n{stdout}");
+}
+
+fn set_repo_alias(home: &std::path::Path, repo_path: &std::path::Path, alias: &str) {
+    workpot_cmd(home)
+        .arg("paths")
+        .assert()
+        .success();
+    let db = database_path(home);
+    let canon = repo_path.canonicalize().expect("canonicalize");
+    let path_key = canon.to_string_lossy().into_owned();
+    let conn =
+        workpot_core::infra::store::open_connection(&db).expect("open test db");
+    workpot_core::services::org::set_alias(&conn, &path_key, Some(alias))
+        .expect("set alias");
+}
+
+fn bare_git_fixture(parent: &std::path::Path, name: &str) -> PathBuf {
+    let repo = parent.join(name);
+    let status = StdCommand::new("git")
+        .args(["init", "--bare", "-q"])
+        .arg(&repo)
+        .status()
+        .expect("git init --bare");
+    assert!(status.success(), "git init --bare failed for {name}");
+    repo
+}
+
+#[test]
+fn workpot_list_shows_alias_when_set() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = named_git_fixture(home.path(), "testrepo");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    set_repo_alias(home.path(), &repo_path, "myalias");
+
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("myalias"));
+}
+
+#[test]
+fn workpot_list_omits_branch_placeholder_for_bare_repos() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let bare_path = bare_git_fixture(home.path(), "bare.git");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", bare_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path()).arg("index").assert().success();
+
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("—").not());
+}
+
+#[test]
+fn workpot_search_matches_by_alias() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = named_git_fixture(home.path(), "testrepo");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    set_repo_alias(home.path(), &repo_path, "myalias");
+
+    workpot_cmd(home.path())
+        .args(["search", "myalias"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("myalias"));
+}

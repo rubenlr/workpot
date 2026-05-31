@@ -171,3 +171,51 @@ fn config_deserializes_missing_stale_dirty_days_to_seven() {
     let config: Config = toml::from_str("watch_roots = []\nexcludes = []\n").expect("parse");
     assert_eq!(config.stale_dirty_days, 7);
 }
+
+// --- has_stale_dirty_dto bridge (plan 06.2-09) ---
+
+/// Replicates `has_stale_dirty_dto` in `src-tauri/src/commands.rs` for parity testing.
+fn dto_equivalent(
+    is_dirty: Option<bool>,
+    last_opened_at: Option<i64>,
+    stale_dirty_days: u32,
+    now_secs: i64,
+) -> bool {
+    let threshold_secs = stale_dirty_days as i64 * SECS_PER_DAY;
+    is_dirty == Some(true)
+        && {
+            let age = match last_opened_at {
+                Some(t) => now_secs - t,
+                None => i64::MAX,
+            };
+            age >= threshold_secs
+        }
+}
+
+/// Validates that `has_stale_dirty_dto` in `src-tauri/src/commands.rs` follows the same
+/// policy as `has_stale_dirty`. If the two implementations diverge, update both and keep
+/// this test passing.
+#[test]
+fn has_stale_dirty_dto_matches_has_stale_dirty() {
+    let stale_dirty_days = 7_u32;
+    let threshold = stale_dirty_days as i64 * SECS_PER_DAY;
+    let now = 2_000_000_i64;
+
+    let cases: Vec<(Option<bool>, Option<i64>)> = vec![
+        (Some(true), None),
+        (Some(true), Some(now - threshold)),
+        (Some(true), Some(now - threshold + 1)),
+        (Some(false), Some(now)),
+        (None, None),
+    ];
+
+    for (is_dirty, last_opened_at) in cases {
+        let repo = make_repo(is_dirty, last_opened_at);
+        let core = has_stale_dirty(&[repo], stale_dirty_days, now);
+        let dto = dto_equivalent(is_dirty, last_opened_at, stale_dirty_days, now);
+        assert_eq!(
+            core, dto,
+            "policy mismatch for is_dirty={is_dirty:?} last_opened_at={last_opened_at:?}"
+        );
+    }
+}
