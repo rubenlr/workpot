@@ -8,9 +8,9 @@ Releases are automated with [Release Please](https://github.com/googleapis/relea
 
 1. Merge feature PRs to `master` via **squash** (only allowed merge method).
 2. **[release-please.yml](../.github/workflows/release-please.yml)** (on each push to `master`) opens or updates a **Release PR** (`chore: release X.Y.Z`) with `Cargo.toml`, `Cargo.lock`, `.github/ci-assist/.release-please-manifest.json`, and `CHANGELOG.md` updates.
-3. Review and merge the Release PR.
-4. Release Please creates tag `vX.Y.Z` and the GitHub Release (notes from `CHANGELOG.md`).
-5. The same **release-please** run calls reusable **[release.yml](../.github/workflows/release.yml)** when `release_created` is true — builds macOS tarballs and **uploads** them to that release.
+3. Review and merge the Release PR to `master` (no manual tag or workflow).
+4. The push to `master` runs **release-please**, which creates tag `vX.Y.Z` and publishes the GitHub Release (notes from `CHANGELOG.md`).
+5. **`release: published`** triggers **[release-artifacts.yml](../.github/workflows/release-artifacts.yml)** → **[release.yml](../.github/workflows/release.yml)** builds macOS tarballs and uploads them to that release.
 
 Do not push `v*` tags manually for routine releases. Use `workflow_dispatch` on `release.yml` only to **re-upload** artifacts for an existing release-please tag (see [Recovery](#recovery)).
 
@@ -38,7 +38,7 @@ Branch commit messages are ignored for versioning once the squash default above 
 
 ### Version source of truth
 
-- Released version: `.github/ci-assist/.release-please-manifest.json` and `[workspace.package].version` after the Release PR merges.
+- Released version: `.github/ci-assist/.release-please-manifest.json` and `crates/workpot-cli/Cargo.toml` after the Release PR merges.
 - `release.yml` validates that the tag matches `Cargo.toml` at that ref before building.
 
 ### Two PR types
@@ -66,7 +66,7 @@ Validate in layers before the first real Release PR merge. Do **not** cut a real
 | **0 – PR**        | [release-smoke.yml](../.github/workflows/release-smoke.yml) on PRs touching release paths | Full macOS matrix, `cargo build --release`, tarball layout | Tag, GitHub Release, upload to Releases |
 | **0b – PR**       | [ci.yml](../.github/workflows/ci.yml) `release-build`                                     | Fast compile + `--version` on aarch64                      | Tarball / x86_64                        |
 | **1 – master**    | Push to `master` → release-please                                                         | Config, permissions, Release PR opened/updated             | Tag (until Release PR merges)           |
-| **2 – master**    | Merge Release PR                                                                          | `release_created`, tag, release notes, artifact upload     | —                                       |
+| **2 – master**    | Merge Release PR                                                                          | tag, GitHub Release, then `release-artifacts` upload       | —                                       |
 | **3 – recovery**  | `workflow_dispatch` on `release.yml`                                                      | Re-run failed matrix/upload only                           | New version                             |
 | **3b – recovery** | `workflow_dispatch` on `release-please.yml`                                               | Re-run bot without empty commit                            | Release (unless commits warrant it)     |
 
@@ -91,11 +91,12 @@ Filter Actions runs by workflow name **release-smoke**.
 
 ## Workflows reference
 
-| Workflow                                                      | Role                                                                                         |
-| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| [release-please.yml](../.github/workflows/release-please.yml) | Semver, Release PR, tag, GitHub Release metadata; calls `release.yml` when `release_created` |
-| [release.yml](../.github/workflows/release.yml)               | Guardrails, macOS builds, `gh release upload` (or smoke artifacts when `dry_run`)            |
-| [release-smoke.yml](../.github/workflows/release-smoke.yml)   | PR-only `dry_run` wrapper                                                                    |
+| Workflow                                                            | Role                                                                              |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [release-please.yml](../.github/workflows/release-please.yml)       | Semver, Release PR; on merge to `master`, tag + GitHub Release                    |
+| [release-artifacts.yml](../.github/workflows/release-artifacts.yml) | `release: published` → macOS build + upload                                       |
+| [release.yml](../.github/workflows/release.yml)                     | Guardrails, macOS builds, `gh release upload` (or smoke artifacts when `dry_run`) |
+| [release-smoke.yml](../.github/workflows/release-smoke.yml)         | PR-only `dry_run` wrapper                                                         |
 
 ## Phase 4: Tauri tray app + code signing (not yet implemented)
 

@@ -15,7 +15,7 @@
 | 2 | Repo discovery | 5/5 | Complete |
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
 | 4 | 4/4 | Complete |
-| 5 | Tags & prioritization | Pins, tags, notes, signal ranking | ORG-01..04 | 4 |
+| 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
 | 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
 | 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
 
@@ -174,7 +174,35 @@ Plans:
 3. Dirty and recently opened repos rank higher than stale clean repos
 4. User can save notes on a repo and search matches note text
 
-**Plans:** TBD via `/gsd-plan-phase 5`
+**Plans:** 9/9 executed (05-09 human re-UAT pending)
+
+Plans:
+**Wave 0**
+
+- [x] 05-01-PLAN.md — Test stubs: org_test.rs, tagFilter.ts+test, pinOrder.ts+test (ORG-01,02,04)
+
+**Wave 1** *(parallel — no shared files)*
+
+- [x] 05-02-PLAN.md — Migration 006, FK pragma, RepoRecord+Config extension, org.rs service, AppContext delegation, catalog JOIN (ORG-01,02,03,04)
+- [x] 05-03-PLAN.md — TypeScript: RepoDto extension, sectionSort, fuzzy notes+tags, filterAndSectionRepos (ORG-01,02,03,04)
+
+**Wave 2** *(parallel — no shared files)*
+
+- [x] 05-04-PLAN.md — Tauri IPC commands: set_tags, set_notes, set_pin, set_pin_order, list_branches, show_repo_context_menu (ORG-01,02,03,04)
+- [x] 05-05-PLAN.md — Svelte components: DetailPane, TagChip, TagAutocomplete, SectionHeader (ORG-01,02,03,04)
+
+**Wave 3** *(parallel — no shared files)*
+
+- [x] 05-06-PLAN.md — +page.svelte: four-section list, detail pane nav, drag-to-reorder, context menu, #tag autocomplete (ORG-01,02,03,04)
+- [x] 05-07-PLAN.md — CLI: workpot tag add/remove/list subcommand (ORG-01)
+
+**Wave 4** *(gap closure — UAT IPC blocked; blocked on 05-04 + 05-06)*
+
+- [x] 05-08-PLAN.md — Tauri capabilities: allow-org-commands for Phase 5 IPC (ORG-01..04, 05-HUMAN-UAT) (2026-05-31)
+
+**Wave 5** *(gap closure — tag save/edit UAT)*
+
+- [x] 05-09-PLAN.md — Tray tag persistence: refresh allTags, blur-save, duplicate feedback, context menu remove (ORG-01) (2026-05-31; human Task 3 pending)
 
 ---
 
@@ -192,7 +220,21 @@ Plans:
 2. `workpot search <query>` returns the same results as tray filter
 3. `workpot open <name|path>` opens Cursor for the matched repo
 
-**Plans:** TBD via `/gsd-plan-phase 6`
+**Plans:** 5 plans in 3 waves
+
+**Wave 1** *(parallel — no shared files)*
+
+- [ ] 06-01-PLAN.md — Core `repo_priority`: section sort + flat tray order (CLI-01, CLI-03)
+- [ ] 06-02-PLAN.md — Core `repo_fuzzy`: port tray fuzzy matcher (CLI-02, CLI-03)
+
+**Wave 2** *(parallel — depends on 06-01)*
+
+- [ ] 06-03-PLAN.md — `workpot list` + emoji row formatter (CLI-01, CLI-03)
+- [ ] 06-05-PLAN.md — Move `launch` to core + `workpot open` (CLI-02, LAUNCH-01)
+
+**Wave 3**
+
+- [ ] 06-04-PLAN.md — `workpot search <query>` (CLI-02, CLI-03; depends 06-01, 06-02, 06-03)
 
 ---
 

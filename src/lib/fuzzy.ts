@@ -51,6 +51,8 @@ export function fuzzyScore(query: string, repo: RepoDto): number {
     scoreField(q, repo.name, true),
     scoreField(q, repo.path, false),
     scoreField(q, repo.branch ?? "", false),
+    scoreField(q, repo.notes ?? "", false),
+    ...repo.tags.map((t) => scoreField(q, t, false)),
   ];
   return Math.max(...scores);
 }

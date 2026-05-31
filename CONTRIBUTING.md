@@ -50,6 +50,15 @@ Install optional policy tools (for manual runs while gates are disabled):
 cargo install cargo-deny cargo-audit
 ```
 
+`just fix` / `just coverage` need LLVM coverage (same as CI `coverage` job):
+
+```bash
+just coverage-tools
+# installs llvm-tools-preview + cargo-llvm-cov (not the nonexistent `llvm-cov` crate)
+```
+
+Produces `lcov-core-cli.info` and `lcov-tray.info` (not a single `lcov.info`).
+
 ### Dependency audits (disabled until Tauri 3)
 
 Tauri 2.x pulls an unmaintained Linux GTK3 stack and build-time `unic-*` crates via `urlpattern`. Those dependencies are not linked into the macOS `Workpot.app` (`cargo tree --target aarch64-apple-darwin -i gtk` is empty).

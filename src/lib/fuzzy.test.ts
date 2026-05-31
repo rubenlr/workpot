@@ -7,10 +7,15 @@ function repo(partial: Partial<RepoDto> & Pick<RepoDto, "name">): RepoDto {
     path: partial.path ?? `/Users/me/c/${partial.name}`,
     name: partial.name,
     branch: partial.branch ?? "main",
-    is_dirty: null,
+    is_dirty: partial.is_dirty ?? null,
     parent_dir: "",
-    last_opened_at: null,
-    git_state_error: null,
+    last_opened_at: partial.last_opened_at ?? null,
+    git_state_error: partial.git_state_error ?? null,
+    pinned: partial.pinned ?? false,
+    pin_order: partial.pin_order ?? null,
+    notes: partial.notes ?? null,
+    tags: partial.tags ?? [],
+    branches: partial.branches ?? [],
   };
 }
 
@@ -63,5 +68,28 @@ describe("fuzzyMatch", () => {
     expect(fuzzyScore("work", byName)).toBeGreaterThan(
       fuzzyScore("work", byPath),
     );
+  });
+
+  it("matches notes text", () => {
+    const r = repo({
+      name: "x",
+      notes: "deployment pipeline",
+    });
+    expect(fuzzyMatch("pipeline", r)).toBe(true);
+  });
+
+  it("matches tag text", () => {
+    const r = repo({ name: "x", tags: ["backend"] });
+    expect(fuzzyMatch("backend", r)).toBe(true);
+  });
+
+  it("does not match unrelated query on note-only repo", () => {
+    const r = repo({
+      name: "x",
+      branch: null,
+      notes: "deployment pipeline",
+    });
+    expect(fuzzyMatch("zzz", r)).toBe(false);
+    expect(fuzzyScore("zzz", r)).toBe(0);
   });
 });

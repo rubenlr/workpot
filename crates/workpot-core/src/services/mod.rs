@@ -3,5 +3,6 @@ pub mod discovery;
 pub mod excludes;
 pub mod git_state;
 pub mod index;
+pub mod org;
 pub mod paths;
 pub mod roots;

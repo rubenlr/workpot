@@ -36,6 +36,12 @@ pub enum WorkpotError {
     #[error("config limits exceeded: {0}")]
     LimitsExceeded(String),
 
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
+
+    #[error("pin cap exceeded: max {max} pinned repos")]
+    PinCapExceeded { max: u32 },
+
     #[error("watch root not found: {0}")]
     WatchRootNotFound(String),
 

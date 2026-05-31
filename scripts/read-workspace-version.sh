@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Print [workspace.package].version from Cargo.toml (path or "-" for stdin).
+# Print the release version from crates/workpot-cli/Cargo.toml [package].version.
 set -euo pipefail
 
-FILE="${1:-Cargo.toml}"
+FILE="${1:-crates/workpot-cli/Cargo.toml}"
 
 read_version() {
   awk -F ' *= *' '
-    /^\[workspace\.package\]$/ { in_wp = 1; next }
-    /^\[/ { in_wp = 0 }
-    in_wp && $1 == "version" {
+    /^\[package\]$/ { in_pkg = 1; next }
+    /^\[/ { in_pkg = 0 }
+    in_pkg && $1 == "version" {
       gsub(/"/, "", $2)
       print $2
       exit

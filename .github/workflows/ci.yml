@@ -7,6 +7,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
+  NODE_VERSION: "24"
 
 permissions:
   contents: read
@@ -18,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -61,13 +62,27 @@ jobs:
       #   if: matrix.os == 'ubuntu-latest'
       #   run: cargo audit
 
-  test:
-    name: test (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  # Disabled until Tauri 3 stable — transitive GTK3/unic advisories (macOS v1). See CONTRIBUTING.md.
+  # test-linux:
+  #   name: test (ubuntu-latest)
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Install Rust toolchain
+  #       uses: dtolnay/rust-toolchain@master
+  #       with:
+  #         toolchain: 1.96
+  #     - name: Restore Rust cache
+  #       uses: ./.github/actions/rust-cache
+  #       with:
+  #         shared-key: ci
+  #         key: ubuntu-latest
+  #     - name: Test
+  #       run: cargo test -p workpot-core -p workpot-cli --all-targets
+
+  test-macos:
+    name: test (macos-latest)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
@@ -78,37 +93,32 @@ jobs:
         uses: ./.github/actions/rust-cache
         with:
           shared-key: ci
-          key: ${{ matrix.os }}
+          key: macos-latest
       - name: Fetch dependencies (macOS D-12)
-        if: matrix.os == 'macos-latest'
         run: cargo fetch
-      - name: Setup Node.js
-        if: matrix.os == 'macos-latest'
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
       - name: Install npm dependencies
-        if: matrix.os == 'macos-latest'
-        run: npm ci
+        uses: ./.github/actions/npm-ci
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - name: Test
-        if: matrix.os == 'macos-latest'
         run: cargo test -p workpot-core -p workpot-cli -p workpot-tray --all-targets
-      - name: Frontend check and test
-        if: matrix.os == 'macos-latest'
+      - name: Frontend check and test coverage
         run: |
           npm run format:check
-          npm run lint
+          npm run lint:check
           npm run check
-          npm test
+          npm run test:coverage
+          cp coverage/lcov.info lcov-js.info
       - name: Tauri bundle smoke
-        if: matrix.os == 'macos-latest'
         run: npm run tauri build
         env:
           CI: true
-      - name: Test
-        if: matrix.os != 'macos-latest'
-        run: cargo test -p workpot-core -p workpot-cli --all-targets
+      - name: Upload JS coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-js.info
+          path: lcov-js.info
+          retention-days: 7
 
   coverage:
     name: coverage
@@ -135,16 +145,6 @@ jobs:
         run: |
           cargo llvm-cov test -p workpot-core -p workpot-cli --lcov --output-path lcov-core-cli.info
           cargo llvm-cov test -p workpot-tray --lcov --output-path lcov-tray.info
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-      - name: Frontend test coverage
-        run: |
-          npm ci
-          npm run test:coverage
-          cp coverage/lcov.info lcov-js.info
       - name: Upload core + cli coverage
         uses: actions/upload-artifact@v4
         with:
@@ -157,16 +157,10 @@ jobs:
           name: lcov-tray.info
           path: lcov-tray.info
           retention-days: 7
-      - name: Upload JS coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: lcov-js.info
-          path: lcov-js.info
-          retention-days: 7
 
   sonarcloud:
     name: sonarcloud
-    needs: coverage
+    needs: [coverage, test-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -192,12 +186,10 @@ jobs:
           lcov -a lcov-core-cli.info -a lcov-tray.info -o lcov-rust.info --ignore-errors empty
           test -f lcov-js.info
 
-      - uses: actions/setup-node@v4
+      - name: Install npm dependencies
+        uses: ./.github/actions/npm-ci
         with:
-          node-version: "22"
-          cache: npm
-
-      - run: npm ci
+          node-version: ${{ env.NODE_VERSION }}
 
       - run: npx svelte-kit sync
 
@@ -215,6 +207,7 @@ jobs:
 
   release-build:
     name: cargo build --release
+    needs: [test-macos]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -231,21 +224,6 @@ jobs:
         run: cargo build --release -p workpot-cli
       - name: Verify CLI version
         run: ./target/release/workpot --version
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-      - name: Build tray release
-        run: |
-          npm ci
-          npm run format:check
-          npm run lint
-          npm run check
-          npm test
-          npm run tauri build
-        env:
-          CI: true
       - uses: actions/upload-artifact@v4
         with:
           name: ci-workpot-macos-aarch64

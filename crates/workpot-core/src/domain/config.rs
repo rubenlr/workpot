@@ -20,6 +20,18 @@ fn default_max_visible_rows() -> u32 {
     15
 }
 
+fn default_max_pinned() -> u32 {
+    5
+}
+
+fn default_max_recent_days() -> u32 {
+    14
+}
+
+fn default_min_recent_count() -> u32 {
+    3
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Limits {
     #[serde(default = "default_max_watch_roots")]
@@ -53,6 +65,15 @@ pub struct Config {
     /// Maximum repo rows visible in the tray panel before scrolling (D-12).
     #[serde(default = "default_max_visible_rows")]
     pub max_visible_rows: u32,
+    /// Maximum pinned repos in the tray (Phase 5).
+    #[serde(default = "default_max_pinned")]
+    pub max_pinned: u32,
+    /// Recency window for the Recent section, in days (Phase 5).
+    #[serde(default = "default_max_recent_days")]
+    pub max_recent_days: u32,
+    /// Minimum Recent section size via padding (Phase 5).
+    #[serde(default = "default_min_recent_count")]
+    pub min_recent_count: u32,
 }
 
 impl Default for Config {
@@ -63,6 +84,9 @@ impl Default for Config {
             limits: Limits::default(),
             launch_cmd: default_launch_cmd(),
             max_visible_rows: default_max_visible_rows(),
+            max_pinned: default_max_pinned(),
+            max_recent_days: default_max_recent_days(),
+            min_recent_count: default_min_recent_count(),
         }
     }
 }
@@ -100,6 +124,24 @@ impl Config {
         }
         if !self.launch_cmd.contains("{path}") {
             return Err("launch_cmd must contain {path} placeholder".into());
+        }
+        if self.max_pinned < 1 || self.max_pinned > 20 {
+            return Err(format!(
+                "max_pinned {} must be between 1 and 20",
+                self.max_pinned
+            ));
+        }
+        if self.max_recent_days < 1 || self.max_recent_days > 365 {
+            return Err(format!(
+                "max_recent_days {} must be between 1 and 365",
+                self.max_recent_days
+            ));
+        }
+        if self.min_recent_count > self.max_pinned {
+            return Err(format!(
+                "min_recent_count {} must be <= max_pinned {}",
+                self.min_recent_count, self.max_pinned
+            ));
         }
         Ok(())
     }

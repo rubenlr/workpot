@@ -17,3 +17,18 @@ commands.allow = ["refresh_all_git_state"]
 identifier = "allow-open-in-cursor"
 description = "Allows open_in_cursor IPC."
 commands.allow = ["open_in_cursor"]
+
+[[permission]]
+identifier = "allow-org-commands"
+description = "Allows Phase 5 org IPC (tags, notes, pins, branches, context menu)."
+commands.allow = [
+  "set_tags",
+  "add_tag",
+  "remove_tag",
+  "list_all_tags",
+  "set_notes",
+  "set_pin",
+  "set_pin_order",
+  "list_branches",
+  "show_repo_context_menu",
+]

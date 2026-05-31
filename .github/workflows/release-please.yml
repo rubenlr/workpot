@@ -1,12 +1,16 @@
 name: release-please
 
-# Opens/updates a Release PR from conventional commits on master; merging that PR
-# tags vX.Y.Z, creates the GitHub Release, and calls release.yml for binaries.
+# Opens/updates a Release PR from conventional commits on master. Merging that PR
+# to master triggers a push run that tags vX.Y.Z and publishes the GitHub Release;
+# release-artifacts.yml then builds and uploads macOS binaries (release: published).
 
 on:
   push:
     branches: [master]
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: write
@@ -16,9 +20,6 @@ jobs:
   release-please:
     name: release-please
     runs-on: ubuntu-latest
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,12 +29,3 @@ jobs:
           target-branch: master
           config-file: .github/ci-assist/release-please-config.json
           manifest-file: .github/ci-assist/.release-please-manifest.json
-
-  artifacts:
-    name: release artifacts
-    needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
-    uses: ./.github/workflows/release.yml
-    with:
-      tag: ${{ needs.release-please.outputs.tag_name }}
-    secrets: inherit
