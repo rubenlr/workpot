@@ -1,6 +1,6 @@
 ---
 phase: 05-tags-prioritization
-fixed_at: 2026-05-31T10:30:00Z
+fixed_at: 2026-05-31T10:43:00Z
 review_path: .planning/phases/05-tags-prioritization/05-REVIEW.md
 iteration: 1
 findings_in_scope: 7
@@ -11,65 +11,69 @@ status: all_fixed
 
 # Phase 5: Code Review Fix Report
 
-**Fixed at:** 2026-05-31T10:30:00Z  
+**Fixed at:** 2026-05-31T10:43:00Z  
 **Source review:** `.planning/phases/05-tags-prioritization/05-REVIEW.md`  
 **Iteration:** 1
 
 **Summary:**
-- Findings in scope: 7
+- Findings in scope: 7 (CR-01, CR-02, WR-01–WR-05; IN-01 skipped per scope)
 - Fixed: 7
 - Skipped: 0
 
 **Verification:**
-- `cargo test -p workpot-tray --lib` — 17 passed
-- `npm run check` — 0 errors (1 pre-existing a11y warning on DetailPane)
+- `npm test` — 90 passed (after `npm ci` in worktree)
+- `cargo test -p workpot-cli -p workpot-core --test org_test` — 23 passed
 
 ## Fixed Issues
 
-### CR-01: `set_notes` IPC uses byte length; core uses grapheme count
+### CR-01: CLI tag length uses byte count; core uses grapheme count
 
-**Files modified:** `src-tauri/src/commands.rs`  
-**Commit:** `9788ba5`  
-**Applied fix:** Notes IPC validation uses `n.chars().count() > 500` instead of byte `len()`.
+**Files modified:** `crates/workpot-cli/src/main.rs`  
+**Commit:** `85427a1`  
+**Applied fix:** `validate_tag_for_add` trims input, uses `trimmed.chars().count() > 64`, and `trimmed.contains('#')` to match core/IPC.
 
-### CR-02: `validate_tag` IPC uses byte length; core uses grapheme count
+### CR-02: `detailRepo` stays stale after `loadRepos` / `onMutated`
 
-**Files modified:** `src-tauri/src/commands.rs`  
-**Commit:** `9788ba5`  
-**Applied fix:** Tag IPC validation uses `trimmed.chars().count() > 64`. Landed in the same commit as CR-01 (both hunks staged together).
+**Files modified:** `src/routes/+page.svelte`  
+**Commit:** `5a281e1`  
+**Applied fix:** Added `refreshReposAndDetail()` to resync `detailRepo` by path after `loadRepos`; wired DetailPane `onMutated`, git refresh, panel-opened, context pin, background open, and pin reorder refresh paths.
 
-### CR-03: `list_branches` effect has no stale-response guard
+### WR-01: Pin drag-drop has no error handling
 
-**Files modified:** `src/lib/components/DetailPane.svelte`  
-**Commit:** `9fad91e`  
-**Applied fix:** Async branch/tag loads use a `cancelled` flag and effect cleanup to ignore stale responses after `repo.path` changes.
+**Files modified:** `src/routes/+page.svelte`  
+**Commit:** `95bbf8e`  
+**Applied fix:** Wrapped `set_pin_order` + `refreshReposAndDetail` in try/catch; surfaces IPC errors via `error` state.
 
-### CR-04: Notes `$effect` overwrites in-progress edits on `onMutated`
+### WR-02: CLI `#` validation checks prefix only, not anywhere in tag
 
-**Files modified:** `src/lib/components/DetailPane.svelte`  
-**Commit:** `52e84b9`  
-**Applied fix:** Sync `notesValue` from `repo.notes` only when the notes textarea is not focused (`bind:this` + `document.activeElement` check).
+**Files modified:** `crates/workpot-cli/src/main.rs`  
+**Commit:** `85427a1` (same commit as CR-01)  
+**Applied fix:** Replaced `starts_with('#')` with `trimmed.contains('#')` in `validate_tag_for_add`.
 
-### WR-01: `TagAutocomplete` cannot reflect partial `#` token from filter bar
+### WR-03: List-row tag remove has no error handling
 
-**Files modified:** `src/lib/components/TagAutocomplete.svelte`  
-**Commit:** `0117b3e`  
-**Applied fix:** Added optional `prefix` prop; `filtered` applies `prefix` then inner `inputValue` via `$derived.by`.
+**Files modified:** `src/routes/+page.svelte`  
+**Commit:** `ff2d1d7`  
+**Applied fix:** `onRemove` is async with try/catch; awaits `remove_tag` and `refreshReposAndDetail`.
 
-### WR-02: `list_branches` does not require indexed repo path
+### WR-04: Selection reset `$effect` can clobber background-open restoration
 
-**Files modified:** `src-tauri/src/commands.rs`  
-**Commit:** `d55ee80`  
-**Applied fix:** `list_branches` takes `AppContext` state and calls `indexed_launch_path` before `spawn_blocking`.
+**Files modified:** `src/routes/+page.svelte`  
+**Commit:** `ff2d1d7` (committed together with WR-03 in one atomic file commit)  
+**Applied fix:** Removed `flatVisible.length` from selection-reset `$effect`; reset runs on `filterQuery` changes only.
 
-### WR-03: `highlightedIndex` not reset when filter narrows
+### WR-05: Keyboard nav drives hidden list while detail pane is open
 
-**Files modified:** `src/lib/components/TagAutocomplete.svelte`  
-**Commit:** `448932c`  
-**Applied fix:** `$effect` resets `highlightedIndex` to `-1` when `inputValue` or `prefix` changes.
+**Files modified:** `src/routes/+page.svelte`  
+**Commit:** `ad5c99a`  
+**Applied fix:** Early-return in `onFilterKeydown` and `onPanelKeydown` when `detailRepo !== null`, allowing only Left/Esc close and ArrowRight to switch detail target (Cmd+R refresh still works).
+
+## Skipped Issues
+
+None.
 
 ---
 
-_Fixed: 2026-05-31T10:30:00Z_  
+_Fixed: 2026-05-31T10:43:00Z_  
 _Fixer: Claude (gsd-code-fixer)_  
 _Iteration: 1_
