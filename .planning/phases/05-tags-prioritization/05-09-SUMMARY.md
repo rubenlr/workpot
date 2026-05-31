@@ -26,6 +26,9 @@ key-files:
     - src/lib/components/DetailPane.svelte
     - src/lib/orgClient.ts
     - src/lib/orgClient.test.ts
+    - src/lib/components/TagChip.svelte
+    - src/lib/tagChip.ts
+    - src/lib/tagChip.test.ts
 
 key-decisions:
   - "Duplicate tags surfaced client-side; server INSERT OR IGNORE unchanged"
@@ -56,13 +59,16 @@ completed: 2026-05-31
 - Detail pane: Enter and blur add tags; duplicates show "Tag already on this repo"
 - Context menu: single-tag `remove_tag` invokes IPC directly; `add_tag` / multi-tag remove open detail with tag input focus
 - Panel keydown ignores detail-pane inputs/textareas (not repo filter)
+- Visible **×** on `TagChip` (list + detail) for tag remove; Cmd+Click retained (verify-phase gap fix, post-09 commit)
 
 ## Task Commits
 
 1. **Task 1: Reliable tag refresh and panel keyboard guard** - `dbacbbb` (fix)
 2. **Task 2: DetailPane tag commit, duplicate feedback, focus** - `e359e42` (fix)
 
-**Task 3:** Human UAT re-verify — pending user approval
+**Task 3:** Human UAT re-verify — pending user approval (includes × remove affordance)
+
+**Post-09:** `fix(05): visible × on tag chips` — verify-phase gap closure
 
 ## Files Created/Modified
 
