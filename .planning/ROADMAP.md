@@ -18,7 +18,7 @@
 | 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
 | 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
 | 06.1 | Release & distribution *(INSERTED)* | 3/3 | Complete   | 2026-05-31 |
-| 06.2 | Tray UX polish *(INSERTED)* | 3/9 | In Progress|  |
+| 06.2 | Tray UX polish *(INSERTED)* | 4/9 | In Progress|  |
 
 ---
 
@@ -289,7 +289,7 @@ Plans:
 7. Storybook documents list-row and detail-header visual states (same milestone; not a merge gate for interaction fixes)
 8. Automated tests cover stale-dirty tray logic and alias in core/CLI fuzzy where applicable
 
-**Plans:** 3/9 plans executed
+**Plans:** 4/9 plans executed
 
 Plans:
 **Wave 1** *(parallel — no shared files)*
@@ -301,7 +301,7 @@ Plans:
 **Wave 2** *(parallel — depends on Wave 1)*
 
 - [ ] 06.2-04-PLAN.md — Tray interaction model + icon state machine (click handlers, bare-branch, info badge, stale-dirty/syncing icons)
-- [ ] 06.2-05-PLAN.md — CLI alias display parity (format_list_row alias-first + branch omission, search/open display)
+- [x] 06.2-05-PLAN.md — CLI alias display parity (format_list_row alias-first + branch omission, search/open display)
 
 **Wave 3** *(parallel — depends on Wave 2; requires Plan 04 alias field)*
 
@@ -350,7 +350,7 @@ Plans:
 | 5 | Not started | 0/0 |
 | 6 | Not started | 0/0 |
 | 06.1 | Not started | 0/0 |
-| 06.2 | In Progress | 3/9 |
+| 06.2 | In Progress | 4/9 |
 
 ---
 *Roadmap created: 2026-05-28*

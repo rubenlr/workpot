@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-last_updated: "2026-05-31T21:00:00.000Z"
+last_updated: "2026-05-31T20:33:21.325Z"
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 42
   completed_plans: 37
-  percent: 79
+  percent: 78
 ---
 
 # Project State
@@ -33,10 +33,11 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 5 | Tags & prioritization | Shipped — PR https://github.com/rubenlr/workpot/pull/4 (2026-05-31) |
 | 6 | CLI parity | Complete — 5/5 plans, UAT 5/6 auto (2026-05-31) |
 | 06.1 | Release & distribution | Not started — inserted 2026-05-31 |
-| 06.2 | Tray UX polish | In progress — 3/9 plans (2026-05-31) |
+| 06.2 | Tray UX polish | In progress — 4/9 plans (2026-05-31) |
 
 ## Session Notes
 
+- Phase 06.2 plan 06.2-05 (2026-05-31): CLI alias-first list_display, bare branch omission, open-by-alias; commits `61a3858`, `85607f1`
 - Phase 06.2 plan 06.2-03 (2026-05-31): alias_score in fuzzy_score; TDD RED `d27d3b4`, GREEN `dff06c0`
 - Phase 06.2 plan 06.2-02 (2026-05-31): has_stale_dirty + 16-case tests; TDD RED `9252f6d`, GREEN `6e1aefc`
 - Phase 06.2 plan 06.2-01 (2026-05-31): migration 007 alias, org::set_alias, RepoDto.alias, TrayConfigDto.stale_dirty_days; commits `5767d80`, `a64345a`, `49ff05f`, `61bf197`
@@ -67,6 +68,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 - [Phase 06.1]: Installer smoke tests use local fixture metadata/assets for deterministic default, flag, global, and checksum-failure verification.
 - [Phase 06.2-01]: Alias is user-only (scan upsert does not touch alias); Config.stale_dirty_days default 7 added with plan 01 for TrayConfigDto IPC.
 - [Phase 06.2-02]: has_stale_dirty uses injectable now_secs; never-opened dirty repos use i64::MAX age (immediate stale).
+- [Phase 06.2-05]: CLI format_list_row matches tray: alias ?? name, omit branch when None; open resolves exact alias before folder name.
 
 ## Accumulated Context
 
