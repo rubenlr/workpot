@@ -166,12 +166,7 @@ describe("filterAndSectionRepos", () => {
   });
 
   it("combines fuzzy text and tag filter", () => {
-    const sections = filterAndSectionRepos(
-      sample,
-      "alp #backend",
-      config,
-      now,
-    );
+    const sections = filterAndSectionRepos(sample, "alp #backend", config, now);
     const names = [
       ...sections.pinned,
       ...sections.dirty,

@@ -24,7 +24,10 @@ describe("resyncDetailRepo", () => {
     const before = repo("alpha", ["old"]);
     const after = [repo("alpha", ["new", "extra"])];
     expect(resyncDetailRepo(after, before.path)).toEqual(after[0]);
-    expect(resyncDetailRepo(after, before.path)?.tags).toEqual(["new", "extra"]);
+    expect(resyncDetailRepo(after, before.path)?.tags).toEqual([
+      "new",
+      "extra",
+    ]);
   });
 
   it("returns null when repo was removed", () => {

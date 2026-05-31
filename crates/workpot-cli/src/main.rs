@@ -253,16 +253,14 @@ fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result
     }
 
     let path = Path::new(identifier);
-    if path.is_absolute() || identifier.contains(std::path::MAIN_SEPARATOR) {
-        if let Ok(canon) = path.canonicalize() {
-            if let Some(path_key) = repos
-                .iter()
-                .find(|r| r.path == canon)
-                .map(|r| r.path.display().to_string())
-            {
-                return Ok(path_key);
-            }
-        }
+    if (path.is_absolute() || identifier.contains(std::path::MAIN_SEPARATOR))
+        && let Ok(canon) = path.canonicalize()
+        && let Some(path_key) = repos
+            .iter()
+            .find(|r| r.path == canon)
+            .map(|r| r.path.display().to_string())
+    {
+        return Ok(path_key);
     }
 
     let matches: Vec<&RepoRecord> = repos.iter().filter(|r| r.name == identifier).collect();

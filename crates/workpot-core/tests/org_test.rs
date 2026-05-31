@@ -165,9 +165,11 @@ fn test_notes_set_and_get() {
     insert_repo(&conn, path);
     org::set_notes(&conn, path, Some("hello")).expect("set_notes");
     let notes: Option<String> = conn
-        .query_row("SELECT notes FROM repos WHERE path = ?1", params![path], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT notes FROM repos WHERE path = ?1",
+            params![path],
+            |row| row.get(0),
+        )
         .expect("select notes");
     assert_eq!(notes.as_deref(), Some("hello"));
 }
@@ -180,9 +182,11 @@ fn test_notes_clear_with_none() {
     org::set_notes(&conn, path, Some("hello")).expect("set_notes");
     org::set_notes(&conn, path, None).expect("clear");
     let notes: Option<String> = conn
-        .query_row("SELECT notes FROM repos WHERE path = ?1", params![path], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT notes FROM repos WHERE path = ?1",
+            params![path],
+            |row| row.get(0),
+        )
         .expect("select notes");
     assert!(notes.is_none());
 }

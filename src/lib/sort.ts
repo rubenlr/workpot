@@ -68,8 +68,7 @@ export function sectionSort(
   const recentByTime = nonDirty
     .filter(
       (r) =>
-        r.last_opened_at != null &&
-        nowSeconds - r.last_opened_at < windowSecs,
+        r.last_opened_at != null && nowSeconds - r.last_opened_at < windowSecs,
     )
     .sort(byLastOpenedDesc);
 

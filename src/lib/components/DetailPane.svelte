@@ -27,7 +27,6 @@
   let notesValue = $state("");
   let tagInput = $state("");
   let tagError = $state<string | null>(null);
-  let allTags = $state<string[]>([]);
   let notesTextarea = $state<HTMLTextAreaElement | undefined>(undefined);
   let tagInputEl = $state<HTMLInputElement | undefined>(undefined);
 
@@ -54,7 +53,9 @@
     let cancelled = false;
     void (async () => {
       try {
-        const result = await invoke<string[]>("list_branches", { repoPath: path });
+        const result = await invoke<string[]>("list_branches", {
+          repoPath: path,
+        });
         if (!cancelled) {
           branches = result;
         }
@@ -62,16 +63,6 @@
         if (!cancelled) {
           branchError = String(e);
           branches = [];
-        }
-      }
-      try {
-        const tags = await invoke<string[]>("list_all_tags");
-        if (!cancelled) {
-          allTags = tags;
-        }
-      } catch {
-        if (!cancelled) {
-          allTags = [];
         }
       }
     })();

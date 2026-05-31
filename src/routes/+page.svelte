@@ -364,7 +364,9 @@
         refreshing = false;
         selectedIndex = 0;
         const summary = event.payload;
-        void refreshReposAndDetail(shouldClearListErrorOnRefreshLoad(summary)).then(() => {
+        void refreshReposAndDetail(
+          shouldClearListErrorOnRefreshLoad(summary),
+        ).then(() => {
           error = gitRefreshErrorMessage(summary);
         });
       },
@@ -505,7 +507,7 @@
       <p class="text-sm text-neutral-500">No repos match</p>
     {:else}
       <ul class="space-y-0.5" role="listbox">
-        {#each SECTION_META as { key, label, draggable }}
+        {#each SECTION_META as { key, label, draggable } (key)}
           {#if sectionedRepos[key].length > 0}
             <li role="presentation">
               <SectionHeader {label} />
@@ -549,7 +551,9 @@
                 >
                   <div class="flex items-center gap-2">
                     <span
-                      class="h-2 w-2 shrink-0 rounded-full {dirtyDotClass(repo)}"
+                      class="h-2 w-2 shrink-0 rounded-full {dirtyDotClass(
+                        repo,
+                      )}"
                       aria-hidden="true"
                     ></span>
                     <span class="truncate font-medium">{repo.name}</span>

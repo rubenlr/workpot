@@ -86,11 +86,13 @@ fn validate_tags(tags: &[String]) -> Result<(), String> {
 }
 
 fn normalize_notes(notes: Option<String>) -> Option<String> {
-    notes.map(|mut n| {
-        let end = n.trim_end().len();
-        n.truncate(end);
-        n
-    }).filter(|n| !n.is_empty())
+    notes
+        .map(|mut n| {
+            let end = n.trim_end().len();
+            n.truncate(end);
+            n
+        })
+        .filter(|n| !n.is_empty())
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -166,8 +168,7 @@ pub fn remove_tag(
     let ctx = state
         .lock()
         .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.remove_tag(&repo_path, &tag)
-        .map_err(|e| e.to_string())
+    ctx.remove_tag(&repo_path, &tag).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -179,10 +180,10 @@ pub fn list_all_tags(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<Vec<Str
 }
 
 fn validate_notes(notes: &Option<String>) -> Result<(), String> {
-    if let Some(n) = notes {
-        if n.chars().count() > 500 {
-            return Err("notes exceed 500 characters".to_string());
-        }
+    if let Some(n) = notes
+        && n.chars().count() > 500
+    {
+        return Err("notes exceed 500 characters".to_string());
     }
     Ok(())
 }
@@ -211,8 +212,7 @@ pub fn set_pin(
     let ctx = state
         .lock()
         .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.set_pin(&repo_path, pinned)
-        .map_err(|e| e.to_string())
+    ctx.set_pin(&repo_path, pinned).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -277,8 +277,8 @@ pub async fn show_repo_context_menu(
     }
 
     let pin_label = if is_pinned { "Unpin" } else { "Pin" };
-    let pin_item = MenuItem::with_id(&app, "pin", pin_label, true, None::<&str>)
-        .map_err(|e| e.to_string())?;
+    let pin_item =
+        MenuItem::with_id(&app, "pin", pin_label, true, None::<&str>).map_err(|e| e.to_string())?;
     let add_tag_item = MenuItem::with_id(&app, "add_tag", "Add tag…", true, None::<&str>)
         .map_err(|e| e.to_string())?;
     let remove_tag_enabled = !tags.is_empty();

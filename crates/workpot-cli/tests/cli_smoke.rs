@@ -485,12 +485,7 @@ fn tag_add_rejects_hash_in_tag() {
         .success();
 
     workpot_cmd(home.path())
-        .args([
-            "tag",
-            "add",
-            canon.to_str().expect("utf8"),
-            "#forbidden",
-        ])
+        .args(["tag", "add", canon.to_str().expect("utf8"), "#forbidden"])
         .assert()
         .code(1)
         .stderr(predicate::str::contains("tag may not contain '#'"));

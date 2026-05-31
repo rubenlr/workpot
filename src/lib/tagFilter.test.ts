@@ -160,9 +160,9 @@ describe("replaceTrailingTagAutocomplete", () => {
 
   it("replaces trailing partial when the tag contains emoji", () => {
     const emoji = "🏷️";
-    expect(replaceTrailingTagAutocomplete(`find #${emoji.slice(0, 1)}`, emoji)).toBe(
-      `find #${emoji} `,
-    );
+    expect(
+      replaceTrailingTagAutocomplete(`find #${emoji.slice(0, 1)}`, emoji),
+    ).toBe(`find #${emoji} `);
   });
 });
 

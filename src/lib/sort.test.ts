@@ -99,8 +99,16 @@ describe("sectionSort", () => {
   });
 
   it("sends never-opened repos to rest", () => {
-    const never = repo({ name: "never", is_dirty: false, last_opened_at: null });
-    const sections = sectionSort([never], { maxRecentDays: 14, minRecentCount: 0 }, now);
+    const never = repo({
+      name: "never",
+      is_dirty: false,
+      last_opened_at: null,
+    });
+    const sections = sectionSort(
+      [never],
+      { maxRecentDays: 14, minRecentCount: 0 },
+      now,
+    );
     expect(sections.rest.map((r) => r.name)).toEqual(["never"]);
     expect(sections.recent).toHaveLength(0);
   });

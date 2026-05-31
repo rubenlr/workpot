@@ -28,7 +28,10 @@ export function parseTagFilter(query: string): TagFilterParse {
         .map((t) => t.slice(1).toLowerCase()),
     ),
   ];
-  const baseQuery = tokens.filter((t) => !t.startsWith("#")).join(" ").trim();
+  const baseQuery = tokens
+    .filter((t) => !t.startsWith("#"))
+    .join(" ")
+    .trim();
 
   return { baseQuery, activeTags };
 }
@@ -43,7 +46,10 @@ export function matchesTags(repo: RepoDto, activeTags: string[]): boolean {
 }
 
 /** Idempotent append of `#tag` to the tray filter (T-05-06-05). */
-export function appendTagToFilterQuery(filterQuery: string, tag: string): string {
+export function appendTagToFilterQuery(
+  filterQuery: string,
+  tag: string,
+): string {
   const normalized = tag.toLowerCase();
   if (parseTagFilter(filterQuery).activeTags.includes(normalized)) {
     return filterQuery;

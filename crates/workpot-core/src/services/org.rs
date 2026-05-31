@@ -79,9 +79,8 @@ pub fn remove_tag(conn: &Connection, repo_path: &str, tag: &str) -> Result<()> {
 
 pub fn list_tags_for_repo(conn: &Connection, repo_path: &str) -> Result<Vec<String>> {
     ensure_repo_exists(conn, repo_path)?;
-    let mut stmt = conn.prepare(
-        "SELECT tag FROM repo_tags WHERE repo_path = ?1 ORDER BY tag COLLATE NOCASE",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT tag FROM repo_tags WHERE repo_path = ?1 ORDER BY tag COLLATE NOCASE")?;
     let tags = stmt
         .query_map(params![repo_path], |row| row.get(0))?
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -102,12 +101,12 @@ pub fn list_all_tags(conn: &Connection) -> Result<Vec<String>> {
 }
 
 pub fn set_notes(conn: &Connection, repo_path: &str, notes: Option<&str>) -> Result<()> {
-    if let Some(text) = notes {
-        if text.chars().count() > MAX_NOTES_CHARS {
-            return Err(WorkpotError::InvalidInput(format!(
-                "notes exceed {MAX_NOTES_CHARS} characters"
-            )));
-        }
+    if let Some(text) = notes
+        && text.chars().count() > MAX_NOTES_CHARS
+    {
+        return Err(WorkpotError::InvalidInput(format!(
+            "notes exceed {MAX_NOTES_CHARS} characters"
+        )));
     }
     let updated = conn.execute(
         "UPDATE repos SET notes = ?1 WHERE path = ?2",
@@ -119,12 +118,7 @@ pub fn set_notes(conn: &Connection, repo_path: &str, notes: Option<&str>) -> Res
     Ok(())
 }
 
-pub fn set_pin(
-    conn: &Connection,
-    repo_path: &str,
-    pinned: bool,
-    max_pinned: u32,
-) -> Result<()> {
+pub fn set_pin(conn: &Connection, repo_path: &str, pinned: bool, max_pinned: u32) -> Result<()> {
     let (current_pinned, _current_pin_order): (i64, Option<i64>) = conn
         .query_row(
             "SELECT pinned, pin_order FROM repos WHERE path = ?1",
