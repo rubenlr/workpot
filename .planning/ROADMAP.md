@@ -18,7 +18,7 @@
 | 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
 | 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
 | 06.1 | Release & distribution *(INSERTED)* | 3/3 | Complete   | 2026-05-31 |
-| 06.2 | Tray UX polish *(INSERTED)* | 7/9 | In Progress|  |
+| 06.2 | Tray UX polish *(INSERTED)* | 9/9 | Complete   | 2026-05-31 |
 
 ---
 
@@ -289,7 +289,7 @@ Plans:
 7. Storybook documents list-row and detail-header visual states (same milestone; not a merge gate for interaction fixes)
 8. Automated tests cover stale-dirty tray logic and alias in core/CLI fuzzy where applicable
 
-**Plans:** 7/9 plans executed
+**Plans:** 9/9 plans complete
 
 Plans:
 **Wave 1** *(parallel — no shared files)*
@@ -310,8 +310,8 @@ Plans:
 
 **Wave 4** *(depends on Wave 3)*
 
-- [ ] 06.2-07-PLAN.md — Storybook scaffold + RepoListRow component + stories (non-gating; human checkpoint for package installs)
-- [ ] 06.2-09-PLAN.md — Integration + E2E tests, GREEN phase (CLI alias/bare-branch, row interaction Vitest, has_stale_dirty_dto bridge)
+- [x] 06.2-07-PLAN.md — Storybook scaffold + RepoListRow component + stories (non-gating; human checkpoint for package installs)
+- [x] 06.2-09-PLAN.md — Integration + E2E tests, GREEN phase (CLI alias/bare-branch, row interaction Vitest, has_stale_dirty_dto bridge)
 ## Backlog
 
 ### Phase 999.1: Recipes (BACKLOG)

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-last_updated: "2026-05-31T20:39:12.378Z"
+last_updated: "2026-05-31T20:41:08.512Z"
 progress:
   total_phases: 9
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 42
-  completed_plans: 41
-  percent: 78
+  completed_plans: 42
+  percent: 89
 ---
 
 # Project State
@@ -33,10 +33,11 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 5 | Tags & prioritization | Shipped — PR https://github.com/rubenlr/workpot/pull/4 (2026-05-31) |
 | 6 | CLI parity | Complete — 5/5 plans, UAT 5/6 auto (2026-05-31) |
 | 06.1 | Release & distribution | Not started — inserted 2026-05-31 |
-| 06.2 | Tray UX polish | In progress — 7/9 plans (2026-05-31) |
+| 06.2 | Tray UX polish | Complete — 9/9 plans (2026-05-31) |
 
 ## Session Notes
 
+- Phase 06.2 plan 06.2-09 (2026-05-31): CLI alias/bare smoke, stale_dirty_dto bridge, RepoListRow Vitest GREEN; commits `14cf721`, `e93e9cd`
 - Phase 06.2 plan 06.2-07 (2026-05-31): Storybook + RepoListRow extraction, 10 visual stories; commits `183b2a1`, `1c54e21`
 - Phase 06.2 plan 06.2-06 (2026-05-31): panel-shell CSS, detail pin toggle, input hardening; commits `dfb10cf`, `2f5b526`
 - Phase 06.2 plan 06.2-08 (2026-05-31): RepoListRow interaction test RED gate; commits `c052c2d`, `378809a`
@@ -76,6 +77,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 - [Phase 06.2-04]: Row is div[role=option] with nested info button; tray icon uses has_stale_dirty_dto + syncing override (not any_dirty).
 - [Phase 06.2-06]: Detail pin is emoji button with aria-pressed; panel-shell border none + 12px bottom radius; tag/notes autocorrect off.
 - [Phase 06.2-07]: Storybook via @storybook/sveltekit; RepoListRow callback props; Tauri mocked in Storybook viteFinal alias.
+- [Phase 06.2-09]: CLI smoke uses org::set_alias; dto_equivalent bridge test locks tray icon policy to core has_stale_dirty.
 
 ## Accumulated Context
 
