@@ -27,6 +27,12 @@
     return tags;
   });
 
+  $effect(() => {
+    inputValue;
+    prefix;
+    highlightedIndex = -1;
+  });
+
   function selectTag(tag: string) {
     onSelect(tag);
     inputValue = "";
