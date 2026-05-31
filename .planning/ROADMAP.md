@@ -18,7 +18,7 @@
 | 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
 | 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
 | 06.1 | Release & distribution *(INSERTED)* | 3/3 | Complete   | 2026-05-31 |
-| 06.2 | Tray UX polish *(INSERTED)* | 5/9 | In Progress|  |
+| 06.2 | Tray UX polish *(INSERTED)* | 7/9 | In Progress|  |
 
 ---
 
@@ -289,7 +289,7 @@ Plans:
 7. Storybook documents list-row and detail-header visual states (same milestone; not a merge gate for interaction fixes)
 8. Automated tests cover stale-dirty tray logic and alias in core/CLI fuzzy where applicable
 
-**Plans:** 5/9 plans executed
+**Plans:** 7/9 plans executed
 
 Plans:
 **Wave 1** *(parallel — no shared files)*
@@ -305,7 +305,7 @@ Plans:
 
 **Wave 3** *(parallel — depends on Wave 2; requires Plan 04 alias field)*
 
-- [ ] 06.2-06-PLAN.md — Visual polish + input hardening (panel chrome CSS, detail header pin toggle, tag/notes attributes)
+- [x] 06.2-06-PLAN.md — Visual polish + input hardening (panel chrome CSS, detail header pin toggle, tag/notes attributes)
 - [x] 06.2-08-PLAN.md — Interaction test stub / RED gate (RepoListRow.test.ts — sampling continuity before Plans 05/06 complete)
 
 **Wave 4** *(depends on Wave 3)*
