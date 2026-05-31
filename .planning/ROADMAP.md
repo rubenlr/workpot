@@ -302,14 +302,16 @@ Plans:
 
 - [ ] 06.2-04-PLAN.md — Tray interaction model + icon state machine (click handlers, bare-branch, info badge, stale-dirty/syncing icons)
 - [ ] 06.2-05-PLAN.md — CLI alias display parity (format_list_row alias-first + branch omission, search/open display)
+
+**Wave 3** *(parallel — depends on Wave 2; requires Plan 04 alias field)*
+
 - [ ] 06.2-06-PLAN.md — Visual polish + input hardening (panel chrome CSS, detail header pin toggle, tag/notes attributes)
 - [ ] 06.2-08-PLAN.md — Interaction test stub / RED gate (RepoListRow.test.ts — sampling continuity before Plans 05/06 complete)
 
-**Wave 3** *(depends on Wave 2)*
+**Wave 4** *(depends on Wave 3)*
 
 - [ ] 06.2-07-PLAN.md — Storybook scaffold + RepoListRow component + stories (non-gating; human checkpoint for package installs)
 - [ ] 06.2-09-PLAN.md — Integration + E2E tests, GREEN phase (CLI alias/bare-branch, row interaction Vitest, has_stale_dirty_dto bridge)
-
 ## Backlog
 
 ### Phase 999.1: Recipes (BACKLOG)
