@@ -68,6 +68,52 @@ fn test_tags_reject_empty() {
 }
 
 #[test]
+fn test_tags_reject_over_64_chars() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-tag-long";
+    insert_repo(&conn, path);
+    let long = "a".repeat(65);
+    let err = org::add_tag(&conn, path, &long).unwrap_err();
+    assert!(matches!(err, WorkpotError::InvalidInput(_)));
+}
+
+#[test]
+fn test_tags_reject_hash() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-tag-hash";
+    insert_repo(&conn, path);
+    let err = org::add_tag(&conn, path, "foo#bar").unwrap_err();
+    assert!(matches!(err, WorkpotError::InvalidInput(_)));
+}
+
+#[test]
+fn test_remove_tag_trims_input() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-tag-trim-remove";
+    insert_repo(&conn, path);
+    org::add_tag(&conn, path, "backend").expect("add");
+    org::remove_tag(&conn, path, " backend ").expect("remove trimmed");
+    let tags = org::list_tags_for_repo(&conn, path).expect("list");
+    assert!(tags.is_empty());
+}
+
+#[test]
+fn test_list_tags_missing_repo_returns_not_found() {
+    let (_dir, conn) = temp_db();
+    let err = org::list_tags_for_repo(&conn, "/tmp/missing").unwrap_err();
+    assert!(matches!(err, WorkpotError::NotFound(_)));
+}
+
+#[test]
+fn test_set_pin_order_rejects_unpinned() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-pin-order-unpinned";
+    insert_repo(&conn, path);
+    let err = org::set_pin_order(&conn, &[(path, 0)]).unwrap_err();
+    assert!(matches!(err, WorkpotError::InvalidInput(_)));
+}
+
+#[test]
 fn test_notes_set_and_get() {
     let (_dir, conn) = temp_db();
     let path = "/tmp/org-notes";
