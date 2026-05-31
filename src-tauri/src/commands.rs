@@ -362,6 +362,7 @@ pub(crate) fn update_tray_icon_state(
         return;
     };
     let icon = if syncing {
+        // Plan 06.2-04: use syncing frame 0 only; alternation deferred until visual UAT.
         icons.syncing_frame(0).clone()
     } else if has_stale_dirty_dto(repos, stale_dirty_days) {
         icons.stale_dirty.clone()
@@ -373,7 +374,11 @@ pub(crate) fn update_tray_icon_state(
 
 /// Spawn rayon git refresh off the UI thread; emit `git-refresh-complete` when done.
 pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<Mutex<AppContext>>) {
-    update_tray_icon_state(&app, &[], 7, true);
+    let stale_dirty_days = state
+        .lock()
+        .map(|ctx| ctx.config().stale_dirty_days)
+        .unwrap_or(7);
+    update_tray_icon_state(&app, &[], stale_dirty_days, true);
 
     tauri::async_runtime::spawn(async move {
         let paths = match state.lock() {
@@ -424,10 +429,10 @@ pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<Mutex<AppC
                         let dtos = repo_records_to_dtos(records);
                         update_tray_icon_state(&app, &dtos, config.stale_dirty_days, false);
                     } else {
-                        update_tray_icon_state(&app, &[], 7, false);
+                        update_tray_icon_state(&app, &[], stale_dirty_days, false);
                     }
                 } else {
-                    update_tray_icon_state(&app, &[], 7, false);
+                    update_tray_icon_state(&app, &[], stale_dirty_days, false);
                 }
                 let _ = app.emit("git-refresh-failed", &e);
                 let _ = app.emit("git-refresh-complete", &fallback);
