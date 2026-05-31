@@ -28,10 +28,10 @@
 
 ### Organization (ORG)
 
-- [ ] **ORG-01**: User can assign one or more tags to a repository
-- [ ] **ORG-02**: User can pin repositories to keep them at the top of the list
-- [ ] **ORG-03**: System ranks repositories using signals (dirty, recently opened, pinned) with manual overrides winning
-- [ ] **ORG-04**: User can add free-text notes to a repository
+- [x] **ORG-01**: User can assign one or more tags to a repository
+- [x] **ORG-02**: User can pin repositories to keep them at the top of the list
+- [x] **ORG-03**: System ranks repositories using signals (dirty, recently opened, pinned) with manual overrides winning
+- [x] **ORG-04**: User can add free-text notes to a repository
 
 ### Tray UI (UI)
 
