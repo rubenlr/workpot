@@ -70,7 +70,8 @@ fn score_field(query: &str, field: &str, name_bonus: bool) -> i32 {
 /// - Trims and lowercases `query`.
 /// - Empty/whitespace query → 1 (matches everything).
 /// - Query longer than 256 chars → 0 (no match; DoS guard).
-/// - Returns the maximum score across name (with name bonus), path, branch, notes, and each tag.
+/// - Returns the maximum score across name (with name bonus), alias (with name bonus), path,
+///   branch, notes, and each tag.
 pub fn fuzzy_score(query: &str, repo: &RepoRecord) -> i32 {
     let q = query.trim().to_lowercase();
 
@@ -82,6 +83,11 @@ pub fn fuzzy_score(query: &str, repo: &RepoRecord) -> i32 {
     }
 
     let name_score = score_field(&q, &repo.name.to_lowercase(), true);
+    let alias_score = score_field(
+        &q,
+        &repo.alias.as_deref().unwrap_or("").to_lowercase(),
+        true,
+    );
     let path_score = score_field(&q, &repo.path.to_string_lossy().to_lowercase(), false);
     let branch_score = score_field(
         &q,
@@ -99,6 +105,7 @@ pub fn fuzzy_score(query: &str, repo: &RepoRecord) -> i32 {
         .map(|t| score_field(&q, &t.to_lowercase(), false));
 
     let base_max = name_score
+        .max(alias_score)
         .max(path_score)
         .max(branch_score)
         .max(notes_score);
