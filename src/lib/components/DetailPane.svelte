@@ -25,9 +25,10 @@
     onTagFocusDone?: () => void;
   } = $props();
 
-  let tagSuggestTags = $derived(
-    allTags.filter((t) => !repo.tags.includes(t)),
-  );
+  let tagSuggestTags = $derived.by(() => {
+    const onRepo = new Set(repo.tags);
+    return allTags.filter((t) => !onRepo.has(t));
+  });
 
   let branches = $state<string[]>([]);
   let branchError = $state<string | null>(null);
@@ -262,7 +263,7 @@
       autocomplete="off"
       autocapitalize="off"
       autocorrect="off"
-      spellcheck="false"
+      spellcheck="true"
       class="w-full resize-none rounded-md border border-neutral-200 bg-transparent p-2 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
       style="max-height: calc(5 * 1.5rem)"
       onblur={() => void handleNotesSave()}

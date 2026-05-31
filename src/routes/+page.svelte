@@ -7,19 +7,18 @@
   import RepoListRow from "$lib/components/RepoListRow.svelte";
   import SectionHeader from "$lib/components/SectionHeader.svelte";
   import TagAutocomplete from "$lib/components/TagAutocomplete.svelte";
-  import TagChip from "$lib/components/TagChip.svelte";
   import { shouldNavigateListOnFilterArrow } from "$lib/filterNavigation";
   import {
     gitRefreshErrorMessage,
     shouldClearListErrorOnRefreshLoad,
   } from "$lib/gitRefresh";
   import { trayListView } from "$lib/listState";
-  import { resyncDetailIfOpen } from "$lib/detailRepoSync";
-  import { shouldSuppressTrayListKeyWhenDetailOpen } from "$lib/detailNavigation";
-  import { selectionIndexAfterBackgroundOpen } from "$lib/openSelection";
+  import { resyncDetailIfOpen, resyncDetailRepo } from "$lib/detailRepoSync";
+  import { DEFAULT_SECTION_CFG } from "$lib/openSelection";
+  import { applyTrayNavigationKey } from "$lib/trayKeyboard";
   import { trayListMaxHeightPx } from "$lib/panelLayout";
   import { reorderPinned, toPinOrderPayload } from "$lib/pinOrder";
-  import { moveSelectionIndex } from "$lib/selection";
+  import { clampSelectionIndex, moveSelectionIndex } from "$lib/selection";
   import type { SectionConfig } from "$lib/sort";
   import {
     appendTagToFilterQuery,
@@ -40,7 +39,7 @@
   let error = $state<string | null>(null);
   let filterQuery = $state("");
   let selectedIndex = $state(0);
-  let maxVisibleRows = $state(15);
+  const DEFAULT_MAX_VISIBLE_ROWS = 15;
   let filterInput = $state<HTMLInputElement | null>(null);
   let launchError = $state<string | null>(null);
   let refreshing = $state(false);
@@ -48,25 +47,27 @@
   let allTags = $state<string[]>([]);
   let dragSourceIdx = $state<number | null>(null);
   let focusTagOnDetailOpen = $state(false);
-  let trayConfig = $state<{
-    max_recent_days: number;
-    min_recent_count: number;
-    max_pinned: number;
-    stale_dirty_days: number;
-  } | null>(null);
+  let trayConfig = $state<TrayConfigDto | null>(null);
 
+  let maxVisibleRows = $derived(
+    trayConfig?.max_visible_rows ?? DEFAULT_MAX_VISIBLE_ROWS,
+  );
   let listMaxHeightPx = $derived(trayListMaxHeightPx(maxVisibleRows));
 
   let sectionCfg = $derived<SectionConfig>({
-    maxRecentDays: trayConfig?.max_recent_days ?? 14,
-    minRecentCount: trayConfig?.min_recent_count ?? 3,
+    maxRecentDays:
+      trayConfig?.max_recent_days ?? DEFAULT_SECTION_CFG.maxRecentDays,
+    minRecentCount:
+      trayConfig?.min_recent_count ?? DEFAULT_SECTION_CFG.minRecentCount,
   });
 
   let sectionedRepos = $derived(
     filterAndSectionRepos(repos, filterQuery, sectionCfg),
   );
   let flatVisible = $derived(flatSectioned(sectionedRepos));
-  let activeTagsDetected = $derived(filterQuery.includes("#"));
+  let flatIndexByPath = $derived(
+    new Map(flatVisible.map((r, i) => [r.path, i] as const)),
+  );
   let tagAutocompletePrefix = $derived(
     trailingTagAutocompletePrefix(filterQuery),
   );
@@ -81,6 +82,13 @@
   });
 
   $effect(() => {
+    selectedIndex = clampSelectionIndex(selectedIndex, flatVisible.length);
+  });
+
+  $effect(() => {
+    if (detailRepo !== null) {
+      return;
+    }
     const idx = selectedIndex;
     queueMicrotask(() => {
       document
@@ -88,10 +96,6 @@
         ?.scrollIntoView({ block: "nearest" });
     });
   });
-
-  function rowIndex(repo: RepoDto): number {
-    return flatVisible.findIndex((r) => r.path === repo.path);
-  }
 
   function focusFilter() {
     filterInput?.focus();
@@ -122,54 +126,59 @@
       } else {
         const openedPath = repo.path;
         await refreshReposAndDetail(false);
-        selectedIndex = selectionIndexAfterBackgroundOpen(
-          repos,
-          filterQuery,
-          openedPath,
-          sectionCfg,
-        );
+        selectedIndex = flatIndexByPath.get(openedPath) ?? 0;
       }
     } catch (e) {
       launchError = String(e);
     }
   }
 
+  function applyTrayNav(e: KeyboardEvent, mode: "filter" | "panel") {
+    return applyTrayNavigationKey(
+      e,
+      {
+        detailRepo,
+        getSelectedRepo: () => flatVisible[selectedIndex],
+      },
+      {
+        onRefresh: () => void startBackgroundRefresh(),
+        onCloseDetail: () => {
+          detailRepo = null;
+        },
+        onHidePanel: () => void hidePanel(),
+        onOpenDetailForSelection: () => {
+          const repo = flatVisible[selectedIndex];
+          if (repo) {
+            detailRepo = repo;
+          }
+        },
+        onMoveSelection: moveSelection,
+        onOpenSelected: (background: boolean) => void openSelected(background),
+      },
+      mode,
+    );
+  }
+
+  function setListError(e: unknown) {
+    error = String(e);
+  }
+
+  function openDetailWithTagFocus(repo: RepoDto) {
+    detailRepo = repo;
+    focusTagOnDetailOpen = true;
+  }
+
+  async function removeTagFromRepo(repoPath: string, tag: string) {
+    try {
+      await invoke("remove_tag", { repoPath, tag });
+      await refreshReposAndDetail();
+    } catch (e) {
+      setListError(e);
+    }
+  }
+
   function onFilterKeydown(e: KeyboardEvent) {
-    if (e.metaKey && (e.key === "r" || e.key === "R")) {
-      e.preventDefault();
-      void startBackgroundRefresh();
-      return;
-    }
-    if (detailRepo !== null) {
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        detailRepo = null;
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        detailRepo = null;
-        void hidePanel();
-        return;
-      }
-      if (e.key === "ArrowRight") {
-        const repo = flatVisible[selectedIndex];
-        if (repo) {
-          e.preventDefault();
-          detailRepo = repo;
-        }
-        return;
-      }
-      if (shouldSuppressTrayListKeyWhenDetailOpen(e.key, e.metaKey)) {
-        return;
-      }
-    }
-    if (e.key === "ArrowRight") {
-      const repo = flatVisible[selectedIndex];
-      if (repo) {
-        e.preventDefault();
-        detailRepo = repo;
-      }
+    if (applyTrayNav(e, "filter")) {
       return;
     }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -188,13 +197,6 @@
         e.preventDefault();
         moveSelection(e.key === "ArrowDown" ? 1 : -1);
       }
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      detailRepo = null;
-      void hidePanel();
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      void openSelected(e.metaKey);
     }
   }
 
@@ -209,60 +211,7 @@
     ) {
       return;
     }
-    if (e.metaKey && (e.key === "r" || e.key === "R")) {
-      e.preventDefault();
-      void startBackgroundRefresh();
-      return;
-    }
-    if (detailRepo !== null) {
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        detailRepo = null;
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        detailRepo = null;
-        void hidePanel();
-        return;
-      }
-      if (e.key === "ArrowRight") {
-        const repo = flatVisible[selectedIndex];
-        if (repo) {
-          e.preventDefault();
-          detailRepo = repo;
-        }
-        return;
-      }
-      if (shouldSuppressTrayListKeyWhenDetailOpen(e.key, e.metaKey)) {
-        return;
-      }
-    }
-    if (e.key === "ArrowRight") {
-      const repo = flatVisible[selectedIndex];
-      if (repo) {
-        e.preventDefault();
-        detailRepo = repo;
-      }
-      return;
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      moveSelection(1);
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      moveSelection(-1);
-    } else if (e.key === "Tab" && !e.shiftKey) {
-      e.preventDefault();
-      moveSelection(1);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      detailRepo = null;
-      void hidePanel();
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      void openSelected(e.metaKey);
-    }
+    applyTrayNav(e, "panel");
   }
 
   async function loadRepos(clearError = true) {
@@ -272,7 +221,7 @@
         error = null;
       }
     } catch (e) {
-      error = String(e);
+      setListError(e);
     }
   }
 
@@ -297,19 +246,26 @@
       await invoke("refresh_all_git_state");
     } catch (e) {
       refreshing = false;
-      error = String(e);
+      setListError(e);
     }
   }
 
   function handleDragStart(e: DragEvent, idx: number) {
+    if (!e.dataTransfer) {
+      return;
+    }
     dragSourceIdx = idx;
-    e.dataTransfer!.effectAllowed = "move";
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function clearDragSource() {
+    dragSourceIdx = null;
   }
 
   async function handleDrop(e: DragEvent, targetIdx: number) {
     e.preventDefault();
     if (dragSourceIdx === null || dragSourceIdx === targetIdx) {
-      dragSourceIdx = null;
+      clearDragSource();
       return;
     }
     const newOrder = reorderPinned(
@@ -317,12 +273,12 @@
       dragSourceIdx,
       targetIdx,
     );
-    dragSourceIdx = null;
+    clearDragSource();
     try {
       await invoke("set_pin_order", { items: toPinOrderPayload(newOrder) });
       await refreshReposAndDetail();
     } catch (e) {
-      error = String(e);
+      setListError(e);
     }
   }
 
@@ -340,22 +296,14 @@
 
     invoke<TrayConfigDto>("get_tray_config")
       .then((cfg) => {
-        maxVisibleRows = cfg.max_visible_rows;
-        trayConfig = {
-          max_recent_days: cfg.max_recent_days,
-          min_recent_count: cfg.min_recent_count,
-          max_pinned: cfg.max_pinned,
-          stale_dirty_days: cfg.stale_dirty_days,
-        };
+        trayConfig = cfg;
       })
       .catch((e) => {
         console.warn("get_tray_config failed", e);
-        maxVisibleRows = 15;
       });
 
     const unlistenPanel = listen("panel-opened", () => {
       void refreshReposAndDetail();
-      void loadAllTags();
       refreshing = true;
       focusFilter();
     });
@@ -387,40 +335,26 @@
       repo_path: string;
     }>("repo-context-action", async (event) => {
       const { action, repo_path } = event.payload;
+      const repo = resyncDetailRepo(repos, repo_path);
       if (action === "pin") {
-        const repo = repos.find((r) => r.path === repo_path);
         if (repo) {
           await invoke("set_pin", {
             repoPath: repo_path,
             pinned: !repo.pinned,
           });
+          await refreshReposAndDetail();
         }
-        await refreshReposAndDetail();
       } else if (action === "remove_tag") {
-        const repo = repos.find((r) => r.path === repo_path);
         if (!repo) {
           return;
         }
         if (repo.tags.length === 1) {
-          try {
-            await invoke("remove_tag", {
-              repoPath: repo_path,
-              tag: repo.tags[0],
-            });
-            await refreshReposAndDetail();
-          } catch (e) {
-            error = String(e);
-          }
+          await removeTagFromRepo(repo_path, repo.tags[0]);
         } else {
-          detailRepo = repo;
-          focusTagOnDetailOpen = true;
+          openDetailWithTagFocus(repo);
         }
-      } else if (action === "add_tag") {
-        const repo = repos.find((r) => r.path === repo_path);
-        if (repo) {
-          detailRepo = repo;
-          focusTagOnDetailOpen = true;
-        }
+      } else if (action === "add_tag" && repo) {
+        openDetailWithTagFocus(repo);
       }
     });
 
@@ -474,7 +408,7 @@
       />
       <TagAutocomplete
         {allTags}
-        visible={activeTagsDetected}
+        visible={filterQuery.includes("#")}
         prefix={tagAutocompletePrefix}
         onSelect={onTagAutocompleteSelect}
       />
@@ -488,7 +422,7 @@
     </div>
   </div>
 
-  <div class="min-h-0 flex-1 overflow-y-auto p-2">
+  <div class="min-h-0 flex-1 overflow-y-auto">
     {#if detailRepo}
       <DetailPane
         repo={detailRepo}
@@ -500,7 +434,7 @@
         onClose={() => {
           detailRepo = null;
         }}
-        onMutated={() => refreshReposAndDetail()}
+        onMutated={() => void refreshReposAndDetail()}
       />
     {:else if listView.kind === "error"}
       <p class="text-sm text-red-600 dark:text-red-400">{listView.message}</p>
@@ -516,12 +450,14 @@
               <SectionHeader {label} />
             </li>
             {#each sectionedRepos[key] as repo, i (repo.path)}
-              {@const idx = rowIndex(repo)}
+              {@const idx = flatIndexByPath.get(repo.path) ?? 0}
               <li role="presentation">
-                <div
-                  data-row-index={idx}
-                  draggable={draggable ? "true" : undefined}
-                  oncontextmenu={(e) => {
+                <RepoListRow
+                  {repo}
+                  rowIndex={idx}
+                  listRowDraggable={draggable}
+                  selected={idx === selectedIndex}
+                  onRowContextMenu={(e) => {
                     e.preventDefault();
                     void invoke("show_repo_context_menu", {
                       repoPath: repo.path,
@@ -529,37 +465,25 @@
                       tags: repo.tags,
                     });
                   }}
-                  ondragstart={draggable
+                  onRowDragStart={draggable
                     ? (e) => handleDragStart(e, i)
                     : undefined}
-                  ondragover={draggable ? (e) => e.preventDefault() : undefined}
-                  ondrop={draggable ? (e) => handleDrop(e, i) : undefined}
-                >
-                  <RepoListRow
-                    {repo}
-                    selected={idx === selectedIndex}
-                    onOpen={() => {
-                      selectedIndex = idx;
-                      void openSelected(false);
-                    }}
-                    onDetail={() => {
-                      selectedIndex = idx;
-                      detailRepo = repo;
-                    }}
-                    onTagRemove={async (tag) => {
-                      try {
-                        await invoke("remove_tag", {
-                          repoPath: repo.path,
-                          tag,
-                        });
-                        await refreshReposAndDetail();
-                      } catch (e) {
-                        error = String(e);
-                      }
-                    }}
-                    onTagFilter={(tag) => appendTagFilter(tag)}
-                  />
-                </div>
+                  onRowDragOver={draggable
+                    ? (e) => e.preventDefault()
+                    : undefined}
+                  onRowDrop={draggable ? (e) => handleDrop(e, i) : undefined}
+                  onRowDragEnd={draggable ? clearDragSource : undefined}
+                  onOpen={() => {
+                    selectedIndex = idx;
+                    void openSelected(false);
+                  }}
+                  onDetail={() => {
+                    selectedIndex = idx;
+                    detailRepo = repo;
+                  }}
+                  onTagRemove={(tag) => removeTagFromRepo(repo.path, tag)}
+                  onTagFilter={(tag) => appendTagFilter(tag)}
+                />
               </li>
             {/each}
           {/if}

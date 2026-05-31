@@ -2,7 +2,7 @@ import { filterAndSectionRepos, flatSectioned } from "./trayList";
 import type { SectionConfig } from "./sort";
 import type { RepoDto } from "./types";
 
-const DEFAULT_SECTION_CFG: SectionConfig = {
+export const DEFAULT_SECTION_CFG: SectionConfig = {
   maxRecentDays: 14,
   minRecentCount: 3,
 };

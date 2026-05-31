@@ -48,10 +48,9 @@ describe("RepoListRow", () => {
   it("plain_click_calls_onOpen_not_onDetail", async () => {
     const onOpen = vi.fn();
     const onDetail = vi.fn();
-    const { container } = renderRow(mockRepo, { onOpen, onDetail });
-    const row = container.querySelector('[role="option"]') ?? container.firstElementChild;
-    expect(row).toBeTruthy();
-    await fireEvent.click(row!);
+    const { getByRole } = renderRow(mockRepo, { onOpen, onDetail });
+    const openBtn = getByRole("button", { name: "Open testrepo" });
+    await fireEvent.click(openBtn);
     expect(onOpen).toHaveBeenCalledOnce();
     expect(onDetail).not.toHaveBeenCalled();
   });
@@ -59,10 +58,9 @@ describe("RepoListRow", () => {
   it("cmd_click_calls_onDetail_not_onOpen", async () => {
     const onOpen = vi.fn();
     const onDetail = vi.fn();
-    const { container } = renderRow(mockRepo, { onOpen, onDetail });
-    const row = container.querySelector('[role="option"]') ?? container.firstElementChild;
-    expect(row).toBeTruthy();
-    await fireEvent.click(row!, { metaKey: true });
+    const { getByRole } = renderRow(mockRepo, { onOpen, onDetail });
+    const openBtn = getByRole("button", { name: "Open testrepo" });
+    await fireEvent.click(openBtn, { metaKey: true });
     expect(onDetail).toHaveBeenCalledOnce();
     expect(onOpen).not.toHaveBeenCalled();
   });
