@@ -4,6 +4,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import DetailPane from "$lib/components/DetailPane.svelte";
+  import RepoListRow from "$lib/components/RepoListRow.svelte";
   import SectionHeader from "$lib/components/SectionHeader.svelte";
   import TagAutocomplete from "$lib/components/TagAutocomplete.svelte";
   import TagChip from "$lib/components/TagChip.svelte";
@@ -18,7 +19,6 @@
   import { selectionIndexAfterBackgroundOpen } from "$lib/openSelection";
   import { trayListMaxHeightPx } from "$lib/panelLayout";
   import { reorderPinned, toPinOrderPayload } from "$lib/pinOrder";
-  import { dirtyDotClass } from "$lib/repoRow";
   import { moveSelectionIndex } from "$lib/selection";
   import type { SectionConfig } from "$lib/sort";
   import {
@@ -519,21 +519,7 @@
               <li role="presentation">
                 <div
                   data-row-index={idx}
-                  role="option"
-                  aria-selected={idx === selectedIndex}
                   draggable={draggable ? "true" : undefined}
-                  class="w-full cursor-pointer rounded-md px-2 py-1.5 text-left {idx ===
-                  selectedIndex
-                    ? 'bg-blue-600 text-white dark:bg-blue-500'
-                    : 'hover:bg-black/5 dark:hover:bg-white/10'}"
-                  onclick={(e) => {
-                    selectedIndex = idx;
-                    if (e.metaKey) {
-                      detailRepo = repo;
-                    } else {
-                      void openSelected(false);
-                    }
-                  }}
                   oncontextmenu={(e) => {
                     e.preventDefault();
                     void invoke("show_repo_context_menu", {
@@ -548,66 +534,30 @@
                   ondragover={draggable ? (e) => e.preventDefault() : undefined}
                   ondrop={draggable ? (e) => handleDrop(e, i) : undefined}
                 >
-                  <div class="flex items-center gap-2">
-                    <span
-                      class="h-2 w-2 shrink-0 rounded-full {dirtyDotClass(
-                        repo,
-                      )}"
-                      aria-hidden="true"
-                    ></span>
-                    <span class="truncate font-medium">{repo.alias ?? repo.name}</span>
-                    {#if repo.branch}
-                      <span
-                        class="truncate text-xs {idx === selectedIndex
-                          ? 'text-blue-100'
-                          : 'text-neutral-500'}"
-                      >
-                        {repo.branch}
-                      </span>
-                    {/if}
-                    <button
-                      type="button"
-                      class="ml-auto shrink-0 rounded px-1 text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
-                      aria-label="Open detail"
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        selectedIndex = idx;
-                        detailRepo = repo;
-                      }}
-                    >
-                      ⓘ
-                    </button>
-                  </div>
-                  {#if repo.parent_dir}
-                    <div
-                      class="mt-0.5 truncate pl-4 text-xs {idx === selectedIndex
-                        ? 'text-blue-100/90'
-                        : 'text-neutral-500'}"
-                    >
-                      {repo.parent_dir}
-                    </div>
-                  {/if}
-                  {#if repo.tags.length > 0}
-                    <div class="mt-1 flex flex-wrap gap-1 pl-4">
-                      {#each repo.tags as tag (tag)}
-                        <TagChip
-                          {tag}
-                          onRemove={async () => {
-                            try {
-                              await invoke("remove_tag", {
-                                repoPath: repo.path,
-                                tag,
-                              });
-                              await refreshReposAndDetail();
-                            } catch (e) {
-                              error = String(e);
-                            }
-                          }}
-                          onFilter={() => appendTagFilter(tag)}
-                        />
-                      {/each}
-                    </div>
-                  {/if}
+                  <RepoListRow
+                    {repo}
+                    selected={idx === selectedIndex}
+                    onOpen={() => {
+                      selectedIndex = idx;
+                      void openSelected(false);
+                    }}
+                    onDetail={() => {
+                      selectedIndex = idx;
+                      detailRepo = repo;
+                    }}
+                    onTagRemove={async (tag) => {
+                      try {
+                        await invoke("remove_tag", {
+                          repoPath: repo.path,
+                          tag,
+                        });
+                        await refreshReposAndDetail();
+                      } catch (e) {
+                        error = String(e);
+                      }
+                    }}
+                    onTagFilter={(tag) => appendTagFilter(tag)}
+                  />
                 </div>
               </li>
             {/each}
