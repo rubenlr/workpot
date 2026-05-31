@@ -3,29 +3,53 @@ name: release-please
 # Opens/updates a Release PR from conventional commits on master. Merging that PR
 # to master triggers a push run that tags vX.Y.Z and publishes the GitHub Release;
 # release-artifacts.yml then builds and uploads macOS binaries (release: published).
+#
+# Split into two jobs so a merged Release PR (squash subject "chore: release …")
+# only publishes — it does not immediately open the next Release PR on the same push.
 
 on:
   push:
     branches: [master]
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
 jobs:
-  release-please:
-    name: release-please
+  release-pr:
+    name: release-pr
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       !contains(github.event.head_commit.message, 'chore: release'))
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: googleapis/release-please-action@v4
-        id: release
+      - uses: googleapis/release-please-action@v5
         with:
           target-branch: master
           config-file: .github/ci-assist/release-please-config.json
           manifest-file: .github/ci-assist/.release-please-manifest.json
+          skip-github-release: ${{ github.event_name == 'push' }}
+
+  publish-release:
+    name: publish-release
+    if: >-
+      github.event_name == 'push' &&
+      contains(github.event.head_commit.message, 'chore: release')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: googleapis/release-please-action@v5
+        with:
+          target-branch: master
+          config-file: .github/ci-assist/release-please-config.json
+          manifest-file: .github/ci-assist/.release-please-manifest.json
+          skip-github-pull-request: ${{ github.event_name == 'push' }}

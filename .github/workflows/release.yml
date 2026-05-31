@@ -31,9 +31,11 @@ env:
   CARGO_TERM_COLOR: always
   RELEASE_TAG: ${{ inputs.tag || github.event.inputs.tag }}
 
+# Real releases serialize per tag; PR smoke uses a unique group so a stuck/queued
+# matrix leg does not block every other PR (smoke tag is always v0.0.0-smoke).
 concurrency:
-  group: release-${{ inputs.tag || github.event.inputs.tag }}
-  cancel-in-progress: false
+  group: ${{ inputs.dry_run && format('release-smoke-{0}', github.run_id) || format('release-{0}', inputs.tag || github.event.inputs.tag) }}
+  cancel-in-progress: ${{ inputs.dry_run }}
 
 jobs:
   prepare:
@@ -60,7 +62,7 @@ jobs:
     if: needs.prepare.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: master
           fetch-depth: 0
@@ -86,7 +88,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
@@ -122,9 +124,9 @@ jobs:
             runner: macos-latest
           - arch: x86_64
             artifact: workpot-macos-x86_64
-            runner: macos-13
+            runner: macos-15-intel
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.prepare.outputs.checkout_ref }}
           fetch-depth: 0

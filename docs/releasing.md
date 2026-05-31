@@ -2,15 +2,37 @@
 
 ## CLI releases (Release Please)
 
-Releases are automated with [Release Please](https://github.com/googleapis/release-please) (`googleapis/release-please-action@v4`). Config lives under [`.github/ci-assist/`](../.github/ci-assist/) (`release-please-config.json`, `.release-please-manifest.json`). No manual version labels or `bin/release`.
+Releases are automated with [Release Please](https://github.com/googleapis/release-please) (`googleapis/release-please-action@v5`). Config lives under [`.github/ci-assist/`](../.github/ci-assist/) (`release-please-config.json`, `.release-please-manifest.json`). No manual version labels or `bin/release`.
+
+### Repository prerequisites (once per repo)
+
+Release Please needs permission to open and update its Release PR:
+
+```bash
+bash scripts/configure-github-actions-permissions.sh
+```
+
+Manual: **Settings → Actions → General → Workflow permissions** → _Read and write permissions_, and enable **Allow GitHub Actions to create and approve pull requests**.
 
 ### Flow
 
 1. Merge feature PRs to `master` via **squash** (only allowed merge method).
-2. **[release-please.yml](../.github/workflows/release-please.yml)** (on each push to `master`) opens or updates a **Release PR** (`chore: release X.Y.Z`) with `Cargo.toml`, `Cargo.lock`, `.github/ci-assist/.release-please-manifest.json`, and `CHANGELOG.md` updates.
-3. Review and merge the Release PR to `master` (no manual tag or workflow).
-4. The push to `master` runs **release-please**, which creates tag `vX.Y.Z` and publishes the GitHub Release (notes from `CHANGELOG.md`).
+2. Push to `master` runs the **`release-pr`** job: opens or updates a **Release PR** (`chore: release …`) with version + `CHANGELOG.md` (does **not** tag yet).
+3. Review and merge the Release PR to `master` (squash subject must contain `chore: release` — use the bot PR title).
+4. That merge push runs **`publish-release`** only: tag `vX.Y.Z` + GitHub Release (does **not** open another Release PR on the same commit).
 5. **`release: published`** triggers **[release-artifacts.yml](../.github/workflows/release-artifacts.yml)** → **[release.yml](../.github/workflows/release.yml)** builds macOS tarballs and uploads them to that release.
+
+The next Release PR appears only after **new** conventional commits land on `master` (step 2 again).
+
+### Avoiding release loops
+
+| Push to `master` | Job that runs | `skip-*` flag |
+| ---------------- | ------------- | ------------- |
+| `feat:` / `fix:` squash merge | `release-pr` | `skip-github-release` |
+| `chore: release …` squash merge (Release PR) | `publish-release` | `skip-github-pull-request` |
+| `workflow_dispatch` | `release-pr` only (recovery) | neither |
+
+Do **not** add `pull_request` triggers for `release-please--branches--*` — bot branch updates can self-trigger loops if you use a PAT that re-fires Actions. Stay on `push` to `master` only.
 
 Do not push `v*` tags manually for routine releases. Use `workflow_dispatch` on `release.yml` only to **re-upload** artifacts for an existing release-please tag (see [Recovery](#recovery)).
 
@@ -53,7 +75,7 @@ Branch commit messages are ignored for versioning once the squash default above 
 | Artifact                       | Runner         | Contents                                 |
 | ------------------------------ | -------------- | ---------------------------------------- |
 | `workpot-macos-aarch64.tar.gz` | `macos-latest` | `workpot` binary, `README.md`, `LICENSE` |
-| `workpot-macos-x86_64.tar.gz`  | `macos-13`     | same                                     |
+| `workpot-macos-x86_64.tar.gz`  | `macos-15-intel` | same                                   |
 
 Each tarball has a `.sha256` checksum file on the release page.
 
@@ -87,13 +109,14 @@ Filter Actions runs by workflow name **release-smoke**.
 | Artifacts failed but tag + GitHub Release exist | **Actions → release → Run workflow** — set `tag` to `vX.Y.Z`, `dry_run` false |
 | Wrong tag vs `Cargo.toml`                       | Upload should fail at `validate-version` (expected)                           |
 | release-please stuck after config fix           | **Actions → release-please → Run workflow** (no noop commit required)         |
+| release-smoke queued forever on `macos x86_64`  | `macos-13` is retired — workflow uses `macos-15-intel`; cancel stale runs     |
 | Re-test full matrix on a PR                     | Open/update PR; **release-smoke** runs on path changes                        |
 
 ## Workflows reference
 
 | Workflow                                                            | Role                                                                              |
 | ------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [release-please.yml](../.github/workflows/release-please.yml)       | Semver, Release PR; on merge to `master`, tag + GitHub Release                    |
+| [release-please.yml](../.github/workflows/release-please.yml)       | `release-pr` / `publish-release` jobs; see [Avoiding release loops](#avoiding-release-loops) |
 | [release-artifacts.yml](../.github/workflows/release-artifacts.yml) | `release: published` → macOS build + upload                                       |
 | [release.yml](../.github/workflows/release.yml)                     | Guardrails, macOS builds, `gh release upload` (or smoke artifacts when `dry_run`) |
 | [release-smoke.yml](../.github/workflows/release-smoke.yml)         | PR-only `dry_run` wrapper                                                         |
