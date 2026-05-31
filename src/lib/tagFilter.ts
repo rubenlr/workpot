@@ -34,3 +34,20 @@ export function matchesTags(repo: RepoDto, activeTags: string[]): boolean {
   const normalized = repoTags(repo).map((t) => t.toLowerCase());
   return activeTags.every((at) => normalized.includes(at));
 }
+
+/** Idempotent append of `#tag` to the tray filter (T-05-06-05). */
+export function appendTagToFilterQuery(filterQuery: string, tag: string): string {
+  const token = "#" + tag;
+  if (filterQuery.includes(token)) {
+    return filterQuery;
+  }
+  return (filterQuery.trimEnd() + " " + token).trimStart();
+}
+
+/** Replace trailing `#partial` with a completed tag token (D-10 autocomplete). */
+export function replaceTrailingTagAutocomplete(
+  filterQuery: string,
+  tag: string,
+): string {
+  return filterQuery.replace(/#\w*$/, "") + "#" + tag + " ";
+}

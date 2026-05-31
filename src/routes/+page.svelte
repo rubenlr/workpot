@@ -13,13 +13,18 @@
     shouldClearListErrorOnRefreshLoad,
   } from "$lib/gitRefresh";
   import { trayListView } from "$lib/listState";
-  import { resyncDetailRepo } from "$lib/detailRepoSync";
+  import { resyncDetailIfOpen } from "$lib/detailRepoSync";
+  import { shouldSuppressTrayListKeyWhenDetailOpen } from "$lib/detailNavigation";
   import { selectionIndexAfterBackgroundOpen } from "$lib/openSelection";
   import { trayListMaxHeightPx } from "$lib/panelLayout";
   import { reorderPinned, toPinOrderPayload } from "$lib/pinOrder";
   import { dirtyDotClass } from "$lib/repoRow";
   import { moveSelectionIndex } from "$lib/selection";
   import type { SectionConfig } from "$lib/sort";
+  import {
+    appendTagToFilterQuery,
+    replaceTrailingTagAutocomplete,
+  } from "$lib/tagFilter";
   import { filterAndSectionRepos, flatSectioned } from "$lib/trayList";
   import type { GitRefreshSummary, RepoDto, TrayConfigDto } from "$lib/types";
 
@@ -153,7 +158,9 @@
         }
         return;
       }
-      return;
+      if (shouldSuppressTrayListKeyWhenDetailOpen(e.key, e.metaKey)) {
+        return;
+      }
     }
     if (e.key === "ArrowRight") {
       const repo = flatVisible[selectedIndex];
@@ -218,7 +225,9 @@
         }
         return;
       }
-      return;
+      if (shouldSuppressTrayListKeyWhenDetailOpen(e.key, e.metaKey)) {
+        return;
+      }
     }
     if (e.key === "ArrowRight") {
       const repo = flatVisible[selectedIndex];
@@ -259,11 +268,8 @@
   }
 
   async function refreshReposAndDetail(clearError = true) {
-    const path = detailRepo?.path;
     await loadRepos(clearError);
-    if (path) {
-      detailRepo = resyncDetailRepo(repos, path);
-    }
+    detailRepo = resyncDetailIfOpen(repos, detailRepo);
   }
 
   async function loadAllTags() {
@@ -311,15 +317,11 @@
   }
 
   function appendTagFilter(tag: string) {
-    const token = "#" + tag;
-    if (filterQuery.includes(token)) {
-      return;
-    }
-    filterQuery = (filterQuery.trimEnd() + " " + token).trimStart();
+    filterQuery = appendTagToFilterQuery(filterQuery, tag);
   }
 
   function onTagAutocompleteSelect(tag: string) {
-    filterQuery = filterQuery.replace(/#\w*$/, "") + "#" + tag + " ";
+    filterQuery = replaceTrailingTagAutocomplete(filterQuery, tag);
   }
 
   onMount(() => {

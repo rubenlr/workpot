@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { matchesTags, parseTagFilter } from "./tagFilter";
+import {
+  appendTagToFilterQuery,
+  matchesTags,
+  parseTagFilter,
+  replaceTrailingTagAutocomplete,
+} from "./tagFilter";
 import type { RepoDto } from "./types";
 
 type RepoWithTags = RepoDto & { tags?: string[] };
@@ -82,5 +87,23 @@ describe("matchesTags", () => {
   it("passes when no active tags", () => {
     const r = repo({ name: "a", tags: [] });
     expect(matchesTags(r, [])).toBe(true);
+  });
+});
+
+describe("appendTagToFilterQuery", () => {
+  it("appends #tag token with spacing", () => {
+    expect(appendTagToFilterQuery("alpha", "backend")).toBe("alpha #backend");
+  });
+
+  it("does not duplicate an existing token", () => {
+    expect(appendTagToFilterQuery("x #backend", "backend")).toBe("x #backend");
+  });
+});
+
+describe("replaceTrailingTagAutocomplete", () => {
+  it("replaces trailing #partial with completed tag", () => {
+    expect(replaceTrailingTagAutocomplete("find #ba", "backend")).toBe(
+      "find #backend ",
+    );
   });
 });

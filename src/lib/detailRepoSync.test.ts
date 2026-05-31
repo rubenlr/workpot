@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resyncDetailRepo } from "./detailRepoSync";
+import { resyncDetailIfOpen, resyncDetailRepo } from "./detailRepoSync";
 import type { RepoDto } from "./types";
 
 function repo(name: string, tags: string[] = []): RepoDto {
@@ -34,5 +34,22 @@ describe("resyncDetailRepo", () => {
   it("returns null when no path is open", () => {
     expect(resyncDetailRepo([repo("alpha")], null)).toBeNull();
     expect(resyncDetailRepo([repo("alpha")], undefined)).toBeNull();
+  });
+
+  it("returns null when path no longer exists in repos", () => {
+    expect(resyncDetailRepo([repo("other")], "/tmp/alpha")).toBeNull();
+  });
+});
+
+describe("resyncDetailIfOpen", () => {
+  it("returns null when detail pane was closed before resync (WR-01)", () => {
+    const repos = [repo("alpha", ["fresh"])];
+    expect(resyncDetailIfOpen(repos, null)).toBeNull();
+  });
+
+  it("resyncs when detail pane is still open", () => {
+    const open = repo("alpha", ["old"]);
+    const repos = [repo("alpha", ["new"])];
+    expect(resyncDetailIfOpen(repos, open)).toEqual(repos[0]);
   });
 });

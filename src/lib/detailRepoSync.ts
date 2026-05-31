@@ -10,3 +10,14 @@ export function resyncDetailRepo(
   }
   return repos.find((r) => r.path === currentPath) ?? null;
 }
+
+/** Resync only when the detail pane is still open after reload (WR-01). */
+export function resyncDetailIfOpen(
+  repos: RepoDto[],
+  detailRepo: RepoDto | null,
+): RepoDto | null {
+  if (detailRepo === null) {
+    return null;
+  }
+  return resyncDetailRepo(repos, detailRepo.path);
+}

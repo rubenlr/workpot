@@ -521,6 +521,33 @@ fn tag_add_accepts_64_unicode_graphemes() {
 }
 
 #[test]
+fn tag_add_rejects_ambiguous_repo_name() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let watch = home.path().join("watch");
+    let one = watch.join("one");
+    let two = watch.join("two");
+    fs::create_dir_all(&one).expect("one");
+    fs::create_dir_all(&two).expect("two");
+    let repo1 = git_fixture(&one);
+    let repo2 = git_fixture(&two);
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo1.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo2.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["tag", "add", "sample-repo", "ambiguous"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("ambiguous repo name"));
+}
+
+#[test]
 fn tag_add_rejects_tag_over_64_graphemes() {
     let home = tempfile::tempdir().expect("tempdir");
     let repo_path = git_fixture(home.path());

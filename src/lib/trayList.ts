@@ -2,6 +2,7 @@ import { fuzzyMatch } from "./fuzzy";
 import { parseTagFilter, matchesTags } from "./tagFilter";
 import { sectionSort, traySort } from "./sort";
 import type { SectionConfig, SectionedRepos } from "./sort";
+import type { RepoDto } from "./types";
 
 export function flatSectioned(sectioned: SectionedRepos): RepoDto[] {
   return [
@@ -11,7 +12,6 @@ export function flatSectioned(sectioned: SectionedRepos): RepoDto[] {
     ...sectioned.rest,
   ];
 }
-import type { RepoDto } from "./types";
 
 /** Client-side tray list: fuzzy filter then dirty-first sort (SRCH-01..03, D-22). */
 export function filterAndSortRepos(repos: RepoDto[], query: string): RepoDto[] {
