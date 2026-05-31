@@ -49,7 +49,17 @@ jobs:
           test -f artifacts/Workpot-0.0.0-smoke-aarch64.dmg
           test -f artifacts/Workpot-0.0.0-smoke-aarch64.dmg.sha256
 
-          if ls artifacts/*x86_64* >/dev/null 2>&1; then
-            echo "x86_64 artifact found in smoke output" >&2
-            exit 1
-          fi
+          for artifact in artifacts/*; do
+            file="$(basename "$artifact")"
+            case "$file" in
+              workpot-macos-aarch64.tar.gz|\
+              workpot-macos-aarch64.tar.gz.sha256|\
+              Workpot-0.0.0-smoke-aarch64.dmg|\
+              Workpot-0.0.0-smoke-aarch64.dmg.sha256)
+                ;;
+              *)
+                echo "unexpected artifact in smoke output: $file" >&2
+                exit 1
+                ;;
+            esac
+          done
