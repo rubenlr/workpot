@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { filterAndSectionRepos, filterAndSortRepos } from "./trayList";
+import {
+  filterAndSectionRepos,
+  filterAndSortRepos,
+  flatSectioned,
+} from "./trayList";
 import type { RepoDto } from "./types";
 
 function repo(partial: Partial<RepoDto> & Pick<RepoDto, "name">): RepoDto {
@@ -38,6 +42,23 @@ describe("filterAndSortRepos", () => {
 
   it("returns empty when nothing matches", () => {
     expect(filterAndSortRepos(repos, "zzz")).toEqual([]);
+  });
+});
+
+describe("flatSectioned", () => {
+  it("flattens pinned → dirty → recent → rest for keyboard index", () => {
+    const sections = {
+      pinned: [repo({ name: "pin" })],
+      dirty: [repo({ name: "dirty" })],
+      recent: [repo({ name: "recent" })],
+      rest: [repo({ name: "rest" })],
+    };
+    expect(flatSectioned(sections).map((r) => r.name)).toEqual([
+      "pin",
+      "dirty",
+      "recent",
+      "rest",
+    ]);
   });
 });
 

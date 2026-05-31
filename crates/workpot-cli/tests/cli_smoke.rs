@@ -415,3 +415,126 @@ fn repo_add_rejects_non_git() {
                 .or(predicate::str::contains("NotGitRepo")),
         );
 }
+
+#[test]
+fn tag_add_list_remove_roundtrip() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = git_fixture(home.path());
+    let canon = repo_path.canonicalize().expect("canonicalize");
+    let canon_str = canon.to_str().expect("utf8");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["tag", "add", canon_str, "backend"])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["tag", "list", canon_str])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("backend"));
+
+    workpot_cmd(home.path())
+        .args(["tag", "remove", canon_str, "backend"])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["tag", "list", canon_str])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("(no tags)"));
+}
+
+#[test]
+fn tag_add_resolves_unique_repo_name() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = git_fixture(home.path());
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["tag", "add", "sample-repo", "cli-name"])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["tag", "list", "sample-repo"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cli-name"));
+}
+
+#[test]
+fn tag_add_rejects_hash_in_tag() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = git_fixture(home.path());
+    let canon = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args([
+            "tag",
+            "add",
+            canon.to_str().expect("utf8"),
+            "#forbidden",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("tag may not contain '#'"));
+}
+
+#[test]
+fn tag_add_accepts_64_unicode_graphemes() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = git_fixture(home.path());
+    let canon = repo_path.canonicalize().expect("canonicalize");
+    let tag: String = "é".repeat(64);
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["tag", "add", canon.to_str().expect("utf8"), &tag])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["tag", "list", canon.to_str().expect("utf8")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("é"));
+}
+
+#[test]
+fn tag_add_rejects_tag_over_64_graphemes() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = git_fixture(home.path());
+    let canon = repo_path.canonicalize().expect("canonicalize");
+    let tag: String = "é".repeat(65);
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["tag", "add", canon.to_str().expect("utf8"), &tag])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("tag too long"));
+}

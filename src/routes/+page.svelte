@@ -13,6 +13,7 @@
     shouldClearListErrorOnRefreshLoad,
   } from "$lib/gitRefresh";
   import { trayListView } from "$lib/listState";
+  import { resyncDetailRepo } from "$lib/detailRepoSync";
   import { selectionIndexAfterBackgroundOpen } from "$lib/openSelection";
   import { trayListMaxHeightPx } from "$lib/panelLayout";
   import { reorderPinned, toPinOrderPayload } from "$lib/pinOrder";
@@ -261,7 +262,7 @@
     const path = detailRepo?.path;
     await loadRepos(clearError);
     if (path) {
-      detailRepo = repos.find((r) => r.path === path) ?? null;
+      detailRepo = resyncDetailRepo(repos, path);
     }
   }
 
