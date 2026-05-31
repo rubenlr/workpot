@@ -16,7 +16,7 @@
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
 | 4 | 4/4 | Complete |
 | 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
-| 6 | CLI parity | 5/5 | Complete   | 2026-05-31 |
+| 6 | CLI parity | 5/5 | Complete    | 2026-05-31 |
 | 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
 
 ---
