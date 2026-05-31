@@ -35,12 +35,12 @@ result_note: add_tag path works; AND filter via tagFilter
 ## Summary
 
 total: 4
-passed: 4
-issues: 0
+passed: 3
+issues: 1
 pending: 0
 skipped: 0
 blocked: 0
 
 ## Gaps
 
-[none — prior ACL gaps resolved in plan 05-08]
+tags are not being saved or edited
