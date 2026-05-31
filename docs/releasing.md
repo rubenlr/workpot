@@ -91,12 +91,12 @@ Filter Actions runs by workflow name **release-smoke**.
 
 ## Workflows reference
 
-| Workflow                                                      | Role                                                                                         |
-| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| [release-please.yml](../.github/workflows/release-please.yml)   | Semver, Release PR; on merge to `master`, tag + GitHub Release                             |
-| [release-artifacts.yml](../.github/workflows/release-artifacts.yml) | `release: published` → macOS build + upload                                            |
-| [release.yml](../.github/workflows/release.yml)               | Guardrails, macOS builds, `gh release upload` (or smoke artifacts when `dry_run`)            |
-| [release-smoke.yml](../.github/workflows/release-smoke.yml)   | PR-only `dry_run` wrapper                                                                    |
+| Workflow                                                            | Role                                                                              |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [release-please.yml](../.github/workflows/release-please.yml)       | Semver, Release PR; on merge to `master`, tag + GitHub Release                    |
+| [release-artifacts.yml](../.github/workflows/release-artifacts.yml) | `release: published` → macOS build + upload                                       |
+| [release.yml](../.github/workflows/release.yml)                     | Guardrails, macOS builds, `gh release upload` (or smoke artifacts when `dry_run`) |
+| [release-smoke.yml](../.github/workflows/release-smoke.yml)         | PR-only `dry_run` wrapper                                                         |
 
 ## Phase 4: Tauri tray app + code signing (not yet implemented)
 

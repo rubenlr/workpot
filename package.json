@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "scripts": {
     "clear": "rm -rf build .svelte-kit src-tauri/gen",
@@ -14,8 +14,8 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint .",
-    "lint:fix": "eslint --fix .",
+    "lint": "eslint --fix .",
+    "lint:check": "eslint .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "tauri": "tauri"

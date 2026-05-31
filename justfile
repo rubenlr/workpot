@@ -19,7 +19,7 @@ launch: build
 # Rewrite formatting (run before clippy / tests)
 fmt:
     cargo fmt --all -q
-    npm run lint:fix
+    npm run lint
     npm run format
 
 # Strict fmt — CI parity; run after fmt if you want to verify
