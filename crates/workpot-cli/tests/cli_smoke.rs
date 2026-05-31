@@ -589,8 +589,8 @@ fn named_git_fixture(parent: &std::path::Path, name: &str) -> PathBuf {
 fn search_filters_by_fuzzy_query() {
     let home = tempfile::tempdir().expect("tempdir");
 
-    let alpha_path = named_git_fixture(home.path(), "alpha");
-    let beta_path = named_git_fixture(home.path(), "beta");
+    let alpha_path = named_git_fixture(home.path(), "repo-alpha");
+    let beta_path = named_git_fixture(home.path(), "repo-beta");
 
     workpot_cmd(home.path())
         .args(["repo", "add", alpha_path.to_str().expect("utf8")])
@@ -602,12 +602,15 @@ fn search_filters_by_fuzzy_query() {
         .assert()
         .success();
 
-    // Search for "alpha" — should include the alpha repo and exclude beta.
+    // Use a distinctive query so path subsequence matching on long temp dirs cannot match both.
     workpot_cmd(home.path())
-        .args(["search", "alpha"])
+        .args(["search", "repo-alpha"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("alpha").and(predicate::str::contains("beta").not()));
+        .stdout(
+            predicate::str::contains("repo-alpha")
+                .and(predicate::str::contains("repo-beta").not()),
+        );
 }
 
 #[test]
