@@ -18,7 +18,7 @@
 | 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
 | 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
 | 06.1 | Release & distribution *(INSERTED)* | 3/3 | Complete   | 2026-05-31 |
-| 06.2 | Tray UX polish *(INSERTED)* | Icons, panel chrome, alias, interaction | — | 9 |
+| 06.2 | Tray UX polish *(INSERTED)* | 1/9 | In Progress|  |
 
 ---
 
@@ -289,12 +289,12 @@ Plans:
 7. Storybook documents list-row and detail-header visual states (same milestone; not a merge gate for interaction fixes)
 8. Automated tests cover stale-dirty tray logic and alias in core/CLI fuzzy where applicable
 
-**Plans:** 9 plans
+**Plans:** 1/9 plans executed
 
 Plans:
 **Wave 1** *(parallel — no shared files)*
 
-- [ ] 06.2-01-PLAN.md — Alias schema + core DTO propagation (migration 007, RepoRecord.alias, catalog list_repos, org::set_alias, RepoDto.alias, TrayConfigDto.stale_dirty_days)
+- [x] 06.2-01-PLAN.md — Alias schema + core DTO propagation (migration 007, RepoRecord.alias, catalog list_repos, org::set_alias, RepoDto.alias, TrayConfigDto.stale_dirty_days)
 - [ ] 06.2-02-PLAN.md — TDD: stale-dirty detection logic (Config.stale_dirty_days + validation, has_stale_dirty fn with fallback for never-opened)
 - [ ] 06.2-03-PLAN.md — TDD: fuzzy dual-field match with alias (alias_score with name_bonus=true)
 

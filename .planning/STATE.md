@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-last_updated: "2026-05-31T20:23:52.652Z"
+last_updated: "2026-05-31T20:30:05.785Z"
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 42
-  completed_plans: 33
+  completed_plans: 34
   percent: 78
 ---
 
@@ -20,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 06.1 — release-distribution-and-install-github-release-tarballs-sta
+**Current focus:** Phase 06.2 — tray-ux-polish
 
 ## Phase Status
 
@@ -33,10 +33,11 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 5 | Tags & prioritization | Shipped — PR https://github.com/rubenlr/workpot/pull/4 (2026-05-31) |
 | 6 | CLI parity | Complete — 5/5 plans, UAT 5/6 auto (2026-05-31) |
 | 06.1 | Release & distribution | Not started — inserted 2026-05-31 |
-| 06.2 | Tray UX polish | Not started — inserted 2026-05-31 |
+| 06.2 | Tray UX polish | In progress — 1/9 plans (2026-05-31) |
 
 ## Session Notes
 
+- Phase 06.2 plan 06.2-01 (2026-05-31): migration 007 alias, org::set_alias, RepoDto.alias, TrayConfigDto.stale_dirty_days; commits `5767d80`, `a64345a`, `49ff05f`, `61bf197`
 - Phase 6 UAT auto (2026-05-31): `cargo test -p workpot-core -p workpot-cli` green; list/search/open CLI smoke verified
 - Phase 5 shipped (2026-05-31): PR https://github.com/rubenlr/workpot/pull/4
 - Phase 5 gap 05-09 (2026-05-31): tag blur-save, duplicate feedback, allTags refresh; commits `dbacbbb`, `e359e42`, `a01eb99`
@@ -62,6 +63,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 - [Phase ?]: Checksum verification is enforced before any CLI or tray replacement step.
 - [Phase 06.1]: Installer now enforces checksum-first staging for CLI tarball and DMG before install writes.
 - [Phase 06.1]: Installer smoke tests use local fixture metadata/assets for deterministic default, flag, global, and checksum-failure verification.
+- [Phase 06.2-01]: Alias is user-only (scan upsert does not touch alias); Config.stale_dirty_days default 7 added with plan 01 for TrayConfigDto IPC.
 
 ## Accumulated Context
 
