@@ -7,10 +7,17 @@ use tauri::{
 use workpot_core::AppContext;
 use workpot_core::services::index::IndexSummary;
 
-/// Tray status icons loaded at setup (default vs any-repo-dirty).
+/// Tray status icons loaded at setup (default, stale-dirty, syncing animation frames).
 pub struct TrayIcons {
     pub default: tauri::image::Image<'static>,
-    pub dirty: tauri::image::Image<'static>,
+    pub stale_dirty: tauri::image::Image<'static>,
+    pub syncing: Vec<tauri::image::Image<'static>>,
+}
+
+impl TrayIcons {
+    pub fn syncing_frame(&self, idx: usize) -> &tauri::image::Image<'static> {
+        &self.syncing[idx % self.syncing.len()]
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -111,11 +118,15 @@ fn show_about_dialog(version: &str) {
 
 pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let default_icon = embedded_tray_icon(include_bytes!("../icons/tray-default.png"));
-    let dirty_icon = embedded_tray_icon(include_bytes!("../icons/tray-dirty.png"));
+    let stale_dirty_icon =
+        embedded_tray_icon(include_bytes!("../icons/tray-stale-dirty.png"));
+    let syncing_frame0 = embedded_tray_icon(include_bytes!("../icons/tray-syncing-0.png"));
+    let syncing_frame1 = embedded_tray_icon(include_bytes!("../icons/tray-syncing-1.png"));
     let tray_icon = default_icon.clone();
     app.manage(TrayIcons {
         default: default_icon,
-        dirty: dirty_icon,
+        stale_dirty: stale_dirty_icon,
+        syncing: vec![syncing_frame0, syncing_frame1],
     });
 
     let refresh_index =

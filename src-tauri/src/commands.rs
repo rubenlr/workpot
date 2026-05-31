@@ -331,15 +331,40 @@ pub async fn show_repo_context_menu(
     Ok(())
 }
 
-pub(crate) fn update_tray_dirty_icon(app: &AppHandle, any_dirty: bool) {
+fn has_stale_dirty_dto(repos: &[RepoDto], stale_dirty_days: u32) -> bool {
+    let threshold_secs = stale_dirty_days as i64 * 86_400;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    repos.iter().any(|r| {
+        r.is_dirty == Some(true)
+            && {
+                let age = match r.last_opened_at {
+                    Some(t) => now - t,
+                    None => i64::MAX,
+                };
+                age >= threshold_secs
+            }
+    })
+}
+
+pub(crate) fn update_tray_icon_state(
+    app: &AppHandle,
+    repos: &[RepoDto],
+    stale_dirty_days: u32,
+    syncing: bool,
+) {
     let Some(tray) = app.tray_by_id("main") else {
         return;
     };
     let Some(icons) = app.try_state::<crate::tray::TrayIcons>() else {
         return;
     };
-    let icon = if any_dirty {
-        icons.dirty.clone()
+    let icon = if syncing {
+        icons.syncing_frame(0).clone()
+    } else if has_stale_dirty_dto(repos, stale_dirty_days) {
+        icons.stale_dirty.clone()
     } else {
         icons.default.clone()
     };
@@ -348,6 +373,8 @@ pub(crate) fn update_tray_dirty_icon(app: &AppHandle, any_dirty: bool) {
 
 /// Spawn rayon git refresh off the UI thread; emit `git-refresh-complete` when done.
 pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<Mutex<AppContext>>) {
+    update_tray_icon_state(&app, &[], 7, true);
+
     tauri::async_runtime::spawn(async move {
         let paths = match state.lock() {
             Ok(ctx) => ctx.git_refresh_paths().map_err(|e| e.to_string()),
@@ -360,7 +387,20 @@ pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<Mutex<AppC
                 match state.lock() {
                     Ok(ctx) => ctx
                         .persist_git_refresh_results(git_results)
-                        .map_err(|e| e.to_string()),
+                        .map_err(|e| e.to_string())
+                        .map(|s| {
+                            if let Ok(records) = ctx.list_repos() {
+                                let config = ctx.config();
+                                let dtos = repo_records_to_dtos(records);
+                                update_tray_icon_state(
+                                    &app,
+                                    &dtos,
+                                    config.stale_dirty_days,
+                                    false,
+                                );
+                            }
+                            s
+                        }),
                     Err(_) => Err("AppContext lock poisoned".to_string()),
                 }
             }
@@ -369,7 +409,6 @@ pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<Mutex<AppC
 
         match summary {
             Ok(s) => {
-                update_tray_dirty_icon(&app, s.any_dirty);
                 let _ = app.emit("git-refresh-complete", &s);
             }
             Err(e) => {
@@ -379,6 +418,17 @@ pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<Mutex<AppC
                     errors: 1,
                     any_dirty: false,
                 };
+                if let Ok(ctx) = state.lock() {
+                    if let Ok(records) = ctx.list_repos() {
+                        let config = ctx.config();
+                        let dtos = repo_records_to_dtos(records);
+                        update_tray_icon_state(&app, &dtos, config.stale_dirty_days, false);
+                    } else {
+                        update_tray_icon_state(&app, &[], 7, false);
+                    }
+                } else {
+                    update_tray_icon_state(&app, &[], 7, false);
+                }
                 let _ = app.emit("git-refresh-failed", &e);
                 let _ = app.emit("git-refresh-complete", &fallback);
             }
