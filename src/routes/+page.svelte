@@ -114,7 +114,7 @@
         await hidePanel();
       } else {
         const openedPath = repo.path;
-        await loadRepos(false);
+        await refreshReposAndDetail(false);
         selectedIndex = selectionIndexAfterBackgroundOpen(
           repos,
           filterQuery,
@@ -228,6 +228,14 @@
     }
   }
 
+  async function refreshReposAndDetail(clearError = true) {
+    const path = detailRepo?.path;
+    await loadRepos(clearError);
+    if (path) {
+      detailRepo = repos.find((r) => r.path === path) ?? null;
+    }
+  }
+
   async function loadAllTags() {
     try {
       allTags = await invoke<string[]>("list_all_tags");
@@ -265,7 +273,7 @@
     );
     dragSourceIdx = null;
     await invoke("set_pin_order", { items: toPinOrderPayload(newOrder) });
-    await loadRepos();
+    await refreshReposAndDetail();
   }
 
   function appendTagFilter(tag: string) {
@@ -299,7 +307,7 @@
       });
 
     const unlistenPanel = listen("panel-opened", () => {
-      void loadRepos();
+      void refreshReposAndDetail();
       void loadAllTags();
       refreshing = true;
       focusFilter();
@@ -311,7 +319,7 @@
         refreshing = false;
         selectedIndex = 0;
         const summary = event.payload;
-        void loadRepos(shouldClearListErrorOnRefreshLoad(summary)).then(() => {
+        void refreshReposAndDetail(shouldClearListErrorOnRefreshLoad(summary)).then(() => {
           error = gitRefreshErrorMessage(summary);
         });
       },
@@ -338,7 +346,7 @@
             pinned: !repo.pinned,
           });
         }
-        await loadRepos();
+        await refreshReposAndDetail();
       } else if (action === "add_tag" || action === "remove_tag") {
         const repo = repos.find((r) => r.path === repo_path);
         if (repo) {
@@ -418,7 +426,7 @@
         onClose={() => {
           detailRepo = null;
         }}
-        onMutated={loadRepos}
+        onMutated={() => refreshReposAndDetail()}
       />
     {:else if listView.kind === "error"}
       <p class="text-sm text-red-600 dark:text-red-400">{listView.message}</p>
