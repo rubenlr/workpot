@@ -178,17 +178,22 @@ pub fn list_all_tags(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<Vec<Str
     ctx.list_all_tags().map_err(|e| e.to_string())
 }
 
+fn validate_notes(notes: &Option<String>) -> Result<(), String> {
+    if let Some(n) = notes {
+        if n.chars().count() > 500 {
+            return Err("notes exceed 500 characters".to_string());
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn set_notes(
     repo_path: String,
     notes: Option<String>,
     state: State<'_, Arc<Mutex<AppContext>>>,
 ) -> Result<(), String> {
-    if let Some(ref n) = notes {
-        if n.chars().count() > 500 {
-            return Err("notes exceed 500 characters".to_string());
-        }
-    }
+    validate_notes(&notes)?;
     let notes = normalize_notes(notes);
     let ctx = state
         .lock()
@@ -501,5 +506,28 @@ mod tests {
             Some("hello".to_string())
         );
         assert_eq!(normalize_notes(Some("   ".to_string())), None);
+    }
+
+    #[test]
+    fn validate_tag_rejects_over_64_graphemes() {
+        let tag = "a".repeat(65);
+        assert!(validate_tag(&tag).is_err());
+        assert!(validate_tag(&"a".repeat(64)).is_ok());
+    }
+
+    #[test]
+    fn validate_tag_counts_graphemes_not_bytes() {
+        let emoji = "🦀".repeat(64);
+        assert!(validate_tag(&emoji).is_ok());
+        let too_long = format!("{emoji}🦀");
+        assert!(validate_tag(&too_long).is_err());
+    }
+
+    #[test]
+    fn validate_notes_rejects_over_500_chars() {
+        let long = "x".repeat(501);
+        assert!(validate_notes(&Some(long)).is_err());
+        assert!(validate_notes(&Some("x".repeat(500))).is_ok());
+        assert!(validate_notes(&None).is_ok());
     }
 }

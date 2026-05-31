@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { clientTagAddError, shouldSaveNotes } from "../orgClient";
   import type { RepoDto } from "../types";
   import TagChip from "./TagChip.svelte";
 
@@ -71,12 +72,13 @@
 
   async function handleAddTag(raw: string) {
     tagError = null;
-    const tag = raw.trim();
-    if (!tag) {
+    const clientErr = clientTagAddError(raw);
+    if (clientErr) {
+      tagError = clientErr;
       return;
     }
-    if (tag.startsWith("#")) {
-      tagError = "Tag cannot start with #";
+    const tag = raw.trim();
+    if (!tag) {
       return;
     }
     try {
@@ -99,11 +101,10 @@
   }
 
   async function handleNotesSave() {
-    const trimmed = notesValue.trim() || null;
-    const previous = repo.notes?.trim() || null;
-    if (trimmed === previous) {
+    if (!shouldSaveNotes(notesValue, repo.notes)) {
       return;
     }
+    const trimmed = notesValue.trim() || null;
     try {
       await invoke("set_notes", { repoPath: repo.path, notes: trimmed });
       onMutated();

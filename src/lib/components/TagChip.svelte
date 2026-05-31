@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { tagChipTitle } from "../tagChip";
+
   let {
     tag,
     onRemove,
@@ -9,15 +11,7 @@
     onFilter?: () => void;
   } = $props();
 
-  const title = $derived(
-    onRemove && onFilter
-      ? "Click to filter · Cmd+Click to remove"
-      : onRemove
-        ? "Cmd+Click to remove"
-        : onFilter
-          ? "Click to filter"
-          : undefined,
-  );
+  const title = $derived(tagChipTitle(!!onRemove, !!onFilter));
 
   function onclick(e: MouseEvent) {
     if (e.metaKey) {

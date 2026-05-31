@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { filterTagsForAutocomplete } from "../tagAutocomplete";
+
   let {
     allTags,
     visible,
@@ -14,18 +16,9 @@
   let inputValue = $state("");
   let highlightedIndex = $state(-1);
 
-  let filtered = $derived.by(() => {
-    let tags = allTags;
-    if (prefix.length > 0) {
-      const p = prefix.toLowerCase();
-      tags = tags.filter((t) => t.toLowerCase().startsWith(p));
-    }
-    if (inputValue.length > 0) {
-      const q = inputValue.toLowerCase();
-      tags = tags.filter((t) => t.toLowerCase().startsWith(q));
-    }
-    return tags;
-  });
+  let filtered = $derived(
+    filterTagsForAutocomplete(allTags, prefix, inputValue),
+  );
 
   $effect(() => {
     inputValue;
