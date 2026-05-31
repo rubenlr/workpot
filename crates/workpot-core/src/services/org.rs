@@ -22,7 +22,7 @@ fn normalize_tag(tag: &str) -> Result<String> {
             "tag must not be empty or whitespace".into(),
         ));
     }
-    if trimmed.len() > 64 {
+    if trimmed.chars().count() > 64 {
         return Err(WorkpotError::InvalidInput(
             "tag exceeds 64 characters".into(),
         ));

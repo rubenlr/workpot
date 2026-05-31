@@ -78,6 +78,19 @@ fn test_tags_reject_over_64_chars() {
 }
 
 #[test]
+fn test_tags_allow_emoji_under_64_chars() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-tag-emoji";
+    insert_repo(&conn, path);
+    let tag = "😀".repeat(20);
+    assert!(tag.chars().count() == 20);
+    assert!(tag.len() > 64);
+    org::add_tag(&conn, path, &tag).expect("20 emoji chars under 64-char limit");
+    let tags = org::list_tags_for_repo(&conn, path).expect("list");
+    assert_eq!(tags, vec![tag]);
+}
+
+#[test]
 fn test_tags_reject_hash() {
     let (_dir, conn) = temp_db();
     let path = "/tmp/org-tag-hash";
