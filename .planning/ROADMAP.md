@@ -15,7 +15,7 @@
 | 2 | Repo discovery | 5/5 | Complete |
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
 | 4 | 4/4 | Complete |
-| 5 | Tags & prioritization | 6/7 | In Progress|  |
+| 5 | Tags & prioritization | 4/4 | Complete (2026-05-31) |
 | 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
 | 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
 
@@ -174,7 +174,7 @@ Plans:
 3. Dirty and recently opened repos rank higher than stale clean repos
 4. User can save notes on a repo and search matches note text
 
-**Plans:** 7/8 plans executed (1 gap-closure pending)
+**Plans:** 8/8 plans executed (2026-05-31)
 
 Plans:
 **Wave 0**
@@ -193,12 +193,12 @@ Plans:
 
 **Wave 3** *(parallel — no shared files)*
 
-- [x] 05-06-PLAN.md — +page.svelte: four-section list, detail pane nav, drag-to-reorder, context menu, #tag autocomplete (ORG-01,02,03,04) — UAT checkpoint pending
+- [x] 05-06-PLAN.md — +page.svelte: four-section list, detail pane nav, drag-to-reorder, context menu, #tag autocomplete (ORG-01,02,03,04)
 - [x] 05-07-PLAN.md — CLI: workpot tag add/remove/list subcommand (ORG-01)
 
 **Wave 4** *(gap closure — UAT IPC blocked; blocked on 05-04 + 05-06)*
 
-- [ ] 05-08-PLAN.md — Tauri capabilities: allow-org-commands for Phase 5 IPC (ORG-01..04, 05-HUMAN-UAT)
+- [x] 05-08-PLAN.md — Tauri capabilities: allow-org-commands for Phase 5 IPC (ORG-01..04, 05-HUMAN-UAT) (2026-05-31)
 
 ---
 

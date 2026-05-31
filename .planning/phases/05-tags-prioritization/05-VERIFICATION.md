@@ -1,8 +1,8 @@
 ---
 phase: 05-tags-prioritization
-verified: 2026-05-31T11:15:00Z
-status: human_needed
-score: 4/4 roadmap truths verified (automated)
+verified: 2026-05-31T12:00:00Z
+status: passed
+score: 4/4 roadmap truths verified
 decision_coverage:
   honored: 29
   total: 29
@@ -19,9 +19,9 @@ deferred:
 
 **Verified:** 2026-05-31T11:15:00Z
 
-**Status:** human_needed
+**Status:** passed
 
-**Re-verification:** No — initial verification
+**Re-verification:** Yes — after 05-08 ACL gap closure and human UAT (4/4)
 
 ## Goal Achievement
 
@@ -113,35 +113,13 @@ All trackable CONTEXT.md decisions are honored by shipped artifacts. (29/29)
 |------|-------------|----------|
 | CLI pin/unpin | Phase 6 | D-18 in 05-CONTEXT.md; explicit in 05-07-PLAN |
 
-## Human Verification Required
+## Human Verification
 
-Plan 05-06 is `autonomous: false` (UAT checkpoint). Tray DOM/Tauri interactions cannot be fully exercised in Vitest.
-
-### 1. Detail pane keyboard navigation
-**Test:** Open tray, focus a repo, press Right → detail pane; Left/Esc → list.
-**Expected:** Detail pane shows branches, tags, notes, pin toggle; list returns on close.
-**Why human:** Tauri webview focus + real keyboard routing.
-
-### 2. Pinned drag-to-reorder
-**Test:** Pin 3 repos, drag middle row to top in Pinned section.
-**Expected:** Order persists after reload; matches `pin_order` in DB.
-**Why human:** HTML5 drag needs pointer events in tray window.
-
-### 3. Context menu pin and tag actions
-**Test:** Right-click repo → Pin/Unpin, Add tag, Remove tag.
-**Expected:** Section membership and tags update after menu action.
-**Why human:** Tauri `MenuEvent` + `repo-context-action` end-to-end.
-
-### 4. `#` tag autocomplete in filter bar
-**Test:** Type `#` in filter; pick tag from dropdown (arrow + Enter).
-**Expected:** Filter applies AND logic; chips hidden until `#` typed (D-09).
-**Why human:** Dropdown visibility and focus in live tray.
-
-Items persisted to `05-HUMAN-UAT.md`.
+Completed via `05-HUMAN-UAT.md` (4/4 passed, 2026-05-31) after plan 05-08 `allow-org-commands` ACL.
 
 ## Gaps Summary
 
-**No automated gaps found.** Implementation and tests match phase goal. Tray UAT is the remaining gate before `passed`.
+**No gaps.** Automated verification and human UAT both passed.
 
 ## Verification Metadata
 

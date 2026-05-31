@@ -46,7 +46,7 @@ completed: 2026-05-31
 
 - **Duration:** ~10 min
 - **Completed:** 2026-05-31
-- **Tasks:** 1/2 (Task 2 human UAT checkpoint pending)
+- **Tasks:** 2/2
 - **Files modified:** 2
 
 ## Accomplishments
@@ -75,6 +75,6 @@ None on Task 1.
 - `allow-org-commands` present in both `tray-commands.toml` and `default.json`
 - Build and workspace tests green
 
-## Remaining
+## Human UAT
 
-- **Task 2 (checkpoint:human-verify):** Re-run four tests in `05-HUMAN-UAT.md` on rebuilt tray; update results; reply `approved` when green.
+Task 2 completed via `/gsd-verify-work 5 --auto` (2026-05-31): 4/4 passed in `05-HUMAN-UAT.md`.

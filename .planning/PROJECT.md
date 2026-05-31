@@ -14,18 +14,16 @@ You always know which repo you need and can open it in Cursor in seconds, with g
 
 ### Validated
 
-(None yet — ship to validate)
+- Tag, pin, notes, and four-tier tray ordering (Phase 5, 2026-05-31)
+- Tray finder MVP with Cursor launch (Phase 4)
+- Git state refresh and display (Phase 3)
+- Repo discovery under watch roots (Phase 2)
+- Core persistence and catalog (Phase 1)
 
 ### Active
 
-- [ ] Index git repositories under configurable watch roots, with manual add/exclude
-- [ ] Show per-repo git state: dirty/clean, branch, ahead/behind remote
-- [ ] Search and filter repos by metadata (name, path, tags, branch, notes)
-- [ ] Tag, categorize, and prioritize repos (activity/dirty signals + manual pins/tags)
-- [ ] Tray UI: prioritized list with instant filter-as-you-type; Enter opens repo in Cursor
 - [ ] CLI for power users (search, open, index refresh, recipe trigger)
 - [ ] Recipes: reusable action bundles (shell commands, Cursor launch, multi-step workflows)
-- [ ] Local-only storage — no cloud, no account
 
 ### Out of Scope
 
@@ -83,4 +81,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-28 after initialization*
+*Last updated: 2026-05-31 after Phase 5 completion*
