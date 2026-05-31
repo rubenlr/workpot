@@ -59,6 +59,7 @@ pub fn add_tag(conn: &Connection, repo_path: &str, tag: &str) -> Result<()> {
 
 pub fn remove_tag(conn: &Connection, repo_path: &str, tag: &str) -> Result<()> {
     ensure_repo_exists(conn, repo_path)?;
+    let tag = normalize_tag(tag)?;
     conn.execute(
         "DELETE FROM repo_tags WHERE repo_path = ?1 AND tag = ?2",
         params![repo_path, tag],
