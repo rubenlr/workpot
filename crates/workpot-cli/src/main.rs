@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::{ExitCode, exit};
 use workpot_core::services::launch::launch_repo;
+use workpot_core::services::repo_fuzzy::fuzzy_match;
 use workpot_core::{AppContext, RepoRecord, WorkpotError};
 
 use git_display::format_git_state;
@@ -34,6 +35,19 @@ enum Commands {
     /// Add, remove, or list tags on a repository.
     #[command(subcommand)]
     Tag(TagAction),
+    /// Fuzzy-filter repositories by query and print in priority order (Pinned > Dirty > Recent > Rest).
+    ///
+    /// Uses the same fuzzy match algorithm and row format as `workpot list`.
+    /// Empty query prints the full list (identical to `workpot list`).
+    ///
+    /// Note: `#tag` syntax is NOT parsed; the `#` character is treated as plain text in the query.
+    /// Use `workpot tag list <repo>` for tag inspection.
+    ///
+    /// Exits 0 regardless of match count; no matches → silent empty stdout (grep-friendly).
+    Search {
+        /// Fuzzy query to filter repositories (empty → all repos).
+        query: String,
+    },
     /// Open a repository in the configured IDE (default: Cursor).
     Open {
         /// Repository name, path key, or canonical path.
@@ -128,6 +142,7 @@ fn run() -> anyhow::Result<()> {
         Commands::Excludes(sub) => run_excludes(sub),
         Commands::Roots(sub) => run_roots(sub),
         Commands::Tag(action) => run_tag(action),
+        Commands::Search { query } => run_search(&query),
         Commands::Open { repo } => run_open(&repo),
     }
 }
@@ -161,6 +176,27 @@ fn run_index() -> anyhow::Result<()> {
 fn run_list() -> anyhow::Result<()> {
     let ctx = AppContext::open().context("failed to open workpot")?;
     let repos = ctx.list_repos().context("list failed")?;
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let ordered = list_display::flat_tray_ordered_with_icons(repos, ctx.config(), now_secs);
+    for (repo, icon) in &ordered {
+        println!("{}", list_display::format_list_row(repo, icon));
+    }
+    Ok(())
+}
+
+fn run_search(query: &str) -> anyhow::Result<()> {
+    let ctx = AppContext::open().context("failed to open workpot")?;
+    let mut repos = ctx.list_repos().context("list failed")?;
+    // Trim query; empty (or whitespace-only) → retain all (D-05, RESEARCH pitfall 6).
+    // fuzzy_match already handles empty query as "match all", but retaining explicitly
+    // keeps the intent clear and avoids the filter allocation on the common no-query path.
+    let trimmed = query.trim();
+    if !trimmed.is_empty() {
+        repos.retain(|r| fuzzy_match(trimmed, r));
+    }
     let now_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
