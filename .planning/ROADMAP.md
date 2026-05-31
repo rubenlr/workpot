@@ -18,7 +18,7 @@
 | 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
 | 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
 | 06.1 | Release & distribution *(INSERTED)* | 3/3 | Complete   | 2026-05-31 |
-| 06.2 | Tray UX polish *(INSERTED)* | 9/9 | Complete   | 2026-05-31 |
+| 06.2 | Tray UX polish *(INSERTED)* | 9/9 | Complete    | 2026-05-31 |
 
 ---
 
