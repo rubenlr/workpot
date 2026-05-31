@@ -47,8 +47,8 @@ created: 2026-05-31
 | 05-03-01 | 03 | 1 | ORG-03 | — | N/A | unit | `npm test -- sort` | ✅ `sort.test.ts` | ✅ green |
 | 05-03-02 | 03 | 1 | ORG-02 | — | N/A | unit | `npm test -- trayList` | ✅ `trayList.test.ts` | ✅ green |
 | 05-03-03 | 03 | 1 | ORG-01 | — | N/A | unit | `npm test -- tagFilter` | ✅ `tagFilter.test.ts` | ✅ green |
-| 05-04-01 | 04 | 3 | ORG-01 | — | N/A | unit | `npm test -- fuzzy` | ✅ extend `fuzzy.test.ts` | ⬜ pending |
-| 05-04-02 | 04 | 3 | ORG-04 | — | N/A | unit | `npm test -- fuzzy` | ✅ extend `fuzzy.test.ts` | ⬜ pending |
+| 05-04-01 | 04 | 3 | ORG-01 | — | N/A | unit | `npm test -- fuzzy` | ✅ extend `fuzzy.test.ts` | ✅ green |
+| 05-04-02 | 04 | 3 | ORG-04 | — | N/A | unit | `npm test -- fuzzy` | ✅ extend `fuzzy.test.ts` | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

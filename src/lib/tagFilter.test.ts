@@ -98,12 +98,33 @@ describe("appendTagToFilterQuery", () => {
   it("does not duplicate an existing token", () => {
     expect(appendTagToFilterQuery("x #backend", "backend")).toBe("x #backend");
   });
+
+  it("does not treat a tag name as duplicate when it is only a substring", () => {
+    expect(appendTagToFilterQuery("x #foobar", "foo")).toBe("x #foobar #foo");
+  });
+
+  it("does not duplicate when filter tag differs only by case", () => {
+    expect(appendTagToFilterQuery("x #Backend", "backend")).toBe("x #Backend");
+    expect(appendTagToFilterQuery("x #backend", "Backend")).toBe("x #backend");
+  });
 });
 
 describe("replaceTrailingTagAutocomplete", () => {
   it("replaces trailing #partial with completed tag", () => {
     expect(replaceTrailingTagAutocomplete("find #ba", "backend")).toBe(
       "find #backend ",
+    );
+  });
+
+  it("replaces trailing partial when the tag contains a hyphen", () => {
+    expect(replaceTrailingTagAutocomplete("find #my-", "my-tag")).toBe(
+      "find #my-tag ",
+    );
+  });
+
+  it("replaces lone trailing hash with completed tag", () => {
+    expect(replaceTrailingTagAutocomplete("find #", "infra")).toBe(
+      "find #infra ",
     );
   });
 });

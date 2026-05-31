@@ -27,20 +27,20 @@ status: clean
 
 **Reviewed:** 2026-05-31T11:01:00Z  
 **Depth:** standard  
-**Scope:** Post–wave-4 add-tests commit (`1579edd`)  
+**Scope:** Post–wave-4 add-tests commit (`1579edd`) — extracted tray helpers, tag filter/query utilities, ambiguous CLI tag test  
 **Files Reviewed:** 9  
 **Status:** clean
 
 ## Summary
 
-Wave-5 pass on the add-tests wave-4 delta. Fixed tag-filter idempotency (substring false positive) and hyphenated autocomplete replacement. Re-review clean.
+Fifth review cycle on the wave-4 test delta. Found two tag-filter edge cases in iteration 1; both fixed and covered by tests. `resyncDetailIfOpen`, detail keyboard suppression, and detail resync wiring match prior WR-01/WR-05 fixes. Tests: `npm test` 105/105, `cargo test -p workpot-cli --test cli_smoke` 22/22.
 
 ## Prior findings — verification
 
 | ID | Status | Evidence |
 |----|--------|----------|
-| WR-01 | **Fixed** | `appendTagToFilterQuery` uses `parseTagFilter().activeTags` |
-| WR-02 | **Fixed** | `replaceTrailingTagAutocomplete` uses `/#([\w-]*)$/` |
+| WR-01 | **Fixed** | `appendTagToFilterQuery` uses `parseTagFilter().activeTags` instead of `includes("#tag")` |
+| WR-02 | **Fixed** | `replaceTrailingTagAutocomplete` uses `/#([\w-]*)$/` aligned with filter-bar prefix capture |
 
 ---
 
