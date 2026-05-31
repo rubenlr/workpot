@@ -3,7 +3,7 @@ name: release
 # Builds macOS tarballs and uploads them to an existing GitHub Release.
 # Invoked by release-artifacts.yml on release: published, release-smoke (dry_run),
 # or manually via workflow_dispatch.
-# release-please owns the GitHub Release record and CHANGELOG.
+# release-publish.yml creates the GitHub Release and tag on master when version increases.
 
 on:
   workflow_call:
@@ -31,9 +31,11 @@ env:
   CARGO_TERM_COLOR: always
   RELEASE_TAG: ${{ inputs.tag || github.event.inputs.tag }}
 
+# Real releases serialize per tag; PR smoke uses a unique group so a stuck/queued
+# matrix leg does not block every other PR (smoke tag is always v0.0.0-smoke).
 concurrency:
-  group: release-${{ inputs.tag || github.event.inputs.tag }}
-  cancel-in-progress: false
+  group: ${{ inputs.dry_run && format('release-smoke-{0}', github.run_id) || format('release-{0}', inputs.tag || github.event.inputs.tag) }}
+  cancel-in-progress: ${{ inputs.dry_run }}
 
 jobs:
   prepare:
@@ -60,7 +62,7 @@ jobs:
     if: needs.prepare.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: master
           fetch-depth: 0
@@ -86,7 +88,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
@@ -99,11 +101,11 @@ jobs:
           tag_version="${RELEASE_TAG#v}"
           manifest_version="$(bash scripts/read-workspace-version.sh)"
           if [ -z "$manifest_version" ]; then
-            echo "could not read crates/workpot-cli/Cargo.toml package.version" >&2
+            echo "could not read version file (scripts/read-workspace-version.sh)" >&2
             exit 1
           fi
           if [ "$tag_version" != "$manifest_version" ]; then
-            echo "tag version v${tag_version} does not match Cargo.toml version ${manifest_version}" >&2
+            echo "tag version v${tag_version} does not match version file ${manifest_version}" >&2
             exit 1
           fi
           echo "version=${tag_version}" >> "$GITHUB_OUTPUT"
@@ -122,9 +124,9 @@ jobs:
             runner: macos-latest
           - arch: x86_64
             artifact: workpot-macos-x86_64
-            runner: macos-13
+            runner: macos-15-intel
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.prepare.outputs.checkout_ref }}
           fetch-depth: 0

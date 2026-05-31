@@ -1,5 +1,0 @@
-{
-  "crates/workpot-cli": "0.0.1",
-  "crates/workpot-core": "0.0.1",
-  "src-tauri": "0.0.1"
-}

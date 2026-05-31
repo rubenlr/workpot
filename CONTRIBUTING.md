@@ -119,18 +119,16 @@ Until the first successful PR analysis, SonarCloud shows no quality gate; after 
 
   Or: **Settings → General → Pull requests** → _Allow squash merging_ → **Default to pull request title and description**.
 
-- Write the **PR title** in [Conventional Commits](https://www.conventionalcommits.org/) form (`feat:`, `fix:`, `feat!:`, …). That title becomes the squash commit subject Release Please parses. Put `BREAKING CHANGE:` in the PR body when needed.
-- CI **semantic-pr** checks the PR title before merge.
-- Do not bump `Cargo.toml` or edit `CHANGELOG.md` on feature PRs. **release-please** opens a Release PR for the version bump and changelog.
+- Write the **PR title** in [Conventional Commits](https://www.conventionalcommits.org/) form (`feat:`, `fix:`, `feat!:`, …). CI **semantic-pr** checks the title before merge.
+- **Feature PRs:** do not bump `version` or edit `CHANGELOG.md` — no release gate.
+- **Release PRs:** bump repo-root `version`, add a `## [X.Y.Z]` section to `CHANGELOG.md`, run `just version`, merge when **release-check** passes. Push to `master` tags and publishes when `version` exceeds the latest release.
 
 See [docs/releasing.md](docs/releasing.md).
 
 ## Versioning and deprecation policy
 
-This project follows [Semantic Versioning](https://semver.org/):
+The workspace ships **one version** across all crates and the Tauri app. Source of truth: repo-root `version` file, synced via `just version`.
 
-- **Patch** (`x.y.Z`): `fix:` commits.
-- **Minor** (`x.Y.0`): `feat:` commits (while on `0.y.z`, Release Please uses pre-1.0 rules from `.github/ci-assist/release-please-config.json`).
-- **Major** (`X.0.0`): breaking changes (`feat!:`, `fix!:`, or `BREAKING CHANGE:` in the body).
+Releases are manual: you choose the semver in the shipping PR. It must be strictly greater than the latest `v*` tag. Conventional PR titles help you group changelog bullets; they do not auto-bump the version.
 
-Breaking changes only ship in major (or pre-1.0 minor, per Release Please) releases. Call out deprecations in commit bodies; remove deprecated APIs no sooner than the following major release.
+Breaking changes: document in the PR body and changelog; use `feat!:` / `BREAKING CHANGE:` per [SemVer](https://semver.org/) when you intentionally ship a breaking release.
