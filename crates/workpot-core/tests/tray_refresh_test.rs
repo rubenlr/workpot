@@ -160,6 +160,56 @@ fn persist_git_refresh_results_counts_refreshed_errors_and_dirty() {
 
     let summary = ctx.persist_git_refresh_results(results).expect("persist");
     assert_eq!(summary.refreshed, 2);
-    assert_eq!(summary.errors, 1);
+    assert_eq!(summary.errors, 0, "missing path is pruned, not counted as error");
     assert!(summary.any_dirty);
+}
+
+/// Manual UAT: `cargo test -p workpot-core --test tray_refresh_test manual_open_refresh -- --ignored --nocapture`
+#[test]
+#[ignore = "manual: uses live ~/.config/workpot database"]
+fn manual_open_refresh_prunes_missing_path() {
+    let ctx = AppContext::open().expect("open");
+    let before = ctx
+        .list_repos()
+        .expect("list")
+        .iter()
+        .filter(|r| r.path.to_string_lossy().contains("uat-repo"))
+        .count();
+    assert!(before > 0, "seed with: workpot repo add <path> && rm -rf <path>");
+
+    let summary = ctx.refresh_all_git_state().expect("refresh");
+    assert_eq!(summary.errors, 0);
+
+    let after = ctx
+        .list_repos()
+        .expect("list")
+        .iter()
+        .filter(|r| r.path.to_string_lossy().contains("uat-repo"))
+        .count();
+    assert_eq!(after, 0, "missing path row should be pruned after tray refresh");
+}
+
+#[test]
+fn refresh_all_prunes_missing_repo_paths() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+
+    let (repo, path) = init_git_repo(dir.path(), "gone");
+    make_commit(&repo, "init");
+    ctx.register_manual(&path).expect("register");
+    let path_canon = path.canonicalize().expect("canonicalize");
+
+    std::fs::remove_dir_all(&path).expect("remove repo directory");
+
+    let summary = ctx.refresh_all_git_state().expect("refresh");
+    assert_eq!(summary.errors, 0);
+    assert_eq!(summary.refreshed, 0);
+
+    let repos = ctx.list_repos().expect("list");
+    assert!(
+        !repos.iter().any(|r| r.path == path_canon),
+        "stale row should be pruned"
+    );
 }

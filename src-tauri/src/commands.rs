@@ -1,10 +1,39 @@
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::menu::{ContextMenu, Menu, MenuItem};
 use tauri::{AppHandle, Emitter, Manager, State, Window};
 use workpot_core::{AppContext, GitRefreshSummary, RepoRecord};
+
+/// Prevents overlapping background git refresh jobs (panel open + Cmd+R).
+#[derive(Clone)]
+pub struct GitRefreshGuard(pub Arc<AtomicBool>);
+
+impl GitRefreshGuard {
+    pub fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+
+    /// Returns true when this call acquired the refresh slot.
+    pub fn try_start(&self) -> bool {
+        self.0
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    pub fn finish(&self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+struct TraySyncAnimationCancel(Arc<AtomicBool>);
+
+fn log_emit_err(event: &str, err: tauri::Error) {
+    log::warn!("failed to emit {event}: {err}");
+}
 
 /// Active repo path for the most recent `show_repo_context_menu` popup.
 pub struct ContextMenuRepo(pub Arc<Mutex<Option<String>>>);
@@ -136,20 +165,47 @@ pub fn tray_config_from(ctx: &AppContext) -> TrayConfigDto {
 }
 
 #[tauri::command]
-pub fn get_tray_config(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<TrayConfigDto, String> {
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    Ok(tray_config_from(&ctx))
+pub async fn get_tray_config(
+    state: State<'_, Arc<Mutex<AppContext>>>,
+) -> Result<TrayConfigDto, String> {
+    let started = Instant::now();
+    log::debug!("get_tray_config: start");
+    let state = state.inner().clone();
+    let cfg = tauri::async_runtime::spawn_blocking(move || {
+        let ctx = state
+            .lock()
+            .map_err(|_| "AppContext lock poisoned".to_string())?;
+        Ok::<TrayConfigDto, String>(tray_config_from(&ctx))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    log::debug!(
+        "get_tray_config: complete elapsed_ms={}",
+        started.elapsed().as_millis()
+    );
+    Ok(cfg)
 }
 
 #[tauri::command]
-pub fn list_repos(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<Vec<RepoDto>, String> {
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    let records = ctx.list_repos().map_err(|e| e.to_string())?;
-    Ok(repo_records_to_dtos(records))
+pub async fn list_repos(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<Vec<RepoDto>, String> {
+    let started = Instant::now();
+    log::debug!("list_repos: start");
+    let state = state.inner().clone();
+    let repos = tauri::async_runtime::spawn_blocking(move || {
+        let ctx = state
+            .lock()
+            .map_err(|_| "AppContext lock poisoned".to_string())?;
+        let records = ctx.list_repos().map_err(|e| e.to_string())?;
+        Ok::<Vec<RepoDto>, String>(repo_records_to_dtos(records))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    log::debug!(
+        "list_repos: complete elapsed_ms={} count={}",
+        started.elapsed().as_millis(),
+        repos.len()
+    );
+    Ok(repos)
 }
 
 #[tauri::command]
@@ -194,11 +250,26 @@ pub fn remove_tag(
 }
 
 #[tauri::command]
-pub fn list_all_tags(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<Vec<String>, String> {
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.list_all_tags().map_err(|e| e.to_string())
+pub async fn list_all_tags(
+    state: State<'_, Arc<Mutex<AppContext>>>,
+) -> Result<Vec<String>, String> {
+    let started = Instant::now();
+    log::debug!("list_all_tags: start");
+    let state = state.inner().clone();
+    let tags = tauri::async_runtime::spawn_blocking(move || {
+        let ctx = state
+            .lock()
+            .map_err(|_| "AppContext lock poisoned".to_string())?;
+        ctx.list_all_tags().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    log::debug!(
+        "list_all_tags: complete elapsed_ms={} count={}",
+        started.elapsed().as_millis(),
+        tags.len()
+    );
+    Ok(tags)
 }
 
 fn validate_alias(alias: &str) -> Result<(), String> {
@@ -475,6 +546,44 @@ fn has_stale_dirty_dto(repos: &[RepoDto], stale_dirty_days: u32) -> bool {
     })
 }
 
+fn set_tray_syncing_frame(app: &AppHandle, frame_idx: usize) {
+    let Some(tray) = app.tray_by_id("main") else {
+        return;
+    };
+    let Some(icons) = app.try_state::<crate::tray::TrayIcons>() else {
+        return;
+    };
+    let icon = icons.syncing_frame(frame_idx).clone();
+    if let Err(e) = tray.set_icon(Some(icon)) {
+        log::warn!("tray set_icon (syncing frame {frame_idx}) failed: {e}");
+    } else {
+        log::debug!("tray icon: syncing frame {frame_idx}");
+    }
+}
+
+fn start_tray_sync_animation(app: &AppHandle) -> TraySyncAnimationCancel {
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_flag = Arc::clone(&cancel);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut frame = 0usize;
+        while !cancel_flag.load(Ordering::Relaxed) {
+            let app_for_main = app.clone();
+            let idx = frame;
+            let _ = app.run_on_main_thread(move || {
+                set_tray_syncing_frame(&app_for_main, idx);
+            });
+            frame = 1 - frame;
+            std::thread::sleep(Duration::from_millis(350));
+        }
+    });
+    TraySyncAnimationCancel(cancel)
+}
+
+fn stop_tray_sync_animation(cancel: TraySyncAnimationCancel) {
+    cancel.0.store(true, Ordering::Relaxed);
+}
+
 pub(crate) fn update_tray_icon_state(
     app: &AppHandle,
     repos: &[RepoDto],
@@ -487,81 +596,149 @@ pub(crate) fn update_tray_icon_state(
     let Some(icons) = app.try_state::<crate::tray::TrayIcons>() else {
         return;
     };
+    let mode = if syncing {
+        "syncing"
+    } else if has_stale_dirty_dto(repos, stale_dirty_days) {
+        "stale_dirty"
+    } else {
+        "default"
+    };
     let icon = if syncing {
-        // Plan 06.2-04: use syncing frame 0 only; alternation deferred until visual UAT.
         icons.syncing_frame(0).clone()
     } else if has_stale_dirty_dto(repos, stale_dirty_days) {
         icons.stale_dirty.clone()
     } else {
         icons.default.clone()
     };
-    let _ = tray.set_icon(Some(icon));
+    if let Err(e) = tray.set_icon(Some(icon)) {
+        log::warn!("tray set_icon ({mode}) failed: {e}");
+    } else {
+        log::debug!("tray icon: {mode}");
+    }
 }
 
-/// Spawn rayon git refresh off the UI thread; emit `git-refresh-complete` when done.
+fn reset_tray_icon_after_git_refresh(
+    app: &AppHandle,
+    state: &Arc<Mutex<AppContext>>,
+    stale_dirty_days: u32,
+) {
+    if let Ok(ctx) = state.lock()
+        && let Ok(records) = ctx.list_repos()
+    {
+        let config = ctx.config();
+        let dtos = repo_records_to_dtos(records);
+        update_tray_icon_state(app, &dtos, config.stale_dirty_days, false);
+        return;
+    }
+    update_tray_icon_state(app, &[], stale_dirty_days, false);
+}
+
+/// Git refresh on a blocking pool so libgit2 cannot stall the async runtime.
+/// Always resets tray icon and emits completion/failure events.
 pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<Mutex<AppContext>>) {
+    let guard = app
+        .try_state::<GitRefreshGuard>()
+        .map(|g| g.inner().clone());
+    let Some(guard) = guard else {
+        spawn_background_git_refresh_inner(app, state, None);
+        return;
+    };
+    if !guard.try_start() {
+        log::debug!("background git refresh: skipped (already running)");
+        return;
+    }
+    spawn_background_git_refresh_inner(app, state, Some(guard));
+}
+
+fn spawn_background_git_refresh_inner(
+    app: AppHandle,
+    state: Arc<Mutex<AppContext>>,
+    guard: Option<GitRefreshGuard>,
+) {
     let stale_dirty_days = state
         .lock()
         .map(|ctx| ctx.config().stale_dirty_days)
         .unwrap_or(7);
     update_tray_icon_state(&app, &[], stale_dirty_days, true);
+    let animation_cancel = start_tray_sync_animation(&app);
+    log::info!("background git refresh: started");
+    if let Err(e) = app.emit("git-refresh-started", ()) {
+        log_emit_err("git-refresh-started", e);
+    }
 
     tauri::async_runtime::spawn(async move {
-        let paths = match state.lock() {
-            Ok(ctx) => ctx.git_refresh_paths().map_err(|e| e.to_string()),
-            Err(_) => Err("AppContext lock poisoned".to_string()),
-        };
+        let started = Instant::now();
+        let state_for_blocking = Arc::clone(&state);
 
-        let summary = match paths {
-            Ok(paths) => {
-                let git_results = workpot_core::services::git_state::refresh_all(paths);
-                match state.lock() {
-                    Ok(ctx) => ctx
-                        .persist_git_refresh_results(git_results)
-                        .map_err(|e| e.to_string())
-                        .map(|s| {
-                            if let Ok(records) = ctx.list_repos() {
-                                let config = ctx.config();
-                                let dtos = repo_records_to_dtos(records);
-                                update_tray_icon_state(
-                                    &app,
-                                    &dtos,
-                                    config.stale_dirty_days,
-                                    false,
-                                );
-                            }
-                            s
-                        }),
-                    Err(_) => Err("AppContext lock poisoned".to_string()),
+        let blocking_result = tauri::async_runtime::spawn_blocking(move || {
+            let paths = match state_for_blocking.lock() {
+                Ok(ctx) => ctx.git_refresh_paths().map_err(|e| e.to_string()),
+                Err(_) => Err("AppContext lock poisoned".to_string()),
+            }?;
+            let repo_count = paths.len();
+            log::info!("background git refresh: refreshing {repo_count} repos");
+            let paths_acquire_ms = started.elapsed().as_millis();
+            log::debug!("background git refresh: paths lock released elapsed_ms={paths_acquire_ms}");
+            let git_results = workpot_core::services::git_state::refresh_all(paths);
+            log::debug!("background git refresh: persist lock acquire");
+            let summary = state_for_blocking
+                .lock()
+                .map_err(|_| "AppContext lock poisoned".to_string())?
+                .persist_git_refresh_results(git_results)
+                .map_err(|e| e.to_string())?;
+            log::debug!("background git refresh: persist complete");
+            Ok::<GitRefreshSummary, String>(summary)
+        })
+        .await;
+
+        let elapsed_ms = started.elapsed().as_millis();
+        stop_tray_sync_animation(animation_cancel);
+        reset_tray_icon_after_git_refresh(&app, &state, stale_dirty_days);
+        if let Some(guard) = guard {
+            guard.finish();
+        }
+
+        match blocking_result {
+            Ok(Ok(summary)) => {
+                log::info!(
+                    "background git refresh: complete elapsed_ms={elapsed_ms} refreshed={} errors={} any_dirty={}",
+                    summary.refreshed,
+                    summary.errors,
+                    summary.any_dirty
+                );
+                if let Err(e) = app.emit("git-refresh-complete", &summary) {
+                    log_emit_err("git-refresh-complete", e);
                 }
             }
-            Err(e) => Err(e),
-        };
-
-        match summary {
-            Ok(s) => {
-                let _ = app.emit("git-refresh-complete", &s);
-            }
-            Err(e) => {
-                log::warn!("refresh_all_git_state failed: {e}");
+            Ok(Err(e)) => {
+                log::warn!("background git refresh: failed elapsed_ms={elapsed_ms}: {e}");
                 let fallback = GitRefreshSummary {
                     refreshed: 0,
                     errors: 1,
                     any_dirty: false,
                 };
-                if let Ok(ctx) = state.lock() {
-                    if let Ok(records) = ctx.list_repos() {
-                        let config = ctx.config();
-                        let dtos = repo_records_to_dtos(records);
-                        update_tray_icon_state(&app, &dtos, config.stale_dirty_days, false);
-                    } else {
-                        update_tray_icon_state(&app, &[], stale_dirty_days, false);
-                    }
-                } else {
-                    update_tray_icon_state(&app, &[], stale_dirty_days, false);
+                if let Err(err) = app.emit("git-refresh-failed", e.clone()) {
+                    log_emit_err("git-refresh-failed", err);
                 }
-                let _ = app.emit("git-refresh-failed", &e);
-                let _ = app.emit("git-refresh-complete", &fallback);
+                if let Err(err) = app.emit("git-refresh-complete", &fallback) {
+                    log_emit_err("git-refresh-complete", err);
+                }
+            }
+            Err(join_err) => {
+                let msg =
+                    format!("background git refresh task panicked or was cancelled: {join_err}");
+                log::error!("background git refresh: failed elapsed_ms={elapsed_ms}: {msg}");
+                let fallback = GitRefreshSummary {
+                    refreshed: 0,
+                    errors: 1,
+                    any_dirty: false,
+                };
+                if let Err(err) = app.emit("git-refresh-failed", msg.clone()) {
+                    log_emit_err("git-refresh-failed", err);
+                }
+                if let Err(err) = app.emit("git-refresh-complete", &fallback) {
+                    log_emit_err("git-refresh-complete", err);
+                }
             }
         }
     });
@@ -757,6 +934,16 @@ mod tests {
         assert!(validate_tag(&emoji).is_ok());
         let too_long = format!("{emoji}🦀");
         assert!(validate_tag(&too_long).is_err());
+    }
+
+    #[test]
+    fn git_refresh_guard_skips_second_concurrent_start() {
+        let guard = GitRefreshGuard::new();
+        assert!(guard.try_start());
+        assert!(!guard.try_start());
+        guard.finish();
+        assert!(guard.try_start());
+        guard.finish();
     }
 
     #[test]

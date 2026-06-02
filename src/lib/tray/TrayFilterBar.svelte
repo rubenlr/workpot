@@ -4,7 +4,6 @@
   let {
     filterQuery = $bindable(""),
     allTags,
-    refreshing,
     tagAutocompletePrefix,
     onFilterKeydown,
     onTagSelect,
@@ -12,7 +11,6 @@
   }: {
     filterQuery?: string;
     allTags: string[];
-    refreshing: boolean;
     tagAutocompletePrefix: string;
     onFilterKeydown: (e: KeyboardEvent) => void;
     onTagSelect: (tag: string) => void;
@@ -46,12 +44,5 @@
       prefix={tagAutocompletePrefix}
       onSelect={onTagSelect}
     />
-    {#if refreshing}
-      <span
-        class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-neutral-300 border-t-blue-600 dark:border-neutral-600 dark:border-t-blue-400"
-        role="status"
-        aria-label="Refreshing git state"
-      ></span>
-    {/if}
   </div>
 </div>

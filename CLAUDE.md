@@ -96,7 +96,12 @@ Built on Tauri with a CLI and menu-bar tray. v1 is a prioritized fuzzy finder wi
 
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+### Observability
+
+- **Logging:** Rust binaries use `env_logger` + `log` crate; filter via `RUST_LOG` (e.g. `workpot_tray_lib=debug,workpot_core=debug`).
+- **No silent failures:** All error paths must log at `warn` or `error`. Never discard `Result` errors with `let _ =` without logging. Event emit / tray icon / window ops included.
+- **Tray webview:** Dev-only `[workpot-tray]` console traces; user-visible errors via panel error state.
+- **Tray UI customization:** Presentational tray chrome in `TrayPanelChrome`; tune empty list and panel states in Storybook (`Tray/Panel` stories), not by editing runtime wiring in `TrayApp`.
 
 <!-- GSD:conventions-end -->
 

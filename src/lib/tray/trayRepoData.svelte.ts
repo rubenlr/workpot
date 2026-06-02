@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { RepoDto } from "$lib/types";
+import { trayTrace } from "./trayTrace";
 
 export interface TrayRepoDataOptions {
   onAfterRefresh?: (repos: RepoDto[]) => void;
@@ -9,7 +10,6 @@ export function createTrayRepoData(options: TrayRepoDataOptions = {}) {
   let repos = $state<RepoDto[]>([]);
   let allTags = $state<string[]>([]);
   let error = $state<string | null>(null);
-  let refreshing = $state(false);
 
   function setError(e: unknown) {
     error = String(e);
@@ -20,12 +20,15 @@ export function createTrayRepoData(options: TrayRepoDataOptions = {}) {
   }
 
   async function loadRepos(clearError = true): Promise<void> {
+    trayTrace("invoke list_repos");
     try {
       repos = await invoke<RepoDto[]>("list_repos");
+      trayTrace("list_repos ok", { count: repos.length });
       if (clearError) {
         error = null;
       }
     } catch (e) {
+      trayTrace("list_repos failed", e);
       setError(e);
     }
   }
@@ -46,11 +49,11 @@ export function createTrayRepoData(options: TrayRepoDataOptions = {}) {
   }
 
   async function startBackgroundRefresh(): Promise<void> {
-    refreshing = true;
+    trayTrace("invoke refresh_all_git_state");
     try {
       await invoke("refresh_all_git_state");
     } catch (e) {
-      refreshing = false;
+      trayTrace("refresh_all_git_state failed", e);
       setError(e);
     }
   }
@@ -64,12 +67,6 @@ export function createTrayRepoData(options: TrayRepoDataOptions = {}) {
     },
     get error() {
       return error;
-    },
-    get refreshing() {
-      return refreshing;
-    },
-    set refreshing(value: boolean) {
-      refreshing = value;
     },
     loadRepos,
     loadAllTags,

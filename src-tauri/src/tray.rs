@@ -74,28 +74,60 @@ fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
     #[cfg(target_os = "macos")]
     configure_panel_window(&panel);
 
-    let _ = panel.show();
-    let _ = panel.set_focus();
-    let _ = app.emit("panel-opened", ());
+    if let Err(e) = panel.show() {
+        log::warn!("panel show failed: {e}");
+    }
+    if let Err(e) = panel.set_focus() {
+        log::warn!("panel set_focus failed: {e}");
+    }
+    log::debug!("show_panel: emitting panel-opened");
+    if let Err(e) = app.emit("panel-opened", ()) {
+        log::warn!("failed to emit panel-opened: {e}");
+    }
     if let Some(state) = app.try_state::<Arc<Mutex<AppContext>>>() {
         crate::commands::spawn_background_git_refresh(app.clone(), state.inner().clone());
     }
 }
 
 pub(crate) fn spawn_background_index(app: tauri::AppHandle, state: Arc<Mutex<AppContext>>) {
+    log::info!("background index refresh: started");
     tauri::async_runtime::spawn(async move {
-        let result = match state.lock() {
-            Ok(ctx) => ctx.run_index().map_err(|e| e.to_string()),
-            Err(_) => Err("AppContext lock poisoned".to_string()),
-        };
-        match result {
-            Ok(summary) => {
+        let started = std::time::Instant::now();
+        let state_for_blocking = Arc::clone(&state);
+        let blocking_result = tauri::async_runtime::spawn_blocking(move || {
+            let ctx = state_for_blocking
+                .lock()
+                .map_err(|_| "AppContext lock poisoned".to_string())?;
+            ctx.run_index().map_err(|e| e.to_string())
+        })
+        .await;
+
+        let elapsed_ms = started.elapsed().as_millis();
+        match blocking_result {
+            Ok(Ok(summary)) => {
+                log::info!(
+                    "background index refresh: complete elapsed_ms={elapsed_ms} added={} removed={} git_refreshed={}",
+                    summary.added,
+                    summary.removed,
+                    summary.git_refreshed
+                );
                 let dto = IndexSummaryDto::from(summary);
-                let _ = app.emit("index-complete", &dto);
+                if let Err(e) = app.emit("index-complete", &dto) {
+                    log::warn!("failed to emit index-complete: {e}");
+                }
             }
-            Err(e) => {
-                log::warn!("refresh_index failed: {e}");
-                let _ = app.emit("index-failed", &e);
+            Ok(Err(e)) => {
+                log::warn!("background index refresh: failed elapsed_ms={elapsed_ms}: {e}");
+                if let Err(err) = app.emit("index-failed", &e) {
+                    log::warn!("failed to emit index-failed: {err}");
+                }
+            }
+            Err(join_err) => {
+                let msg = format!("background index task panicked or was cancelled: {join_err}");
+                log::error!("background index refresh: failed elapsed_ms={elapsed_ms}: {msg}");
+                if let Err(err) = app.emit("index-failed", &msg) {
+                    log::warn!("failed to emit index-failed: {err}");
+                }
             }
         }
     });
@@ -176,7 +208,9 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                 let app = tray.app_handle();
                 if let Some(panel) = app.get_webview_window("panel") {
                     if panel.is_visible().unwrap_or(false) {
-                        let _ = panel.hide();
+                        if let Err(e) = panel.hide() {
+                            log::warn!("panel hide on tray click failed: {e}");
+                        }
                     } else {
                         show_panel(app, Some(rect));
                     }

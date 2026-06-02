@@ -10,7 +10,9 @@ import {
 import { createTrayLaunch } from "./trayLaunch.svelte";
 import { createTrayListSelection } from "./trayListSelection.svelte";
 import { createTrayPanelKeyboard } from "./trayPanelKeyboard.svelte";
+import { clearGitRefreshWatchdog } from "./gitRefreshWatchdog";
 import { subscribeTrayPanelEvents } from "./trayPanelEvents";
+import { trayTrace } from "./trayTrace";
 import { createTrayRepoData } from "./trayRepoData.svelte";
 import {
   handleRepoContextAction,
@@ -62,9 +64,6 @@ export function createTrayPanel() {
   }
 
   const gitRefreshDeps = {
-    setRefreshing: (value: boolean) => {
-      data.refreshing = value;
-    },
     setSelectedIndex: (index: number) => {
       list.selectedIndex = index;
     },
@@ -73,12 +72,9 @@ export function createTrayPanel() {
     focusFilter: () => keyboard.focusFilter(),
   };
 
-  function mount() {
-    void data.loadRepos();
-    void data.loadAllTags();
-    void config.loadConfig();
-
-    unsubscribeEvents = subscribeTrayPanelEvents({
+  async function mount(): Promise<void> {
+    trayTrace("mount start");
+    unsubscribeEvents = await subscribeTrayPanelEvents({
       onPanelOpened: () => onPanelOpened(gitRefreshDeps),
       onGitRefreshComplete: (summary) =>
         onGitRefreshComplete(summary, gitRefreshDeps),
@@ -89,10 +85,17 @@ export function createTrayPanel() {
       },
     });
 
+    await Promise.all([
+      data.loadRepos(),
+      data.loadAllTags(),
+      config.loadConfig(),
+    ]);
+    trayTrace("mount ready", { repos: data.repos.length });
     keyboard.focusFilter();
   }
 
   function destroy() {
+    clearGitRefreshWatchdog();
     unsubscribeEvents?.();
     unsubscribeEvents = null;
   }
@@ -124,9 +127,6 @@ export function createTrayPanel() {
     },
     get allTags() {
       return data.allTags;
-    },
-    get refreshing() {
-      return data.refreshing;
     },
     get launchError() {
       return launch.launchError;

@@ -28,7 +28,7 @@ describe("subscribeTrayPanelEvents", () => {
     const onGitRefreshFailed = vi.fn();
     const onRepoContextAction = vi.fn();
 
-    const unsubscribe = subscribeTrayPanelEvents(
+    const unsubscribe = await subscribeTrayPanelEvents(
       {
         onPanelOpened,
         onGitRefreshComplete,
@@ -38,7 +38,7 @@ describe("subscribeTrayPanelEvents", () => {
       listen,
     );
 
-    await vi.waitFor(() => expect(listen).toHaveBeenCalledTimes(4));
+    expect(listen).toHaveBeenCalledTimes(4);
 
     handlers.get("panel-opened")!({ payload: undefined });
     expect(onPanelOpened).toHaveBeenCalledOnce();
@@ -59,6 +59,6 @@ describe("subscribeTrayPanelEvents", () => {
     expect(onRepoContextAction).toHaveBeenCalledWith(ctx);
 
     unsubscribe();
-    await vi.waitFor(() => expect(unsubs.every((u) => u.mock.calls.length === 1)).toBe(true));
+    expect(unsubs.every((u) => u.mock.calls.length === 1)).toBe(true);
   });
 });

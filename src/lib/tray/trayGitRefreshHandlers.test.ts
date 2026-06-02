@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GitRefreshSummary } from "$lib/types";
+import { clearGitRefreshWatchdog } from "./gitRefreshWatchdog";
 import {
   onGitRefreshComplete,
   onGitRefreshFailed,
@@ -7,11 +8,14 @@ import {
   type GitRefreshHandlerDeps,
 } from "./trayGitRefreshHandlers";
 
+afterEach(() => {
+  clearGitRefreshWatchdog();
+});
+
 function deps(
   overrides: Partial<GitRefreshHandlerDeps> = {},
 ): GitRefreshHandlerDeps {
   return {
-    setRefreshing: vi.fn(),
     setSelectedIndex: vi.fn(),
     refresh: vi.fn().mockResolvedValue(undefined),
     setError: vi.fn(),
@@ -21,15 +25,14 @@ function deps(
 }
 
 describe("trayGitRefreshHandlers", () => {
-  it("onPanelOpened refreshes, sets refreshing, and focuses filter", () => {
+  it("onPanelOpened loads cached list and focuses filter", () => {
     const d = deps();
     onPanelOpened(d);
     expect(d.refresh).toHaveBeenCalledWith(true);
-    expect(d.setRefreshing).toHaveBeenCalledWith(true);
     expect(d.focusFilter).toHaveBeenCalledOnce();
   });
 
-  it("onGitRefreshComplete clears refreshing, resets selection, refreshes with clear flag", async () => {
+  it("onGitRefreshComplete resets selection and refreshes with clear flag", async () => {
     const d = deps();
     const summary: GitRefreshSummary = {
       refreshed: 2,
@@ -37,13 +40,12 @@ describe("trayGitRefreshHandlers", () => {
       any_dirty: false,
     };
     onGitRefreshComplete(summary, d);
-    expect(d.setRefreshing).toHaveBeenCalledWith(false);
     expect(d.setSelectedIndex).toHaveBeenCalledWith(0);
     expect(d.refresh).toHaveBeenCalledWith(true);
     await vi.waitFor(() => expect(d.setError).toHaveBeenCalledWith(null));
   });
 
-  it("onGitRefreshComplete sets partial error message when errors > 0", async () => {
+  it("onGitRefreshComplete clears list error on partial failure", async () => {
     const d = deps();
     const summary: GitRefreshSummary = {
       refreshed: 1,
@@ -51,12 +53,8 @@ describe("trayGitRefreshHandlers", () => {
       any_dirty: true,
     };
     onGitRefreshComplete(summary, d);
-    expect(d.refresh).toHaveBeenCalledWith(false);
-    await vi.waitFor(() =>
-      expect(d.setError).toHaveBeenCalledWith(
-        "Git refresh completed with 2 error(s).",
-      ),
-    );
+    expect(d.refresh).toHaveBeenCalledWith(true);
+    await vi.waitFor(() => expect(d.setError).toHaveBeenCalledWith(null));
   });
 
   it("onGitRefreshComplete sets total failure message when all failed", async () => {
@@ -74,10 +72,9 @@ describe("trayGitRefreshHandlers", () => {
     );
   });
 
-  it("onGitRefreshFailed clears refreshing and sets error", () => {
+  it("onGitRefreshFailed sets error", () => {
     const d = deps();
     onGitRefreshFailed("boom", d);
-    expect(d.setRefreshing).toHaveBeenCalledWith(false);
     expect(d.setError).toHaveBeenCalledWith("boom");
   });
 });

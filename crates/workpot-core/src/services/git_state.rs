@@ -88,22 +88,39 @@ pub fn refresh_git_state(path: &Path) -> Result<GitState> {
 /// Never aborts on individual failure — embeds error string in GitState.error (D-16).
 /// Each rayon thread opens its own Repository via open_and_query (Repository is Send not Sync).
 pub fn refresh_all(paths: Vec<PathBuf>) -> Vec<GitRefreshResult> {
-    paths
+    let repo_count = paths.len();
+    let batch_started = std::time::Instant::now();
+    log::debug!("git refresh_all: batch start repos={repo_count}");
+    let results: Vec<GitRefreshResult> = paths
         .into_par_iter()
         .map(|path| {
-            let state = refresh_git_state(&path).unwrap_or_else(|e| GitState {
-                branch: None,
-                is_dirty: None,
-                ahead: None,
-                behind: None,
-                error: Some(e.to_string()),
+            let path_key = path.display().to_string();
+            let repo_started = std::time::Instant::now();
+            let state = refresh_git_state(&path).unwrap_or_else(|e| {
+                log::debug!("git refresh {path_key}: error {e}");
+                GitState {
+                    branch: None,
+                    is_dirty: None,
+                    ahead: None,
+                    behind: None,
+                    error: Some(e.to_string()),
+                }
             });
+            log::debug!(
+                "git refresh {path_key}: elapsed_ms={}",
+                repo_started.elapsed().as_millis()
+            );
             GitRefreshResult {
-                path: path.display().to_string(),
+                path: path_key,
                 state,
             }
         })
-        .collect()
+        .collect();
+    log::debug!(
+        "git refresh_all: batch complete repos={repo_count} elapsed_ms={}",
+        batch_started.elapsed().as_millis()
+    );
+    results
 }
 
 #[cfg(test)]

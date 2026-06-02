@@ -25,20 +25,18 @@ describe("gitRefreshErrorMessage", () => {
     );
   });
 
-  it("reports partial failure", () => {
-    expect(gitRefreshErrorMessage(summary({ refreshed: 1, errors: 1 }))).toBe(
-      "Git refresh completed with 1 error(s).",
-    );
+  it("returns null on partial failure (per-repo errors stay on rows)", () => {
+    expect(gitRefreshErrorMessage(summary({ refreshed: 1, errors: 1 }))).toBeNull();
   });
 });
 
 describe("shouldClearListErrorOnRefreshLoad", () => {
-  it("clears only when there are no errors", () => {
+  it("always clears so cached list shows after refresh", () => {
     expect(shouldClearListErrorOnRefreshLoad(summary({ refreshed: 1 }))).toBe(
       true,
     );
     expect(
       shouldClearListErrorOnRefreshLoad(summary({ refreshed: 1, errors: 1 })),
-    ).toBe(false);
+    ).toBe(true);
   });
 });

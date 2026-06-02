@@ -5602,6 +5602,7 @@ name = "workpot-tray"
 version = "0.0.1"
 dependencies = [
  "directories",
+ "env_logger",
  "git2",
  "log",
  "serde",

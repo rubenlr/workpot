@@ -31,8 +31,19 @@ fn now_secs() -> i64 {
 /// Full watch-root rescan with transactional merge, caps, and audit history (D-07, D-14–D-18).
 pub fn run_full(conn: &Connection, config: &Config) -> Result<IndexSummary> {
     let started_at = now_secs();
+    log::debug!("index run_full: start");
     match run_full_inner(conn, config, started_at) {
-        Ok(summary) => Ok(summary),
+        Ok(summary) => {
+            log::debug!(
+                "index run_full: complete added={} removed={} skipped={} git_refreshed={} git_errors={}",
+                summary.added,
+                summary.removed,
+                summary.skipped,
+                summary.git_refreshed,
+                summary.git_errors
+            );
+            Ok(summary)
+        }
         Err(WorkpotError::IndexCapExceeded { projected, max }) => {
             if let Err(e) = record_cap_exceeded_run(conn, started_at, i64::from(projected), max) {
                 log::warn!("failed to record cap-exceeded audit row: {e}");
@@ -70,6 +81,7 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
         }
     }
 
+    let scan_candidate_count = scan_candidates.len();
     let mut upserts: Vec<(PathBuf, String)> = Vec::new();
     for path in scan_candidates {
         let path_key = path.display().to_string();
@@ -90,10 +102,17 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
 
     let mut removes = collect_stale_scan_paths(conn, configured_roots, &watch_roots, &seen_paths)?;
     removes.extend(collect_orphan_scan_paths(conn, configured_roots)?);
-    removes.extend(collect_missing_paths(conn)?);
+    removes.extend(catalog::missing_repo_paths(conn)?);
     validate_manual_outside_roots(conn, configured_roots, &mut removes)?;
     removes.sort();
     removes.dedup();
+
+    log::debug!(
+        "index discovery: scan_candidates={} upserts={} removes={}",
+        scan_candidate_count,
+        upserts.len(),
+        removes.len()
+    );
 
     let projected = projected_repo_count(conn, &removes, &upserts)?;
     if projected > i64::from(max_repos) {
@@ -156,8 +175,17 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
             .collect()
     };
 
+    log::debug!(
+        "index git second pass: start repos={}",
+        all_paths.len()
+    );
     // rayon parallel refresh must complete before opening any DB transaction
+    let git_pass_started = std::time::Instant::now();
     let git_results = git_state::refresh_all(all_paths);
+    log::debug!(
+        "index git second pass: refresh_all elapsed_ms={}",
+        git_pass_started.elapsed().as_millis()
+    );
 
     for r in &git_results {
         if r.state.error.is_some() {
@@ -307,18 +335,6 @@ fn collect_orphan_scan_paths(
                 .iter()
                 .any(|root| paths::path_under_root(path, root))
         })
-        .collect())
-}
-
-fn collect_missing_paths(conn: &Connection) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
-    let paths: Vec<String> = stmt
-        .query_map([], |row| row.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
-
-    Ok(paths
-        .into_iter()
-        .filter(|path_key| !Path::new(path_key).exists())
         .collect())
 }
 

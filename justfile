@@ -13,8 +13,13 @@ build:
 install: build
     cargo install --path crates/workpot-cli -q
 
-launch: build
-    npm run tauri dev
+# Tray dev only (no release DMG — use `just build` for bundles).
+# Git refresh loading is tray-icon only (no panel spinner).
+# Trace tray: RUST_LOG=workpot_tray_lib=debug,workpot_core=debug just launch
+# Trace CLI: RUST_LOG=workpot_core=debug,workpot_cli=debug workpot index
+# Webview: right-click panel → Inspect → Console ([workpot-tray] lines)
+launch:
+    RUST_LOG=workpot_tray_lib=debug,workpot_core=debug npm run tauri dev
 
 # Rewrite formatting (run before clippy / tests)
 fmt-fix:

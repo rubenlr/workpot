@@ -182,10 +182,16 @@ impl AppContext {
 
         let tx = self.conn.unchecked_transaction()?;
         for r in &git_results {
+            let path_exists = Path::new(&r.path).exists();
             if r.state.error.is_some() {
-                errors += 1;
+                if path_exists {
+                    errors += 1;
+                }
             } else {
                 refreshed += 1;
+            }
+            if !path_exists {
+                continue;
             }
             if crate::services::git_state::is_hard_refresh_failure(&r.state) {
                 let err = r.state.error.as_deref().unwrap_or("unknown");
@@ -194,6 +200,7 @@ impl AppContext {
                 crate::services::git_state::persist_git_state(&tx, &r.path, &r.state)?;
             }
         }
+        catalog::prune_missing_repos(&tx)?;
         tx.commit()?;
 
         let any_dirty: bool = self.conn.query_row(

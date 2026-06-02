@@ -261,6 +261,33 @@ fn resolve_repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
     }
 }
 
+/// Non-excluded repo paths whose working tree no longer exists (stale index rows).
+pub fn missing_repo_paths(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
+    let paths: Vec<String> = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+
+    Ok(paths
+        .into_iter()
+        .filter(|path_key| !Path::new(path_key).exists())
+        .collect())
+}
+
+/// Remove repos whose paths are gone. Returns rows deleted.
+pub fn prune_missing_repos(conn: &Connection) -> Result<u32> {
+    let paths = missing_repo_paths(conn)?;
+    let mut pruned = 0u32;
+    for path_key in paths {
+        let deleted = conn.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
+        pruned += u32::try_from(deleted).unwrap_or(0);
+    }
+    if pruned > 0 {
+        log::info!("pruned {pruned} missing repo(s) from index");
+    }
+    Ok(pruned)
+}
+
 pub fn remove_repo(conn: &Connection, path: &Path) -> Result<()> {
     let path_key = resolve_repo_path_key(conn, path)?;
 

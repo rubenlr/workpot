@@ -6,10 +6,19 @@ use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, WindowEvent};
 use workpot_core::AppContext;
 
+fn init_logging() {
+    // Filter via RUST_LOG, e.g. workpot_tray_lib=debug,workpot_core=debug (see justfile `launch`).
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+        .format_timestamp_millis()
+        .try_init();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    init_logging();
     tauri::Builder::default()
         .manage(commands::ContextMenuRepo(Arc::new(Mutex::new(None))))
+        .manage(commands::GitRefreshGuard::new())
         .setup(|app| {
             let ctx = AppContext::open().map_err(|e| e.to_string())?;
             app.manage(Arc::new(Mutex::new(ctx)));
@@ -34,13 +43,15 @@ pub fn run() {
                 if repo_path.is_empty() {
                     return;
                 }
-                let _ = app.emit(
+                if let Err(e) = app.emit(
                     "repo-context-action",
                     serde_json::json!({
                         "action": id,
                         "repo_path": repo_path,
                     }),
-                );
+                ) {
+                    log::warn!("failed to emit repo-context-action: {e}");
+                }
                 if let Ok(mut guard) = state.0.lock() {
                     *guard = None;
                 }
@@ -55,10 +66,14 @@ pub fn run() {
             match event {
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if let Err(e) = window.hide() {
+                        log::warn!("panel hide on close failed: {e}");
+                    }
                 }
                 WindowEvent::Focused(false) => {
-                    let _ = window.hide();
+                    if let Err(e) = window.hide() {
+                        log::warn!("panel hide on blur failed: {e}");
+                    }
                 }
                 _ => {}
             }
