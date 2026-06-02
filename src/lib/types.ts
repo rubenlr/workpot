@@ -12,6 +12,19 @@ export interface GitRefreshSummary {
   any_dirty: boolean;
 }
 
+export type BranchPresence =
+  | "checkout"
+  | "local_only"
+  | "remote_only"
+  | "local_remote";
+
+export interface BranchListItemDto {
+  name: string;
+  presence: BranchPresence;
+  ahead: number | null;
+  behind: number | null;
+}
+
 export interface RepoDto {
   path: string;
   name: string;

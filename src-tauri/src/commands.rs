@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tauri::menu::{ContextMenu, Menu, MenuItem};
@@ -23,6 +24,23 @@ pub struct RepoDto {
     pub notes: Option<String>,
     pub tags: Vec<String>,
     pub branches: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BranchPresenceDto {
+    Checkout,
+    LocalOnly,
+    RemoteOnly,
+    LocalRemote,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct BranchListItemDto {
+    pub name: String,
+    pub presence: BranchPresenceDto,
+    pub ahead: Option<i64>,
+    pub behind: Option<i64>,
 }
 
 pub fn repo_records_to_dtos(records: Vec<RepoRecord>) -> Vec<RepoDto> {
@@ -265,7 +283,7 @@ pub fn set_pin_order(
 pub async fn list_branches(
     repo_path: String,
     state: State<'_, Arc<Mutex<AppContext>>>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<BranchListItemDto>, String> {
     {
         let ctx = state
             .lock()
@@ -278,19 +296,127 @@ pub async fn list_branches(
         .map_err(|e| e.to_string())?
 }
 
-fn list_branches_sync(repo_path: &str) -> Result<Vec<String>, String> {
+fn remote_branch_short_name(full_name: &str) -> Option<String> {
+    if full_name.ends_with("/HEAD") {
+        return None;
+    }
+    full_name
+        .split_once('/')
+        .map(|(_, short)| short.to_string())
+}
+
+fn ahead_behind_for_local_branch(
+    repo: &git2::Repository,
+    name: &str,
+) -> (Option<i64>, Option<i64>) {
+    let Ok(branch) = repo.find_branch(name, git2::BranchType::Local) else {
+        return (None, None);
+    };
+    let Ok(upstream) = branch.upstream() else {
+        return (None, None);
+    };
+    let Some(local_oid) = branch.get().target() else {
+        return (None, None);
+    };
+    let Some(upstream_oid) = upstream.get().target() else {
+        return (None, None);
+    };
+    let Ok((ahead, behind)) = repo.graph_ahead_behind(local_oid, upstream_oid) else {
+        return (None, None);
+    };
+    (
+        Some(i64::try_from(ahead).unwrap_or(i64::MAX)),
+        Some(i64::try_from(behind).unwrap_or(i64::MAX)),
+    )
+}
+
+fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String> {
     let repo = git2::Repository::open(repo_path).map_err(|e| e.to_string())?;
-    let branches = repo
+
+    let current = repo
+        .head()
+        .ok()
+        .filter(|head| head.is_branch())
+        .and_then(|head| head.shorthand().ok().map(str::to_string));
+
+    let mut local_names = Vec::new();
+    let mut local_with_upstream = HashSet::new();
+    for branch in repo
         .branches(Some(git2::BranchType::Local))
-        .map_err(|e| e.to_string())?;
-    let mut names = Vec::new();
-    for branch in branches {
+        .map_err(|e| e.to_string())?
+    {
         let (branch, _) = branch.map_err(|e| e.to_string())?;
-        if let Some(name) = branch.name().map_err(|e| e.to_string())? {
-            names.push(name.to_string());
+        let Some(name) = branch.name().map_err(|e| e.to_string())? else {
+            continue;
+        };
+        let name = name.to_string();
+        if branch.upstream().is_ok() {
+            local_with_upstream.insert(name.clone());
+        }
+        local_names.push(name);
+    }
+
+    let mut remote_short_names = HashSet::new();
+    if let Ok(remotes) = repo.branches(Some(git2::BranchType::Remote)) {
+        for branch in remotes {
+            let Ok((branch, _)) = branch else {
+                continue;
+            };
+            let Some(full_name) = branch.name().ok().flatten() else {
+                continue;
+            };
+            if let Some(short) = remote_branch_short_name(full_name) {
+                remote_short_names.insert(short);
+            }
         }
     }
-    Ok(names)
+
+    let local_set: HashSet<_> = local_names.iter().cloned().collect();
+    let mut all_names: HashSet<String> = local_set.clone();
+    all_names.extend(remote_short_names.iter().cloned());
+
+    let mut items: Vec<BranchListItemDto> = all_names
+        .into_iter()
+        .map(|name| {
+            let is_local = local_set.contains(&name);
+            let has_upstream = local_with_upstream.contains(&name);
+            let is_remote_only = remote_short_names.contains(&name) && !is_local;
+            let is_checkout = current.as_ref() == Some(&name);
+
+            let presence = if is_checkout {
+                BranchPresenceDto::Checkout
+            } else if is_remote_only {
+                BranchPresenceDto::RemoteOnly
+            } else if has_upstream {
+                BranchPresenceDto::LocalRemote
+            } else {
+                BranchPresenceDto::LocalOnly
+            };
+
+            let (ahead, behind) = if is_local && has_upstream {
+                ahead_behind_for_local_branch(&repo, &name)
+            } else {
+                (None, None)
+            };
+
+            BranchListItemDto {
+                name,
+                presence,
+                ahead,
+                behind,
+            }
+        })
+        .collect();
+
+    items.sort_by(|a, b| {
+        let a_checkout = a.presence == BranchPresenceDto::Checkout;
+        let b_checkout = b.presence == BranchPresenceDto::Checkout;
+        b_checkout
+            .cmp(&a_checkout)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    Ok(items)
 }
 
 #[tauri::command]

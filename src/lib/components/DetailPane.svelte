@@ -5,7 +5,8 @@
     shouldSaveNotes,
     tagAlreadyOnRepo,
   } from "../orgClient";
-  import type { RepoDto } from "../types";
+  import type { BranchListItemDto, RepoDto } from "../types";
+  import BranchBadge from "./BranchBadge.svelte";
   import TagAutocomplete from "./TagAutocomplete.svelte";
   import TagChip from "./TagChip.svelte";
 
@@ -30,7 +31,7 @@
     return allTags.filter((t) => !onRepo.has(t));
   });
 
-  let branches = $state<string[]>([]);
+  let branches = $state<BranchListItemDto[]>([]);
   let branchError = $state<string | null>(null);
   let notesValue = $state("");
   let tagInput = $state("");
@@ -61,10 +62,10 @@
     let cancelled = false;
     void (async () => {
       try {
-        const result = await invoke<string[]>("list_branches", {
+        const result = await invoke<BranchListItemDto[]>("list_branches", {
           repoPath: path,
         });
-        if (!cancelled) {
+        if (!cancelled && repo.path === path) {
           branches = result;
         }
       } catch (e) {
@@ -159,7 +160,7 @@
 <div
   role="region"
   aria-label="Repository details"
-  class="flex h-full flex-col gap-4 overflow-y-auto p-4"
+  class="flex h-full flex-col gap-4 overflow-y-auto p-2"
 >
   <div class="flex items-center gap-2">
     <button
@@ -168,7 +169,7 @@
       aria-label="Close detail pane"
       onclick={onClose}
     >
-      ←
+      ◀
     </button>
     <h2 class="min-w-0 flex-1 truncate text-lg font-semibold">
       {repo.alias ?? repo.name}
@@ -184,6 +185,8 @@
     </button>
   </div>
 
+  <hr class="border-neutral-200 dark:border-neutral-700 -my-2" />
+
   <section>
     <h3 class="mb-1 text-sm font-medium text-neutral-600 dark:text-neutral-400">
       Branches
@@ -193,21 +196,15 @@
     {:else if branches.length === 0}
       <p class="text-sm text-neutral-500">No branches</p>
     {:else}
-      <ul class="flex flex-col gap-0.5 text-sm">
-        {#each branches as b (b)}
-          <li>
-            <span
-              class={b === repo.branch
-                ? "font-semibold text-blue-600 dark:text-blue-400"
-                : "text-neutral-700 dark:text-neutral-300"}
-            >
-              {b}
-            </span>
-          </li>
+      <div class="flex flex-wrap gap-1">
+        {#each branches as b (b.name)}
+          <BranchBadge branch={b} />
         {/each}
-      </ul>
+      </div>
     {/if}
   </section>
+
+  <hr class="border-neutral-200 dark:border-neutral-700 -my-2" />
 
   <section>
     <h3 class="mb-1 text-sm font-medium text-neutral-600 dark:text-neutral-400">
