@@ -3,14 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: ready_to_plan
-last_updated: 2026-05-31T20:43:49.560Z
+last_updated: "2026-06-03T17:01:47.024Z"
 progress:
-  total_phases: 9
-  completed_phases: 1
-  total_plans: 4
+  total_phases: 10
+  completed_phases: 8
+  total_plans: 42
   completed_plans: 42
-  percent: 11
-stopped_at: Phase 06.2 complete (9/9) — ready to discuss Phase 999.1
+  percent: 80
 ---
 
 # Project State
@@ -21,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 999.1 — recipes
+**Current focus:** Phase 7 — distribution strategy review (Homebrew tap + cask, unified CLI+tray)
 
 ## Phase Status
 
@@ -35,6 +34,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 6 | CLI parity | Complete — 5/5 plans, UAT 5/6 auto (2026-05-31) |
 | 06.1 | Release & distribution | Not started — inserted 2026-05-31 |
 | 06.2 | Tray UX polish | Complete — 9/9 plans (2026-05-31) |
+| 7 | Distribution strategy review | Not planned — added 2026-06-03 |
 
 ## Session Notes
 
@@ -87,6 +87,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 - Phase 06.1 inserted after Phase 6: Release distribution and install: GitHub tarballs, install.sh, DMG, workpot update, INSTALL.md (URGENT)
 - Phase 06.2 inserted after Phase 6: Tray UX polish — icons, panel chrome, alias, list/detail interaction, Storybook (2026-05-31 explore)
 - Phase 7 (Recipes) deferred to backlog as 999.1 (2026-05-31) — prioritize 06.1 release path first
+- Phase 7 added (2026-06-03): Review distribution strategy — Homebrew tap + cask, no signed DMG; single package for CLI + tray; brew install/uninstall together
 
 ### Pending Todos
 
