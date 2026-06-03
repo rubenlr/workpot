@@ -1,132 +1,82 @@
 # Install Workpot (macOS)
 
-Workpot supports two first-class install paths:
+Workpot is a macOS menu-bar assistant for engineers who juggle many git repositories. A single `brew install` puts both the `workpot` CLI on your PATH and the `Workpot.app` menu-bar tray in `/Applications`.
 
-1. **One-line installer script** (installs latest release assets)
-2. **Manual DMG install** (drag-install app bundle)
-
-Both paths use the same GitHub Release artifacts.
-
-## Option A: One-line installer script
-
-### Convenience URL (latest installer script on `main`)
+## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rubenlr/workpot/main/scripts/install.sh | bash
+brew tap rubenlr/workpot
+brew install rubenlr/workpot/workpot
 ```
 
-### Versioned release URL (reproducible installer per release tag)
-
-```bash
-curl -fsSL https://github.com/rubenlr/workpot/releases/download/vX.Y.Z/install.sh | bash
-```
-
-Replace `vX.Y.Z` with the release tag you want.
-
-### Installer flags
-
-- Default (no flags): installs both CLI + tray app
-- `--only-cli`: installs only the CLI binary
-- `--only-tray`: installs only the tray app
-- `--global`: installs to system locations (`/usr/local/bin`, `/Applications`)
-
-Examples:
-
-```bash
-# CLI only (user install)
-curl -fsSL https://raw.githubusercontent.com/rubenlr/workpot/main/scripts/install.sh | bash -s -- --only-cli
-
-# Tray only (global install)
-curl -fsSL https://raw.githubusercontent.com/rubenlr/workpot/main/scripts/install.sh | bash -s -- --only-tray --global
-```
-
-## Option B: Manual DMG install
-
-1. Open [GitHub Releases](https://github.com/rubenlr/workpot/releases).
-2. Download `Workpot-X.Y.Z-aarch64.dmg` and (recommended) `Workpot-X.Y.Z-aarch64.dmg.sha256`.
-3. Optional integrity check:
-
-   ```bash
-   shasum -a 256 Workpot-X.Y.Z-aarch64.dmg
-   # compare with Workpot-X.Y.Z-aarch64.dmg.sha256
-   ```
-
-4. Open the DMG.
-5. Drag `Workpot.app` into `Applications`.
-6. Launch Workpot from Spotlight/Finder.
+Homebrew automatically removes the quarantine attribute on first install — you will not see an "unidentified developer" dialog.
 
 ## Install locations
 
-Default user install:
-
-- CLI: `~/.local/bin/workpot`
-- Tray: `~/Applications/Workpot.app`
-
-Global install (`--global`):
-
-- CLI: `/usr/local/bin/workpot`
+- CLI: `$(brew --prefix)/bin/workpot` → symlink to `Workpot.app/Contents/MacOS/workpot`
 - Tray: `/Applications/Workpot.app`
 
-## Update
-
-Update to latest release:
+## Upgrade
 
 ```bash
-workpot update
+brew upgrade rubenlr/workpot/workpot
 ```
-
-Useful flags:
-
-- `workpot update --only-cli`
-- `workpot update --only-tray`
-- `workpot update --global`
-
-If Workpot tray is currently running, `workpot update` may require you to quit the app first.
 
 ## Uninstall
 
-Remove CLI:
-
 ```bash
-rm -f ~/.local/bin/workpot
-# or global
-sudo rm -f /usr/local/bin/workpot
+brew uninstall rubenlr/workpot/workpot
 ```
 
-Remove tray app:
+Optionally remove the tap:
 
 ```bash
-rm -rf ~/Applications/Workpot.app
-# or global
-sudo rm -rf /Applications/Workpot.app
+brew untap rubenlr/workpot
 ```
 
-Optional: remove local config/data created by Workpot:
+Optional data cleanup (removes config and index):
 
 ```bash
 rm -rf ~/Library/Application\ Support/workpot
 rm -rf ~/.config/workpot
 ```
 
-## PATH troubleshooting
+## Migration from 06.1 install script
 
-If `workpot` is not found after install:
+If you previously installed Workpot via the install script, remove the old install before switching to Homebrew. Run only the paths that apply to your system:
 
-1. Confirm binary exists:
+```bash
+rm -f ~/.local/bin/workpot
+rm -rf ~/Applications/Workpot.app
+rm -f /usr/local/bin/workpot
+sudo rm -rf /Applications/Workpot.app
+```
 
-   ```bash
-   ls -l ~/.local/bin/workpot
-   ```
+Then install via Homebrew:
 
-2. Add `~/.local/bin` to your shell PATH (zsh):
+```bash
+brew tap rubenlr/workpot
+brew install rubenlr/workpot/workpot
+```
 
-   ```bash
-   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-   source ~/.zshrc
-   ```
+## Troubleshooting
 
-3. Verify:
+**`workpot` not found after install:**
 
-   ```bash
-   workpot --version
-   ```
+Run `brew doctor` and verify `$(brew --prefix)/bin` is on your PATH:
+
+```bash
+echo $PATH | tr ':' '\n' | grep "$(brew --prefix)/bin"
+```
+
+If missing, add it to your shell profile (e.g. `~/.zshrc`):
+
+```bash
+export PATH="$(brew --prefix)/bin:$PATH"
+```
+
+**Workpot shows "damaged" on first launch** (edge case where Homebrew postflight did not fire):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Workpot.app
+```
