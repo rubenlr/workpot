@@ -19,7 +19,7 @@
 | 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
 | 06.1 | Release & distribution *(INSERTED)* | 3/3 | Complete   | 2026-05-31 |
 | 06.2 | Tray UX polish *(INSERTED)* | 9/9 | Complete    | 2026-05-31 |
-| 7 | Distribution strategy review | Homebrew tap + cask; unified CLI+tray | TBD | Not started |
+| 7 | Distribution strategy review | 2/4 | In Progress|  |
 
 ---
 
@@ -372,13 +372,13 @@ Plans:
 4. `INSTALL.md` describes Homebrew-only flow; DMG/install.sh paths removed
 5. CI/release workflow publishes `Workpot-<version>-aarch64.tar.gz` (app+CLI) without Apple signing secrets; tap auto-updated on each release
 
-**Plans:** 4 plans
+**Plans:** 2/4 plans executed
 
 **Wave 1** *(parallel — no shared files)*
 
 Plans:
-- [ ] 07-01-PLAN.md — Remove update subcommand + update-only deps; remove dmg from tauri.conf.json (D-12, D-14)
-- [ ] 07-02-PLAN.md — Rewrite release.yml: new combined tarball job, remove dmg job, add tap-update job; update release-smoke.yml contract (D-02, D-03, D-07, D-08, D-09, D-10, D-13)
+- [x] 07-01-PLAN.md — Remove update subcommand + update-only deps; remove dmg from tauri.conf.json (D-12, D-14)
+- [x] 07-02-PLAN.md — Rewrite release.yml: new combined tarball job, remove dmg job, add tap-update job; update release-smoke.yml contract (D-02, D-03, D-07, D-08, D-09, D-10, D-13)
 
 **Wave 2** *(depends on Wave 1)*
 

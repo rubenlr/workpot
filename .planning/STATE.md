@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: ready_to_plan
-last_updated: "2026-06-03T17:38:56.945Z"
+last_updated: "2026-06-03T17:42:12.712Z"
 progress:
   total_phases: 10
   completed_phases: 8
@@ -20,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 7 — distribution strategy review (Homebrew tap + cask, unified CLI+tray)
+**Current focus:** Phase 07 — review-distribution-strategy-homebrew-tap-cask-no-signed-dmg
 
 ## Phase Status
 
