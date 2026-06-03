@@ -1,6 +1,5 @@
 mod git_display;
 mod list_display;
-mod update;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
@@ -55,18 +54,6 @@ enum Commands {
     Open {
         /// Repository name, path key, or canonical path.
         repo: String,
-    },
-    /// Update installed Workpot CLI/tray from latest GitHub release.
-    Update {
-        /// Update only the CLI binary target.
-        #[arg(long, conflicts_with = "only_tray")]
-        only_cli: bool,
-        /// Update only the tray app target.
-        #[arg(long, conflicts_with = "only_cli")]
-        only_tray: bool,
-        /// Use global install paths (/usr/local/bin and /Applications).
-        #[arg(long)]
-        global: bool,
     },
 }
 
@@ -156,30 +143,6 @@ fn main() -> ExitCode {
             eprintln!("{e:#}");
             ExitCode::from(2)
         }
-        Err(e)
-            if matches!(
-                e.downcast_ref::<update::UpdateFailed>(),
-                Some(update::UpdateFailed {
-                    kind: update::UpdateFailureKind::Install,
-                    ..
-                })
-            ) =>
-        {
-            eprintln!("{e:#}");
-            ExitCode::from(1)
-        }
-        Err(e)
-            if matches!(
-                e.downcast_ref::<update::UpdateFailed>(),
-                Some(update::UpdateFailed {
-                    kind: update::UpdateFailureKind::Network,
-                    ..
-                })
-            ) =>
-        {
-            eprintln!("{e:#}");
-            ExitCode::from(2)
-        }
         Err(e) => {
             eprintln!("{e:#}");
             ExitCode::FAILURE
@@ -199,15 +162,6 @@ fn run() -> anyhow::Result<()> {
         Commands::Tag(action) => run_tag(action),
         Commands::Search { query } => run_search(&query),
         Commands::Open { repo } => run_open(&repo),
-        Commands::Update {
-            only_cli,
-            only_tray,
-            global,
-        } => update::run_update(update::UpdateArgs {
-            only_cli,
-            only_tray,
-            global,
-        }),
     }
 }
 
