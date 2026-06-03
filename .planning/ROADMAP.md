@@ -1,7 +1,7 @@
 # Roadmap: Workpot
 
 **Project:** Workpot  
-**Phases:** 6 + 06.1 + 06.2 (active); 1 backlog  
+**Phases:** 6 + 06.1 + 06.2 + 7 (active); 1 backlog  
 **Requirements mapped:** 28/28 v1  
 **Structure:** Vertical MVP (each phase ships usable capability)
 
@@ -19,6 +19,7 @@
 | 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
 | 06.1 | Release & distribution *(INSERTED)* | 3/3 | Complete   | 2026-05-31 |
 | 06.2 | Tray UX polish *(INSERTED)* | 9/9 | Complete    | 2026-05-31 |
+| 7 | Distribution strategy review | Homebrew tap + cask; unified CLI+tray | TBD | Not started |
 
 ---
 
@@ -351,6 +352,41 @@ Plans:
 | 6 | Not started | 0/0 |
 | 06.1 | Not started | 0/0 |
 | 06.2 | Complete | 9/9 |
+| 7 | Planned | 0/4 |
+
+### Phase 7: Review distribution strategy (Homebrew tap + cask)
+
+**Goal:** Pivot v1 distribution away from signed DMG / split install paths to a Homebrew tap with cask that ships **one package** — CLI (`workpot`) and tray app together — so `brew install` and `brew uninstall` add or remove both surfaces atomically.
+
+**Mode:** mvp
+
+**Depends on:** Phase 06.1 (existing tarball/DMG/install.sh release path — review, deprecate, or migrate docs and CI)
+
+**Requirements:** Tooling / release (extends 06.1; decision-driven — D-01 through D-15 from CONTEXT.md)
+
+**Success Criteria:**
+
+1. Distribution strategy doc records decision: **no signed/notarized DMG** for v1; primary path is **brew tap + cask**
+2. Single Homebrew cask installs CLI binary on `PATH` and tray `.app` in one `brew install`
+3. `brew uninstall` removes CLI and tray without orphaning either surface
+4. `INSTALL.md` describes Homebrew-only flow; DMG/install.sh paths removed
+5. CI/release workflow publishes `Workpot-<version>-aarch64.tar.gz` (app+CLI) without Apple signing secrets; tap auto-updated on each release
+
+**Plans:** 4 plans
+
+**Wave 1** *(parallel — no shared files)*
+
+Plans:
+- [ ] 07-01-PLAN.md — Remove update subcommand + update-only deps; remove dmg from tauri.conf.json (D-12, D-14)
+- [ ] 07-02-PLAN.md — Rewrite release.yml: new combined tarball job, remove dmg job, add tap-update job; update release-smoke.yml contract (D-02, D-03, D-07, D-08, D-09, D-10, D-13)
+
+**Wave 2** *(depends on Wave 1)*
+
+- [ ] 07-03-PLAN.md — Delete install.sh + smoke, rewrite INSTALL.md Homebrew-only, update docs/releasing.md, create docs/distribution-strategy.md (D-04, D-11, D-15)
+
+**Wave 3** *(depends on Wave 2; has human checkpoint)*
+
+- [ ] 07-04-PLAN.md — Draft Casks/workpot.rb; human creates homebrew-workpot repo + PAT + HOMEBREW_TAP_TOKEN secret (D-01, D-03, D-05, D-06, D-09, D-10)
 
 ---
 *Roadmap created: 2026-05-28*
