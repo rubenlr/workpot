@@ -44,18 +44,14 @@ jobs:
       - name: Validate aarch64-only artifact contract
         run: |
           set -euo pipefail
-          test -f artifacts/workpot-macos-aarch64.tar.gz
-          test -f artifacts/workpot-macos-aarch64.tar.gz.sha256
-          test -f artifacts/Workpot-0.0.0-smoke-aarch64.dmg
-          test -f artifacts/Workpot-0.0.0-smoke-aarch64.dmg.sha256
+          test -f artifacts/Workpot-0.0.0-smoke-aarch64.tar.gz
+          test -f artifacts/Workpot-0.0.0-smoke-aarch64.tar.gz.sha256
 
           for artifact in artifacts/*; do
             file="$(basename "$artifact")"
             case "$file" in
-              workpot-macos-aarch64.tar.gz|\
-              workpot-macos-aarch64.tar.gz.sha256|\
-              Workpot-0.0.0-smoke-aarch64.dmg|\
-              Workpot-0.0.0-smoke-aarch64.dmg.sha256)
+              Workpot-0.0.0-smoke-aarch64.tar.gz|\
+              Workpot-0.0.0-smoke-aarch64.tar.gz.sha256)
                 ;;
               *)
                 echo "unexpected artifact in smoke output: $file" >&2
