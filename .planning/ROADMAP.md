@@ -19,7 +19,7 @@
 | 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
 | 06.1 | Release & distribution *(INSERTED)* | 3/3 | Complete   | 2026-05-31 |
 | 06.2 | Tray UX polish *(INSERTED)* | 9/9 | Complete    | 2026-05-31 |
-| 7 | Distribution strategy review | 2/4 | In Progress|  |
+| 7 | Distribution strategy review | 3/4 | In Progress|  |
 
 ---
 
@@ -372,7 +372,7 @@ Plans:
 4. `INSTALL.md` describes Homebrew-only flow; DMG/install.sh paths removed
 5. CI/release workflow publishes `Workpot-<version>-aarch64.tar.gz` (app+CLI) without Apple signing secrets; tap auto-updated on each release
 
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 **Wave 1** *(parallel — no shared files)*
 
@@ -382,7 +382,7 @@ Plans:
 
 **Wave 2** *(depends on Wave 1)*
 
-- [ ] 07-03-PLAN.md — Delete install.sh + smoke, rewrite INSTALL.md Homebrew-only, update docs/releasing.md, create docs/distribution-strategy.md (D-04, D-11, D-15)
+- [x] 07-03-PLAN.md — Delete install.sh + smoke, rewrite INSTALL.md Homebrew-only, update docs/releasing.md, create docs/distribution-strategy.md (D-04, D-11, D-15)
 
 **Wave 3** *(depends on Wave 2; has human checkpoint)*
 
