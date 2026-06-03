@@ -587,22 +587,25 @@ Commands::Update { only_cli, only_tray, global } =>
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **What permissions does the fine-grained PAT need?**
    - What we know: Standard PAT scope for cross-repo git push is "Contents: Read and Write" on the target repo
    - What's unclear: Whether GitHub's fine-grained PAT UI changes have altered the exact permission label name
    - Recommendation: Verify at github.com/settings/tokens when creating `HOMEBREW_TAP_TOKEN`; if fine-grained doesn't work, fall back to classic PAT with `repo` scope
+   - **RESOLUTION (Q1):** Plan 07-04 Task 2 documents the exact PAT scope as "Contents: Read and Write" on `rubenlr/homebrew-workpot`. If the fine-grained PAT UI has changed the label, the fallback is a classic PAT with `repo` scope — this is captured in the human checkpoint in 07-04.
 
 2. **Does `postflight system_command xattr` work in Homebrew 5.x private taps?**
    - What we know: `--no-quarantine` was removed in Homebrew 5.0; official casks must be signed by Sep 2026; private taps are explicitly exempted from the signing requirement
    - What's unclear: Whether Homebrew 5.x also restricts `system_command` DSL for xattr in ALL tap casks, or only in audit checks for official taps
    - Recommendation: Include the `postflight system_command xattr` stanza as planned (D-10); add a INSTALL.md fallback noting: "If Workpot shows as damaged on first launch, run: `xattr -dr com.apple.quarantine /Applications/Workpot.app`"
+   - **RESOLUTION (Q2):** The `postflight system_command xattr` stanza is implemented in the 07-04 cask as planned (D-10). The INSTALL.md fallback (`xattr -dr com.apple.quarantine /Applications/Workpot.app`) is included in the 07-03 Task 1 Troubleshooting section as a fallback for users where the postflight does not fire.
 
 3. **Tauri `--bundles app` vs `--bundles dmg` output path for .app**
    - What we know: `--bundles dmg` path is `src-tauri/target/release/bundle/dmg/` (confirmed in release.yml). The `.app` is likely at `src-tauri/target/release/bundle/macos/`
    - What's unclear: Whether `--bundles app` produces the same path; the existing CI only exercises `--bundles dmg`
    - Recommendation: The first CI task for the new packaging should verify the .app path with `ls src-tauri/target/release/bundle/macos/`; if the directory or file is missing, adjust the tar command accordingly
+   - **RESOLUTION (Q3):** 07-02 Task 1 includes a defensive `test -d src-tauri/target/release/bundle/macos/Workpot.app` step (Step 3 "Verify app bundle path") that exits non-zero if Tauri did not produce the expected path, preventing silent misconfiguration.
 
 ---
 
@@ -673,7 +676,7 @@ Commands::Update { only_cli, only_tray, global } =>
 | Pattern | STRIDE | Standard Mitigation |
 |---------|--------|---------------------|
 | Malicious .tar.gz substitution | Tampering | Homebrew verifies sha256 field on download; cask sha256 is committed to tap repo |
-| Compromised HOMEBREW_TAP_TOKEN | Tampering/Elevation | Fine-grained PAT scoped to tap repo only; rotation is low risk |
+| Compromised HOMEBREW_TAP_TOKEN | Tampering/Elevation | Fine-grained PAT scoped to tap repo only (D-03); Contents:Read+Write permission only; no workflow scope needed |
 | Gatekeeper bypass (user concern) | Information Disclosure | postflight xattr is honest about the unsigned nature; documented in INSTALL.md |
 | Tap repo compromise (attacker modifies workpot.rb) | Tampering | Any sha256 change requires pushing to rubenlr/homebrew-workpot; protected by GitHub repo permissions |
 
