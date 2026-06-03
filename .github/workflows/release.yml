@@ -1,7 +1,7 @@
 name: release
 
-# Builds macOS aarch64 CLI tarball + checksum and Workpot DMG + checksum,
-# then uploads them to an existing GitHub Release.
+# Builds macOS aarch64 combined Workpot.app+CLI tarball + checksum,
+# then uploads to an existing GitHub Release and updates the Homebrew tap.
 # Invoked by release-artifacts.yml on release: published, release-smoke (dry_run),
 # or manually via workflow_dispatch.
 # release-publish.yml creates the GitHub Release and tag on master when version increases.
@@ -111,15 +111,11 @@ jobs:
           fi
           echo "version=${tag_version}" >> "$GITHUB_OUTPUT"
 
-  binary:
-    name: macos aarch64 cli binary
+  bundle:
+    name: macos aarch64 app bundle
     needs: [prepare, validate-version]
     if: always() && (needs.prepare.outputs.dry_run == 'true' || needs.validate-version.result == 'success')
     runs-on: macos-latest
-    env:
-      RELEASE_ARTIFACT: workpot-macos-aarch64
-      RELEASE_ARCHIVE: workpot-macos-aarch64.tar.gz
-      RELEASE_ARCHIVE_CHECKSUM: workpot-macos-aarch64.tar.gz.sha256
     steps:
       - uses: actions/checkout@v5
         with:
@@ -132,48 +128,8 @@ jobs:
 
       - uses: ./.github/actions/rust-cache
         with:
-          shared-key: release
+          shared-key: release-bundle
           key: aarch64
-
-      - name: Build release binary
-        run: cargo build --release -p workpot-cli
-
-      - name: Create release tarball
-        run: |
-          artifact="$RELEASE_ARTIFACT"
-          mkdir -p "dist/$artifact"
-          cp target/release/workpot "dist/$artifact/workpot"
-          cp README.md LICENSE "dist/$artifact/"
-          tar -C "dist/$artifact" -czf "$RELEASE_ARCHIVE" .
-          shasum -a 256 "$RELEASE_ARCHIVE" > "$RELEASE_ARCHIVE_CHECKSUM"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ needs.prepare.outputs.dry_run == 'true' && format('smoke-{0}', env.RELEASE_ARTIFACT) || env.RELEASE_ARTIFACT }}
-          path: |
-            ${{ env.RELEASE_ARCHIVE }}
-            ${{ env.RELEASE_ARCHIVE_CHECKSUM }}
-          retention-days: ${{ needs.prepare.outputs.dry_run == 'true' && 7 || 90 }}
-
-  dmg:
-    name: macos aarch64 dmg
-    needs: [prepare, validate-version]
-    if: always() && (needs.prepare.outputs.dry_run == 'true' || needs.validate-version.result == 'success')
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.prepare.outputs.checkout_ref }}
-          fetch-depth: 0
-
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.96
-
-      - uses: ./.github/actions/rust-cache
-        with:
-          shared-key: release
-          key: tauri-aarch64
 
       - uses: actions/setup-node@v5
         with:
@@ -183,93 +139,47 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - id: signing
-        name: Resolve signing policy
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      - name: Build release CLI binary
+        run: cargo build --release -p workpot-cli
+
+      - name: Build release app bundle
         run: |
-          set -euo pipefail
-          required_vars=(
-            APPLE_CERTIFICATE
-            APPLE_CERTIFICATE_PASSWORD
-            APPLE_SIGNING_IDENTITY
-            APPLE_API_ISSUER
-            APPLE_API_KEY_ID
-            APPLE_API_KEY
-          )
-          present=0
-          missing=()
-          for key in "${required_vars[@]}"; do
-            if [ -n "${!key:-}" ]; then
-              present=$((present + 1))
-            else
-              missing+=("$key")
-            fi
-          done
+          npm run build
+          npx tauri build --bundles app --config src-tauri/tauri.ci-build.json
 
-          if [ "$present" -eq 0 ]; then
-            echo "mode=unsigned" >> "$GITHUB_OUTPUT"
-            echo "::warning::APPLE signing secrets not configured. Building unsigned DMG (codesign/notarytool/stapler skipped by design)."
-            exit 0
-          fi
+      - name: Verify app bundle path
+        run: test -d src-tauri/target/release/bundle/macos/Workpot.app
 
-          if [ "$present" -ne "${#required_vars[@]}" ]; then
-            echo "::error::Partial APPLE_ signing configuration detected. Missing: ${missing[*]}"
-            echo "::error::Refusing release to avoid partially signed artifacts."
-            exit 1
-          fi
+      - name: Inject CLI binary into app bundle
+        run: cp target/release/workpot src-tauri/target/release/bundle/macos/Workpot.app/Contents/MacOS/workpot
 
-          echo "mode=signed" >> "$GITHUB_OUTPUT"
-
-      - name: Build signed aarch64 DMG bundle
-        if: steps.signing.outputs.mode == 'signed'
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      - name: Verify both binaries present
         run: |
-          set -euo pipefail
-          echo "Building signed/notarized DMG (codesign + notarytool + stapler enabled)."
-          npm run tauri:build -- --bundles dmg
+          test -f src-tauri/target/release/bundle/macos/Workpot.app/Contents/MacOS/workpot-tray
+          test -f src-tauri/target/release/bundle/macos/Workpot.app/Contents/MacOS/workpot
 
-      - name: Build unsigned aarch64 DMG bundle
-        if: steps.signing.outputs.mode == 'unsigned'
-        run: |
-          set -euo pipefail
-          echo "::warning::Continuing with unsigned DMG because APPLE_ secrets are absent."
-          npm run tauri:build -- --bundles dmg
-
-      - name: Rename DMG and create checksum
+      - name: Create release tarball
         env:
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
           set -euo pipefail
           version="${RELEASE_TAG#v}"
-          dmg_name="Workpot-${version}-aarch64.dmg"
-          dmg_checksum="${dmg_name}.sha256"
-          produced_dmg="$(ls src-tauri/target/release/bundle/dmg/*.dmg)"
-          cp "$produced_dmg" "$dmg_name"
-          shasum -a 256 "$dmg_name" > "$dmg_checksum"
+          archive="Workpot-${version}-aarch64.tar.gz"
+          checksum="${archive}.sha256"
+          tar -C src-tauri/target/release/bundle/macos -czf "$archive" Workpot.app
+          shasum -a 256 "$archive" > "$checksum"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ needs.prepare.outputs.dry_run == 'true' && 'smoke-workpot-dmg-aarch64' || 'workpot-dmg-aarch64' }}
+          name: ${{ needs.prepare.outputs.dry_run == 'true' && 'smoke-workpot-bundle-aarch64' || 'workpot-bundle-aarch64' }}
           path: |
-            Workpot-*-aarch64.dmg
-            Workpot-*-aarch64.dmg.sha256
+            Workpot-*-aarch64.tar.gz
+            Workpot-*-aarch64.tar.gz.sha256
           retention-days: ${{ needs.prepare.outputs.dry_run == 'true' && 7 || 90 }}
 
   github-release:
     name: github release
-    needs: [prepare, binary, dmg, validate-version]
+    needs: [prepare, bundle, validate-version]
     if: needs.prepare.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -288,3 +198,47 @@ jobs:
           set -euo pipefail
           gh release upload "$RELEASE_TAG" artifacts/* --clobber
           echo "Uploaded artifacts to release ${RELEASE_TAG}"
+
+  tap-update:
+    name: update homebrew tap
+    needs: [github-release, validate-version]
+    if: needs.prepare.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute artifact SHA256 from published release
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          archive="Workpot-${version}-aarch64.tar.gz"
+          gh release download "${RELEASE_TAG}" --pattern "${archive}" --repo rubenlr/workpot
+          sha256="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+          echo "SHA256=${sha256}" >> "$GITHUB_ENV"
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+        with:
+          repository: rubenlr/homebrew-workpot
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-workpot
+
+      - name: Patch cask version and sha256
+        working-directory: homebrew-workpot
+        run: |
+          set -euo pipefail
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" Casks/workpot.rb
+          sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Casks/workpot.rb
+          grep -q "version \"${VERSION}\"" Casks/workpot.rb
+          grep -q "sha256 \"${SHA256}\"" Casks/workpot.rb
+
+      - name: Commit and push tap update
+        working-directory: homebrew-workpot
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/workpot.rb
+          git commit -m "chore: bump workpot to v${VERSION}"
+          git push
