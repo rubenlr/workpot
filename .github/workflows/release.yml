@@ -125,6 +125,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96
+          targets: aarch64-apple-darwin
 
       - uses: ./.github/actions/rust-cache
         with:
@@ -140,18 +141,18 @@ jobs:
         run: npm ci
 
       - name: Build release CLI binary
-        run: cargo build --release -p workpot-cli
+        run: cargo build --release -p workpot-cli --target aarch64-apple-darwin
 
       - name: Build release app bundle
         run: |
           npm run build
-          npx tauri build --bundles app --config src-tauri/tauri.ci-build.json
+          npx tauri build --bundles app --config src-tauri/tauri.ci-build.json --target aarch64-apple-darwin
 
       - name: Verify app bundle path
         run: test -d src-tauri/target/release/bundle/macos/Workpot.app
 
       - name: Inject CLI binary into app bundle
-        run: cp target/release/workpot src-tauri/target/release/bundle/macos/Workpot.app/Contents/MacOS/workpot
+        run: cp target/aarch64-apple-darwin/release/workpot src-tauri/target/release/bundle/macos/Workpot.app/Contents/MacOS/workpot
 
       - name: Verify both binaries present
         run: |
@@ -188,6 +189,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: workpot-bundle-*
           merge-multiple: true
 
       - name: Upload macOS artifacts to GitHub Release
@@ -201,7 +203,7 @@ jobs:
 
   tap-update:
     name: update homebrew tap
-    needs: [github-release, validate-version]
+    needs: [prepare, github-release, validate-version]
     if: needs.prepare.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
     steps:
@@ -213,8 +215,8 @@ jobs:
           set -euo pipefail
           version="${RELEASE_TAG#v}"
           archive="Workpot-${version}-aarch64.tar.gz"
-          gh release download "${RELEASE_TAG}" --pattern "${archive}" --repo rubenlr/workpot
-          sha256="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+          gh release download "${RELEASE_TAG}" --pattern "${archive}.sha256" --repo rubenlr/workpot
+          sha256="$(awk '{print $1}' "${archive}.sha256")"
           echo "SHA256=${sha256}" >> "$GITHUB_ENV"
           echo "VERSION=${version}" >> "$GITHUB_ENV"
 
@@ -239,6 +241,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin HEAD
           git add Casks/workpot.rb
           git commit -m "chore: bump workpot to v${VERSION}"
           git push
