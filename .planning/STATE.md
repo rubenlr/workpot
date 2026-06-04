@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: ready_to_plan
-last_updated: 2026-06-04T16:16:02.153Z
+last_updated: 2026-06-04T18:00:00Z
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 4
   completed_plans: 46
   percent: 10
-stopped_at: Phase 07 complete (4/4) — ready to discuss Phase 999.1
+stopped_at: Phase 07 UAT complete — ready to discuss Phase 999.1 (recipes backlog)
 ---
 
 # Project State
@@ -35,10 +35,11 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 6 | CLI parity | Complete — 5/5 plans, UAT 5/6 auto (2026-05-31) |
 | 06.1 | Release & distribution | Not started — inserted 2026-05-31 |
 | 06.2 | Tray UX polish | Complete — 9/9 plans (2026-05-31) |
-| 7 | Distribution strategy review | Not planned — added 2026-06-03 |
+| 7 | Distribution strategy review | Complete — 4/4 plans, UAT 12/13 auto (2026-06-04) |
 
 ## Session Notes
 
+- Phase 7 UAT auto (2026-06-04): `distribution_contract` 11/11; `brew tap`, `brew info`, `gh` tap repo + HOMEBREW_TAP_TOKEN; `cargo build -p workpot-cli`; 07-UAT.md 12 pass / 1 skip (brew install post-release)
 - Phase 06.2 plan 06.2-09 (2026-05-31): CLI alias/bare smoke, stale_dirty_dto bridge, RepoListRow Vitest GREEN; commits `14cf721`, `e93e9cd`
 - Phase 06.2 plan 06.2-07 (2026-05-31): Storybook + RepoListRow extraction, 10 visual stories; commits `183b2a1`, `1c54e21`
 - Phase 06.2 plan 06.2-06 (2026-05-31): panel-shell CSS, detail pin toggle, input hardening; commits `dfb10cf`, `2f5b526`
