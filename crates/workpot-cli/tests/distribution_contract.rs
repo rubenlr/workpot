@@ -14,8 +14,7 @@ fn repo_root() -> PathBuf {
 }
 
 fn read_repo_file(rel: &str) -> String {
-    fs::read_to_string(repo_root().join(rel))
-        .unwrap_or_else(|e| panic!("read {rel}: {e}"))
+    fs::read_to_string(repo_root().join(rel)).unwrap_or_else(|e| panic!("read {rel}: {e}"))
 }
 
 fn assert_path_missing(rel: &str) {
@@ -130,10 +129,7 @@ fn workflow_text(name: &str) -> String {
 fn release_workflows_use_bundle_not_dmg() {
     for file in ["release.yml", "release-smoke.yml", "release-artifacts.yml"] {
         let text = workflow_text(file);
-        assert!(
-            !text.contains("dmg:"),
-            "{file} must not define a dmg job"
-        );
+        assert!(!text.contains("dmg:"), "{file} must not define a dmg job");
         assert!(
             !text.contains("APPLE_CERTIFICATE"),
             "{file} must not reference Apple signing secrets"

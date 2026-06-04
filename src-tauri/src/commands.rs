@@ -304,11 +304,8 @@ pub fn set_alias(
     let ctx = state
         .lock()
         .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.set_alias(
-        &repo_path,
-        alias.as_deref().map(str::trim),
-    )
-    .map_err(|e| e.to_string())
+    ctx.set_alias(&repo_path, alias.as_deref().map(str::trim))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -535,14 +532,13 @@ fn has_stale_dirty_dto(repos: &[RepoDto], stale_dirty_days: u32) -> bool {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
     repos.iter().any(|r| {
-        r.is_dirty == Some(true)
-            && {
-                let age = match r.last_opened_at {
-                    Some(t) => now - t,
-                    None => i64::MAX,
-                };
-                age >= threshold_secs
-            }
+        r.is_dirty == Some(true) && {
+            let age = match r.last_opened_at {
+                Some(t) => now - t,
+                None => i64::MAX,
+            };
+            age >= threshold_secs
+        }
     })
 }
 
@@ -678,7 +674,9 @@ fn spawn_background_git_refresh_inner(
             let repo_count = paths.len();
             log::info!("background git refresh: refreshing {repo_count} repos");
             let paths_acquire_ms = started.elapsed().as_millis();
-            log::debug!("background git refresh: paths lock released elapsed_ms={paths_acquire_ms}");
+            log::debug!(
+                "background git refresh: paths lock released elapsed_ms={paths_acquire_ms}"
+            );
             let git_results = workpot_core::services::git_state::refresh_all(paths);
             log::debug!("background git refresh: persist lock acquire");
             let summary = state_for_blocking

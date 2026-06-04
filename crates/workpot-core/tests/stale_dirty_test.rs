@@ -182,14 +182,13 @@ fn dto_equivalent(
     now_secs: i64,
 ) -> bool {
     let threshold_secs = stale_dirty_days as i64 * SECS_PER_DAY;
-    is_dirty == Some(true)
-        && {
-            let age = match last_opened_at {
-                Some(t) => now_secs - t,
-                None => i64::MAX,
-            };
-            age >= threshold_secs
-        }
+    is_dirty == Some(true) && {
+        let age = match last_opened_at {
+            Some(t) => now_secs - t,
+            None => i64::MAX,
+        };
+        age >= threshold_secs
+    }
 }
 
 /// Validates that `has_stale_dirty_dto` in `src-tauri/src/commands.rs` follows the same

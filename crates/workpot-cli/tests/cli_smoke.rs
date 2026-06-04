@@ -608,8 +608,7 @@ fn search_filters_by_fuzzy_query() {
         .assert()
         .success()
         .stdout(
-            predicate::str::contains("repo-alpha")
-                .and(predicate::str::contains("repo-beta").not()),
+            predicate::str::contains("repo-alpha").and(predicate::str::contains("repo-beta").not()),
         );
 }
 
@@ -765,10 +764,7 @@ fn list_registered_repo_shows_icon_and_name() {
 
 /// Resolve the test database path the same way `workpot paths` does after bootstrap.
 fn database_path(home: &std::path::Path) -> PathBuf {
-    let out = workpot_cmd(home)
-        .arg("paths")
-        .output()
-        .expect("paths");
+    let out = workpot_cmd(home).arg("paths").output().expect("paths");
     assert!(out.status.success(), "workpot paths failed");
     let stdout = String::from_utf8_lossy(&out.stdout);
     for line in stdout.lines() {
@@ -780,17 +776,12 @@ fn database_path(home: &std::path::Path) -> PathBuf {
 }
 
 fn set_repo_alias(home: &std::path::Path, repo_path: &std::path::Path, alias: &str) {
-    workpot_cmd(home)
-        .arg("paths")
-        .assert()
-        .success();
+    workpot_cmd(home).arg("paths").assert().success();
     let db = database_path(home);
     let canon = repo_path.canonicalize().expect("canonicalize");
     let path_key = canon.to_string_lossy().into_owned();
-    let conn =
-        workpot_core::infra::store::open_connection(&db).expect("open test db");
-    workpot_core::services::org::set_alias(&conn, &path_key, Some(alias))
-        .expect("set alias");
+    let conn = workpot_core::infra::store::open_connection(&db).expect("open test db");
+    workpot_core::services::org::set_alias(&conn, &path_key, Some(alias)).expect("set alias");
 }
 
 fn bare_git_fixture(parent: &std::path::Path, name: &str) -> PathBuf {

@@ -380,7 +380,10 @@ fn alias_primary_match_full_alias_string() {
 fn alias_none_no_regression_vs_unaliased() {
     let baseline = named("workpot");
     let with_none = repo("workpot", None, Some("main"), None, vec![]);
-    assert_eq!(fuzzy_score("workpot", &baseline), fuzzy_score("workpot", &with_none));
+    assert_eq!(
+        fuzzy_score("workpot", &baseline),
+        fuzzy_score("workpot", &with_none)
+    );
     assert!(fuzzy_score("workpot", &with_none) > 0);
 }
 

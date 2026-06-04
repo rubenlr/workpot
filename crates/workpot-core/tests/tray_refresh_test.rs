@@ -160,7 +160,10 @@ fn persist_git_refresh_results_counts_refreshed_errors_and_dirty() {
 
     let summary = ctx.persist_git_refresh_results(results).expect("persist");
     assert_eq!(summary.refreshed, 2);
-    assert_eq!(summary.errors, 0, "missing path is pruned, not counted as error");
+    assert_eq!(
+        summary.errors, 0,
+        "missing path is pruned, not counted as error"
+    );
     assert!(summary.any_dirty);
 }
 
@@ -175,7 +178,10 @@ fn manual_open_refresh_prunes_missing_path() {
         .iter()
         .filter(|r| r.path.to_string_lossy().contains("uat-repo"))
         .count();
-    assert!(before > 0, "seed with: workpot repo add <path> && rm -rf <path>");
+    assert!(
+        before > 0,
+        "seed with: workpot repo add <path> && rm -rf <path>"
+    );
 
     let summary = ctx.refresh_all_git_state().expect("refresh");
     assert_eq!(summary.errors, 0);
@@ -186,7 +192,10 @@ fn manual_open_refresh_prunes_missing_path() {
         .iter()
         .filter(|r| r.path.to_string_lossy().contains("uat-repo"))
         .count();
-    assert_eq!(after, 0, "missing path row should be pruned after tray refresh");
+    assert_eq!(
+        after, 0,
+        "missing path row should be pruned after tray refresh"
+    );
 }
 
 #[test]

@@ -33,13 +33,14 @@ pub fn shorten_parent_dir(path: &Path) -> String {
     let parent = path.parent().unwrap_or(path);
     let home = home_dir();
     if let Some(ref h) = home
-        && let Ok(stripped) = parent.strip_prefix(h) {
-            let tail = stripped.to_string_lossy();
-            if tail.is_empty() {
-                return "~".to_string();
-            }
-            return format!("~/{tail}");
+        && let Ok(stripped) = parent.strip_prefix(h)
+    {
+        let tail = stripped.to_string_lossy();
+        if tail.is_empty() {
+            return "~".to_string();
         }
+        return format!("~/{tail}");
+    }
     parent.to_string_lossy().into_owned()
 }
 
@@ -186,7 +187,10 @@ mod tests {
         repo.alias = Some("wp".to_string());
         let row = format_list_row(&repo, "⬜");
         assert!(row.contains("wp"), "alias display: {row}");
-        assert!(!row.contains("myrepo"), "folder name hidden when alias set: {row}");
+        assert!(
+            !row.contains("myrepo"),
+            "folder name hidden when alias set: {row}"
+        );
         assert!(row.contains("main"), "branch present: {row}");
     }
 

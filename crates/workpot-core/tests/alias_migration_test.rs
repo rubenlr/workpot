@@ -15,12 +15,14 @@ fn temp_db() -> (tempfile::TempDir, Connection) {
 #[test]
 fn migration_007_adds_alias_column() {
     let (_dir, conn) = temp_db();
-    let mut stmt = conn
-        .prepare("PRAGMA table_info(repos)")
-        .expect("pragma");
+    let mut stmt = conn.prepare("PRAGMA table_info(repos)").expect("pragma");
     let cols: Vec<(String, String, i64)> = stmt
         .query_map([], |row| {
-            Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get(3)?))
+            Ok((
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get(3)?,
+            ))
         })
         .expect("query")
         .collect::<Result<Vec<_>, _>>()

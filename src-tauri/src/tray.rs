@@ -150,8 +150,7 @@ fn show_about_dialog(version: &str) {
 
 pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let default_icon = embedded_tray_icon(include_bytes!("../icons/tray-default.png"));
-    let stale_dirty_icon =
-        embedded_tray_icon(include_bytes!("../icons/tray-stale-dirty.png"));
+    let stale_dirty_icon = embedded_tray_icon(include_bytes!("../icons/tray-stale-dirty.png"));
     let syncing_frame0 = embedded_tray_icon(include_bytes!("../icons/tray-syncing-0.png"));
     let syncing_frame1 = embedded_tray_icon(include_bytes!("../icons/tray-syncing-1.png"));
     let tray_icon = default_icon.clone();

@@ -175,10 +175,7 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
             .collect()
     };
 
-    log::debug!(
-        "index git second pass: start repos={}",
-        all_paths.len()
-    );
+    log::debug!("index git second pass: start repos={}", all_paths.len());
     // rayon parallel refresh must complete before opening any DB transaction
     let git_pass_started = std::time::Instant::now();
     let git_results = git_state::refresh_all(all_paths);
