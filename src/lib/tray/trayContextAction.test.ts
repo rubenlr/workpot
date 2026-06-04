@@ -23,12 +23,16 @@ function repo(overrides: Partial<RepoDto> = {}): RepoDto {
 
 describe("resolveContextAction", () => {
   it("toggles pin when repo exists", () => {
-    expect(resolveContextAction("pin", repo({ pinned: false }), "/tmp/foo")).toEqual({
+    expect(
+      resolveContextAction("pin", repo({ pinned: false }), "/tmp/foo"),
+    ).toEqual({
       kind: "toggle_pin",
       repoPath: "/tmp/foo",
       pinned: true,
     });
-    expect(resolveContextAction("pin", repo({ pinned: true }), "/tmp/foo")).toEqual({
+    expect(
+      resolveContextAction("pin", repo({ pinned: true }), "/tmp/foo"),
+    ).toEqual({
       kind: "toggle_pin",
       repoPath: "/tmp/foo",
       pinned: false,
@@ -36,7 +40,9 @@ describe("resolveContextAction", () => {
   });
 
   it("noop pin when repo missing", () => {
-    expect(resolveContextAction("pin", null, "/tmp/foo")).toEqual({ kind: "noop" });
+    expect(resolveContextAction("pin", null, "/tmp/foo")).toEqual({
+      kind: "noop",
+    });
   });
 
   it("removes sole tag directly", () => {

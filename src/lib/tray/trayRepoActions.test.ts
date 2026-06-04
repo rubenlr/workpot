@@ -27,7 +27,9 @@ function repo(overrides: Partial<RepoDto> = {}): RepoDto {
   };
 }
 
-function deps(overrides: Partial<TrayRepoActionsDeps> = {}): TrayRepoActionsDeps {
+function deps(
+  overrides: Partial<TrayRepoActionsDeps> = {},
+): TrayRepoActionsDeps {
   return {
     invoke: vi.fn().mockResolvedValue(undefined),
     refresh: vi.fn().mockResolvedValue(undefined),

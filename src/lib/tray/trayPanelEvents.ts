@@ -12,10 +12,7 @@ export interface TrayPanelEventHandlers {
   onPanelOpened: () => void;
   onGitRefreshComplete: (summary: GitRefreshSummary) => void;
   onGitRefreshFailed: (message: string) => void;
-  onRepoContextAction: (payload: {
-    action: string;
-    repo_path: string;
-  }) => void;
+  onRepoContextAction: (payload: { action: string; repo_path: string }) => void;
 }
 
 /** Subscribe to tray Tauri events; returned fn unsubscribes all listeners. */

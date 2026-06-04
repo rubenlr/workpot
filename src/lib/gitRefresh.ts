@@ -11,8 +11,6 @@ export function gitRefreshErrorMessage(
 }
 
 /** Whether `loadRepos` should clear the list error after refresh completes. */
-export function shouldClearListErrorOnRefreshLoad(
-  _summary: GitRefreshSummary,
-): boolean {
+export function shouldClearListErrorOnRefreshLoad(): boolean {
   return true;
 }

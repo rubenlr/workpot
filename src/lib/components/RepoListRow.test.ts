@@ -25,7 +25,11 @@ const mockRepo: RepoDto = {
 
 function renderRow(
   repo: RepoDto,
-  callbacks: { onOpen?: () => void; onDetail?: () => void; selected?: boolean } = {},
+  callbacks: {
+    onOpen?: () => void;
+    onDetail?: () => void;
+    selected?: boolean;
+  } = {},
 ) {
   const onOpen = callbacks.onOpen ?? vi.fn();
   const onDetail = callbacks.onDetail ?? vi.fn();

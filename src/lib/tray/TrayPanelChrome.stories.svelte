@@ -11,7 +11,7 @@
 
   const noop = () => {};
   const noopAsync = async () => {};
-  const noopBindFilter = (_el: HTMLInputElement | null) => {};
+  const noopBindFilter = (() => {}) as (el: HTMLInputElement | null) => void;
 
   const sectioned = storySectionedRepos();
   const flatIndex = storyFlatIndexByPath(sectioned);

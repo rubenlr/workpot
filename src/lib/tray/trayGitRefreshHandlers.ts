@@ -35,7 +35,7 @@ export function onGitRefreshComplete(
   trayTrace("git-refresh-complete", summary);
   clearGitRefreshWatchdog();
   deps.setSelectedIndex(0);
-  void deps.refresh(shouldClearListErrorOnRefreshLoad(summary)).then(() => {
+  void deps.refresh(shouldClearListErrorOnRefreshLoad()).then(() => {
     deps.setError(gitRefreshErrorMessage(summary));
   });
 }

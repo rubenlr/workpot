@@ -20,11 +20,11 @@ export default ts.config(
     },
   },
   {
-    files: ["**/*.svelte"],
+    files: ["**/*.svelte", "**/*.svelte.ts", "**/*.svelte.js"],
     languageOptions: {
       parserOptions: {
         parser: ts.parser,
-        extraFileExtensions: [".svelte"],
+        extraFileExtensions: [".svelte", ".svelte.ts", ".svelte.js"],
         svelteConfig,
       },
     },
@@ -51,7 +51,9 @@ export default ts.config(
       "src-tauri/gen/**",
       "node_modules/**",
       "target/**",
+      "storybook-static/**",
+      ".planning/**",
     ],
   },
-  storybook.configs["flat/recommended"]
+  storybook.configs["flat/recommended"],
 );

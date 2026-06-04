@@ -21,7 +21,9 @@
     sectionedRepos: SectionedRepos;
     flatIndexByPath: Map<string, number>;
     selectedIndex?: number;
-    onPinReorder: (items: ReturnType<typeof toPinOrderPayload>) => void | Promise<void>;
+    onPinReorder: (
+      items: ReturnType<typeof toPinOrderPayload>,
+    ) => void | Promise<void>;
     onSelectRow: (index: number) => void;
     onOpen: (index: number) => void;
     onDetail: (repo: RepoDto, index: number) => void;
@@ -105,7 +107,7 @@
               onDetail(repo, idx);
             }}
             onTagRemove={(tag) => onTagRemove(repo.path, tag)}
-            onTagFilter={onTagFilter}
+            {onTagFilter}
           />
         </li>
       {/each}

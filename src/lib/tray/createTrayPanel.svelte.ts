@@ -57,9 +57,7 @@ export function createTrayPanel() {
     await removeTag(repoPath, tag, actionDeps);
   }
 
-  async function handlePinReorder(
-    items: ReturnType<typeof toPinOrderPayload>,
-  ) {
+  async function handlePinReorder(items: ReturnType<typeof toPinOrderPayload>) {
     await setPinOrder(items, actionDeps);
   }
 

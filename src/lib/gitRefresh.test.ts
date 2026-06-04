@@ -26,17 +26,14 @@ describe("gitRefreshErrorMessage", () => {
   });
 
   it("returns null on partial failure (per-repo errors stay on rows)", () => {
-    expect(gitRefreshErrorMessage(summary({ refreshed: 1, errors: 1 }))).toBeNull();
+    expect(
+      gitRefreshErrorMessage(summary({ refreshed: 1, errors: 1 })),
+    ).toBeNull();
   });
 });
 
 describe("shouldClearListErrorOnRefreshLoad", () => {
   it("always clears so cached list shows after refresh", () => {
-    expect(shouldClearListErrorOnRefreshLoad(summary({ refreshed: 1 }))).toBe(
-      true,
-    );
-    expect(
-      shouldClearListErrorOnRefreshLoad(summary({ refreshed: 1, errors: 1 })),
-    ).toBe(true);
+    expect(shouldClearListErrorOnRefreshLoad()).toBe(true);
   });
 });

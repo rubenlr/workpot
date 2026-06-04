@@ -52,7 +52,11 @@ export function applyTrayNavigationKey(
     }
   }
 
-  if (e.key === "ArrowRight" && ctx.detailRepo === null && ctx.getSelectedRepo()) {
+  if (
+    e.key === "ArrowRight" &&
+    ctx.detailRepo === null &&
+    ctx.getSelectedRepo()
+  ) {
     e.preventDefault();
     actions.onOpenDetailForSelection();
     return true;

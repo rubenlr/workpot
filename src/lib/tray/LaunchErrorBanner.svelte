@@ -1,5 +1,6 @@
 <script lang="ts">
-  let { message, onDismiss }: { message: string; onDismiss: () => void } = $props();
+  let { message, onDismiss }: { message: string; onDismiss: () => void } =
+    $props();
 </script>
 
 <div

@@ -19,7 +19,10 @@ const config: StorybookConfig = {
     if (Array.isArray(alias)) {
       alias.push({
         find: "@tauri-apps/api/core",
-        replacement: path.join(dirname, "../src/lib/storybook/tauriCoreMock.ts"),
+        replacement: path.join(
+          dirname,
+          "../src/lib/storybook/tauriCoreMock.ts",
+        ),
       });
     } else {
       alias["@tauri-apps/api/core"] = path.join(

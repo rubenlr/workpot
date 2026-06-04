@@ -8,7 +8,7 @@
   import TrayFilterBar from "./TrayFilterBar.svelte";
   import TrayListBody from "./TrayListBody.svelte";
 
-  const noopBindFilter = (_el: HTMLInputElement | null) => {};
+  const noopBindFilter = (() => {}) as (el: HTMLInputElement | null) => void;
 
   let {
     listMaxHeightPx,
@@ -53,7 +53,9 @@
     sectionedRepos: SectionedRepos;
     flatIndexByPath: Map<string, number>;
     selectedIndex?: number;
-    onPinReorder: (items: ReturnType<typeof toPinOrderPayload>) => void | Promise<void>;
+    onPinReorder: (
+      items: ReturnType<typeof toPinOrderPayload>,
+    ) => void | Promise<void>;
     onSelectRow: (index: number) => void;
     onOpen: (index: number) => void;
     onDetail: (repo: RepoDto, index: number) => void;
@@ -80,7 +82,7 @@
     {allTags}
     tagAutocompletePrefix={tagAutocompletePrefix ?? ""}
     {onFilterKeydown}
-    onTagSelect={onTagSelect}
+    {onTagSelect}
     bindFilterInput={bindFilterInput ?? noopBindFilter}
   />
 
@@ -90,7 +92,7 @@
         repo={detailRepo}
         {allTags}
         requestTagFocus={focusTagOnDetailOpen}
-        onTagFocusDone={onTagFocusDone}
+        {onTagFocusDone}
         onClose={onCloseDetail}
         onMutated={onDetailMutated}
       />

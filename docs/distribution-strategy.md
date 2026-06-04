@@ -32,10 +32,10 @@ Three distribution paths were considered for v1:
 
 ## Artifact contract
 
-| Artifact                            | Contents                                                       | SHA256 mechanism              | Install command                        |
-| ----------------------------------- | -------------------------------------------------------------- | ----------------------------- | -------------------------------------- |
-| `Workpot-X.Y.Z-aarch64.tar.gz`      | `Workpot.app` with `workpot-tray` binary and `workpot` CLI at `Contents/MacOS/workpot` | Cask `sha256` field; Homebrew verifies on install | `brew install rubenlr/workpot/workpot` |
-| `Workpot-X.Y.Z-aarch64.tar.gz.sha256` | SHA-256 checksum for the tarball                             | Used by `tap-update` CI job to patch the cask | — |
+| Artifact                              | Contents                                                                               | SHA256 mechanism                                  | Install command                        |
+| ------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------- | -------------------------------------- |
+| `Workpot-X.Y.Z-aarch64.tar.gz`        | `Workpot.app` with `workpot-tray` binary and `workpot` CLI at `Contents/MacOS/workpot` | Cask `sha256` field; Homebrew verifies on install | `brew install rubenlr/workpot/workpot` |
+| `Workpot-X.Y.Z-aarch64.tar.gz.sha256` | SHA-256 checksum for the tarball                                                       | Used by `tap-update` CI job to patch the cask     | —                                      |
 
 ## Upgrade path
 

@@ -59,10 +59,10 @@ When a PR changes `version` or `CHANGELOG.md`, CI runs `scripts/check-release-pr
 
 ## Artifacts per release
 
-| Artifact                                   | Runner         | Contents                                                                                                                              |
-| ------------------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `Workpot-X.Y.Z-aarch64.tar.gz`             | `macos-latest` | `Workpot.app` (with `workpot-tray` Tauri binary and `workpot` CLI binary at `Contents/MacOS/workpot`), managed by Homebrew cask |
-| `Workpot-X.Y.Z-aarch64.tar.gz.sha256`      | `macos-latest` | SHA-256 checksum for the tarball                                                                                                      |
+| Artifact                              | Runner         | Contents                                                                                                                        |
+| ------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `Workpot-X.Y.Z-aarch64.tar.gz`        | `macos-latest` | `Workpot.app` (with `workpot-tray` Tauri binary and `workpot` CLI binary at `Contents/MacOS/workpot`), managed by Homebrew cask |
+| `Workpot-X.Y.Z-aarch64.tar.gz.sha256` | `macos-latest` | SHA-256 checksum for the tarball                                                                                                |
 
 ## Signing and notarization policy
 
@@ -80,13 +80,13 @@ If any of these three disagree on tag or artifact names, treat the release as fa
 
 ## Testing releases
 
-| Phase        | Trigger                                                                             | Proves                                                    | Does not create     |
-| ------------ | ----------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------- |
+| Phase        | Trigger                                                                             | Proves                                              | Does not create     |
+| ------------ | ----------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------- |
 | **PR**       | [release-smoke.yml](../.github/workflows/release-smoke.yml) on release-path changes | aarch64-only tarball names/checksums match contract | Tag, GitHub Release |
-| **PR**       | [ci.yml](../.github/workflows/ci.yml) `release-build`                               | Fast compile + `--version` on aarch64                     | Release assets      |
-| **PR**       | `release-check` (when bumping version)                                              | Version sync + changelog                                  | Tag                 |
-| **master**   | Push with increased `version`                                                       | Tag + GitHub Release + artifact upload                    | —                   |
-| **Recovery** | `workflow_dispatch` on `release.yml`                                                | Re-upload artifacts for existing tag                      | New version         |
+| **PR**       | [ci.yml](../.github/workflows/ci.yml) `release-build`                               | Fast compile + `--version` on aarch64               | Release assets      |
+| **PR**       | `release-check` (when bumping version)                                              | Version sync + changelog                            | Tag                 |
+| **master**   | Push with increased `version`                                                       | Tag + GitHub Release + artifact upload              | —                   |
+| **Recovery** | `workflow_dispatch` on `release.yml`                                                | Re-upload artifacts for existing tag                | New version         |
 
 ### PR smoke (`dry_run`)
 

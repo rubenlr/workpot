@@ -7,7 +7,8 @@ import {
 import type { BranchListItemDto } from "./types";
 
 function branch(
-  partial: Partial<BranchListItemDto> & Pick<BranchListItemDto, "name" | "presence">,
+  partial: Partial<BranchListItemDto> &
+    Pick<BranchListItemDto, "name" | "presence">,
 ): BranchListItemDto {
   return {
     ahead: null,

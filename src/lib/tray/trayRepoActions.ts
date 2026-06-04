@@ -1,9 +1,6 @@
 import { resyncDetailRepo } from "$lib/detailRepoSync";
 import type { RepoDto } from "$lib/types";
-import {
-  resolveContextAction,
-  type ContextCommand,
-} from "./trayContextAction";
+import { resolveContextAction, type ContextCommand } from "./trayContextAction";
 
 export type TrayInvokeFn = (
   cmd: string,

@@ -1,3 +1,4 @@
+import { SvelteMap } from "svelte/reactivity";
 import { trayListView } from "$lib/listState";
 import { clampSelectionIndex, moveSelectionIndex } from "$lib/selection";
 import type { SectionConfig } from "$lib/sort";
@@ -17,18 +18,14 @@ export interface TrayListSelectionDeps {
 
 export function createTrayListSelection(deps: TrayListSelectionDeps) {
   let filterQuery = $state("");
-  let selectedIndex = $state(0);
+  let rawSelectedIndex = $state(0);
 
   let sectionedRepos = $derived(
-    filterAndSectionRepos(
-      deps.getRepos(),
-      filterQuery,
-      deps.getSectionCfg(),
-    ),
+    filterAndSectionRepos(deps.getRepos(), filterQuery, deps.getSectionCfg()),
   );
   let flatVisible = $derived(flatSectioned(sectionedRepos));
   let flatIndexByPath = $derived(
-    new Map(flatVisible.map((r, i) => [r.path, i] as const)),
+    new SvelteMap(flatVisible.map((r, i) => [r.path, i] as const)),
   );
   let tagAutocompletePrefix = $derived(
     trailingTagAutocompletePrefix(filterQuery),
@@ -42,18 +39,9 @@ export function createTrayListSelection(deps: TrayListSelectionDeps) {
     ),
   );
 
-  $effect(() => {
-    filterQuery;
-    selectedIndex = 0;
-  });
-
-  $effect(() => {
-    selectedIndex = clampSelectionIndex(selectedIndex, flatVisible.length);
-  });
-
   function moveSelection(delta: number) {
-    selectedIndex = moveSelectionIndex(
-      selectedIndex,
+    rawSelectedIndex = moveSelectionIndex(
+      clampSelectionIndex(rawSelectedIndex, flatVisible.length),
       delta,
       flatVisible.length,
     );
@@ -68,7 +56,9 @@ export function createTrayListSelection(deps: TrayListSelectionDeps) {
   }
 
   function getSelectedRepo(): RepoDto | undefined {
-    return flatVisible[selectedIndex];
+    return flatVisible[
+      clampSelectionIndex(rawSelectedIndex, flatVisible.length)
+    ];
   }
 
   return {
@@ -76,13 +66,16 @@ export function createTrayListSelection(deps: TrayListSelectionDeps) {
       return filterQuery;
     },
     set filterQuery(value: string) {
+      if (filterQuery !== value) {
+        rawSelectedIndex = 0;
+      }
       filterQuery = value;
     },
     get selectedIndex() {
-      return selectedIndex;
+      return clampSelectionIndex(rawSelectedIndex, flatVisible.length);
     },
     set selectedIndex(value: number) {
-      selectedIndex = value;
+      rawSelectedIndex = value;
     },
     get sectionedRepos() {
       return sectionedRepos;
