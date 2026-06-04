@@ -19,7 +19,7 @@
 | 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
 | 06.1 | Release & distribution *(INSERTED)* | 3/3 | Complete   | 2026-05-31 |
 | 06.2 | Tray UX polish *(INSERTED)* | 9/9 | Complete    | 2026-05-31 |
-| 7 | Distribution strategy review | 3/4 | In Progress|  |
+| 7 | Distribution strategy review | 4/4 | Complete   | 2026-06-04 |
 
 ---
 
@@ -372,7 +372,7 @@ Plans:
 4. `INSTALL.md` describes Homebrew-only flow; DMG/install.sh paths removed
 5. CI/release workflow publishes `Workpot-<version>-aarch64.tar.gz` (app+CLI) without Apple signing secrets; tap auto-updated on each release
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 **Wave 1** *(parallel — no shared files)*
 
@@ -386,7 +386,7 @@ Plans:
 
 **Wave 3** *(depends on Wave 2; has human checkpoint)*
 
-- [ ] 07-04-PLAN.md — Draft Casks/workpot.rb; human creates homebrew-workpot repo + PAT + HOMEBREW_TAP_TOKEN secret (D-01, D-03, D-05, D-06, D-09, D-10)
+- [x] 07-04-PLAN.md — Draft Casks/workpot.rb; human creates homebrew-workpot repo + PAT + HOMEBREW_TAP_TOKEN secret (D-01, D-03, D-05, D-06, D-09, D-10)
 
 ---
 *Roadmap created: 2026-05-28*
