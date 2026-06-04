@@ -1,7 +1,7 @@
 ---
 phase: 07-review-distribution-strategy-homebrew-tap-cask-no-signed-dmg
-reviewed: 2026-06-04T16:05:00Z
-depth: standard
+reviewed: 2026-06-04T18:30:00Z
+depth: deep
 files_reviewed: 10
 files_reviewed_list:
   - .github/workflows/release-artifacts.yml
@@ -16,91 +16,68 @@ files_reviewed_list:
   - src-tauri/tauri.conf.json
 findings:
   critical: 0
-  warning: 6
+  warning: 7
   info: 2
-  total: 8
+  total: 9
 status: issues_found
 ---
 
 # Phase 07: Code Review Report
 
-**Reviewed:** 2026-06-04T16:05:00Z
-**Depth:** standard
+**Reviewed:** 2026-06-04T18:30:00Z
+**Depth:** deep
 **Files Reviewed:** 10
 **Status:** issues_found
 
 ## Summary
 
-Phase 07 introduces the Homebrew tap + cask distribution path, removes the `install.sh` and `workpot update` subcommand, and adds the `release.yml` / `release-artifacts.yml` / `release-smoke.yml` workflow suite that builds, checksums, uploads, and auto-updates the tap. The overall design is sound and the decision record (`distribution-strategy.md`) is thorough.
+Deep review traces the release pipeline end-to-end: `release-artifacts.yml` → `release.yml` (bundle → github-release → tap-update) → `homebrew-workpot` cask, with `release-smoke.yml` validating the PR contract. CLI correctly omits the removed `update` subcommand; cask `binary` stanza matches CI-injected `workpot` path.
 
-No critical bugs or data-loss risks found. Six warnings, mostly in the GitHub Actions workflow: a broken (always-true) if-guard on the `tap-update` job, fragile implicit aarch64 targeting, an artifact download scope that is too wide, a push-without-pull race on the tap repo, and two `tauri.conf.json` issues (non-standard bundle identifier, `unsafe-inline` in CSP).
+No critical security or data-loss issues. Seven warnings concentrate on `release.yml` (broken `tap-update` guard, implicit arch, artifact download scope, tap push race, CLI inject path after explicit target) plus `tauri.conf.json` (bundle ID, CSP). Two info items (tap SHA256 download optimization, release `strip`).
+
+Cross-file checks: smoke artifact names (`Workpot-0.0.0-smoke-aarch64`) align with `RELEASE_TAG` stripping in bundle; `release-smoke` correctly scopes download with `pattern: smoke-*` while `github-release` does not.
 
 ---
 
 ## Warnings
 
-### WR-01: `tap-update` if-guard is a no-op — always evaluates `true`
+### WR-01: `tap-update` if-guard is a no-op — `prepare` not in `needs`
 
-**File:** `.github/workflows/release.yml:205`
+**File:** `.github/workflows/release.yml:204-205`
 
-**Issue:** The `tap-update` job has `if: needs.prepare.outputs.dry_run != 'true'`, but `prepare` is **not listed in that job's `needs` array** (`needs: [github-release, validate-version]`). GitHub Actions only exposes outputs from direct dependencies; `needs.prepare.outputs.dry_run` resolves to `''` at runtime, making the condition `'' != 'true'` → `true` always.
+**Issue:** `if: needs.prepare.outputs.dry_run != 'true'` references `prepare` outputs but `prepare` is not in `needs`. The condition is always true; dry-run skip relies only on `github-release` being skipped.
 
-The job is correctly skipped in practice only because its direct dependency `github-release` is skipped when `dry_run=true` (GHA propagates skip through the dependency chain). If someone adds `if: always()` to `tap-update` or restructures dependencies, this guard will not fire — a dry-run will attempt a real tap commit.
-
-**Fix:** Either add `prepare` to the `needs` array, or remove the explicit guard and rely solely on the implicit dependency skip (after documenting why):
+**Fix:** Add `prepare` to `needs`:
 
 ```yaml
-# Option A — make the guard work
 tap-update:
   needs: [prepare, github-release, validate-version]
   if: needs.prepare.outputs.dry_run != 'true'
-
-# Option B — drop the misleading guard, rely on implicit skip
-tap-update:
-  needs: [github-release, validate-version]
-  # guard intentionally omitted; job is skipped when github-release is skipped
 ```
 
 ---
 
-### WR-02: No `--target aarch64-apple-darwin` in `cargo build` — naming relies on runner architecture
+### WR-02: No explicit `--target aarch64-apple-darwin` — archive name can mislabel binary arch
 
-**File:** `.github/workflows/release.yml:143`
+**File:** `.github/workflows/release.yml:142-154`
 
-**Issue:** `cargo build --release -p workpot-cli` builds for the native host architecture without an explicit `--target` flag. The produced archive is named `Workpot-*-aarch64.tar.gz` regardless of what architecture the binary actually is. If GitHub's `macos-latest` runner ever returns an x86_64 host (or a multi-arch scenario), the binary would be silently mislabeled, shipping an x86_64 binary under an aarch64 name that installs on M-series Macs.
+**Issue:** Native `cargo build` / `tauri build` without `--target` depend on runner arch. Archive is always named `*-aarch64.tar.gz`. Wrong-arch binary would ship under aarch64 label.
 
-The `tauri build` step similarly passes no `--target` flag.
-
-**Fix:**
+**Fix:** Pin build and CLI copy path:
 
 ```yaml
-- name: Build release CLI binary
-  run: cargo build --release -p workpot-cli --target aarch64-apple-darwin
-
-- name: Build release app bundle
-  run: |
-    npm run build
-    npx tauri build --bundles app --config src-tauri/tauri.ci-build.json --target aarch64-apple-darwin
+run: cargo build --release -p workpot-cli --target aarch64-apple-darwin
+# ...
+run: cp target/aarch64-apple-darwin/release/workpot src-tauri/target/release/bundle/macos/Workpot.app/Contents/MacOS/workpot
 ```
-
-Also consider pinning the runner to `macos-latest-xlarge` (guaranteed Apple Silicon) or the explicit `macos-14` runner.
 
 ---
 
-### WR-03: `github-release` artifact download has no pattern filter — uploads everything in the run
+### WR-03: `github-release` downloads all artifacts — no pattern filter
 
 **File:** `.github/workflows/release.yml:188-191`
 
-**Issue:**
-
-```yaml
-- uses: actions/download-artifact@v4
-  with:
-    path: artifacts
-    merge-multiple: true
-```
-
-No `pattern:` filter. This downloads **all** artifacts from the workflow run and uploads them to the GitHub Release via `gh release upload artifacts/* --clobber`. Currently only the `bundle` job uploads an artifact, so this is harmless. But if any future job emits an artifact (test results, coverage reports, debug binaries), it will be published to the GitHub Release silently.
+**Issue:** Missing `pattern:` uploads every artifact in the run to the GitHub Release.
 
 **Fix:**
 
@@ -114,13 +91,11 @@ No `pattern:` filter. This downloads **all** artifacts from the workflow run and
 
 ---
 
-### WR-04: `tap-update` pushes to tap repo without pulling first — fails on concurrent writes
+### WR-04: `tap-update` pushes without `git pull` — fails on concurrent tap commits
 
 **File:** `.github/workflows/release.yml:236-244`
 
-**Issue:** The `tap-update` job checks out `homebrew-workpot`, patches `Casks/workpot.rb`, and pushes without a prior `git pull`. Any commit to the tap repo between checkout and push (a maintainer hot-fix, a manual commit, or a parallel workflow run for a different scenario) will cause a non-fast-forward rejection, leaving the cask un-updated. There is no retry or error recovery logic.
-
-The concurrency group on `release.yml` serializes real releases by tag (`release-{tag}`), so parallel Workpot releases cannot race. But manual commits to `homebrew-workpot` can still cause the push to fail silently (workflow succeeds with error output, or fails visibly but with no alerting).
+**Issue:** Non-fast-forward push if `homebrew-workpot` changed between checkout and push.
 
 **Fix:**
 
@@ -133,11 +108,11 @@ git push
 
 ---
 
-### WR-05: `tauri.conf.json` bundle identifier is not a valid reverse-domain name
+### WR-05: Bundle identifier `com.workpot` is not a valid reverse-domain (two components)
 
 **File:** `src-tauri/tauri.conf.json:5`
 
-**Issue:** `"identifier": "com.workpot"` is only two components. macOS bundle identifiers must follow reverse-domain convention with at least three components (e.g. `com.github.rubenlr.workpot` or `io.workpot.app`). macOS uses the identifier for keychain access groups, app containers, Gatekeeper tracking, and update mechanisms. An identifier of `com.workpot` has a high collision probability and will cause issues if the app ever opts into sandboxing, notarization, or the App Store.
+**Issue:** macOS expects three+ reverse-DNS components for bundle ID (keychain groups, Gatekeeper, future notarization).
 
 **Fix:**
 
@@ -145,43 +120,37 @@ git push
 "identifier": "com.github.rubenlr.workpot"
 ```
 
-or any three-plus-component reverse-domain string unique to this app.
-
 ---
 
-### WR-06: CSP uses `'unsafe-inline'` for `style-src`
+### WR-06: CSP `style-src 'unsafe-inline'` — static inline styles in tray UI
 
 **File:** `src-tauri/tauri.conf.json:27`
 
-**Issue:**
+**Issue:** `'unsafe-inline'` weakens style CSP. `DetailPane.svelte` uses a static inline `style=` (fixable). `TrayPanelChrome.svelte` uses dynamic `max-height` from config (`trayListMaxHeightPx`) — requires inline style or runtime class unless layout is refactored.
 
-```
-"csp": "... style-src 'self' 'unsafe-inline'; ..."
-```
+**Fix:** Remove static inline style in `DetailPane`; tighten CSP to `style-src 'self'` only if tray dynamic height is migrated (e.g. flex `min-h-0` scroll region). Until then, keep `'unsafe-inline'` for the dynamic tray case or accept partial fix.
 
-`'unsafe-inline'` for `style-src` allows arbitrary inline `<style>` tags and `style=` attributes in the webview. If any user-controlled content (repo names, paths, tags) is ever injected into the DOM without sanitization, an attacker could inject CSS that exfiltrates data via side-channels or causes UI spoofing. The risk is low for a local-only app, but the CSP weakening is unnecessary — the tray UI is a controlled build artifact where inline styles should not be needed.
+---
 
-**Fix:** Replace inline styles with class-based styling and remove `'unsafe-inline'`:
+### WR-07: CLI inject `cp` path wrong after explicit cross-compile target
 
-```json
-"csp": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ipc: http://ipc.localhost"
-```
+**File:** `.github/workflows/release.yml:154`
 
-If the frontend framework emits inline styles at runtime (e.g. Svelte transitions), migrate them to class-toggling or scoped CSS that ships in the bundle.
+**Issue:** Cross-file: if WR-02 adds `--target aarch64-apple-darwin`, `cp target/release/workpot` copies from the wrong directory (host triple path vs `target/aarch64-apple-darwin/release/workpot`).
+
+**Fix:** Same as WR-02 — update `cp` source path to match the target triple output directory.
 
 ---
 
 ## Info
 
-### IN-01: `tap-update` re-downloads the full tarball to compute SHA256
+### IN-01: `tap-update` re-downloads full tarball to compute SHA256
 
 **File:** `.github/workflows/release.yml:213-218`
 
-**Issue:** The `tap-update` job downloads the full `.tar.gz` artifact (potentially 50–150 MB) from the GitHub Release solely to run `shasum` on it. The CI build already produces a `.sha256` file (`Workpot-${version}-aarch64.tar.gz.sha256`) and uploads it to the same release in the `github-release` step. The tap-update job could download only the 90-byte checksum file instead.
+**Issue:** CI already uploads `.sha256` beside the tarball; tap job can download only the checksum file.
 
-Re-downloading and recomputing is slightly more trustworthy (no trust delegation to the `.sha256` file), but costs significant runner time and GitHub egress on every release.
-
-**Fix (if bandwidth is a concern):**
+**Fix:**
 
 ```bash
 gh release download "${RELEASE_TAG}" --pattern "${archive}.sha256" --repo rubenlr/workpot
@@ -190,16 +159,16 @@ sha256="$(awk '{print $1}' "${archive}.sha256")"
 
 ---
 
-### IN-02: `strip = "symbols"` in release profile eliminates debug symbols
+### IN-02: `strip = "symbols"` in workspace release profile
 
-**File:** `Cargo.toml:18`
+**File:** `Cargo.toml:17`
 
-**Issue:** The workspace release profile strips all symbols. This makes production crash reports (from the CLI or from Tauri panic output) unreadable — stack traces show only hex addresses. For a v1 tool with a single developer, this is acceptable. If `sentry`-style crash reporting or post-mortem debugging is ever added, symbols must be preserved (or a separate `.dSYM` bundle produced before stripping).
+**Issue:** Production crash stacks are hard to symbolicate. Acceptable for v1 unsigned distribution; document if crash reporting is added later.
 
-**Fix (if debugging matters):** Produce a symbol file before stripping, or use `debuginfo = 1` (line number info only) instead of full symbol stripping.
+**Fix:** Optional `debuginfo = 1` or retain unstripped artifacts in CI before strip.
 
 ---
 
-_Reviewed: 2026-06-04T16:05:00Z_
+_Reviewed: 2026-06-04T18:30:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
-_Depth: standard_
+_Depth: deep_
