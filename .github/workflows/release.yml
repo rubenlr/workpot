@@ -136,21 +136,17 @@ jobs:
           shared-key: release-bundle
           key: aarch64
 
-      - uses: actions/setup-node@v5
+      - uses: ./.github/actions/pnpm-install
         with:
           node-version: 24
-          cache: npm
-
-      - name: Install frontend dependencies
-        run: npm ci
 
       - name: Build release CLI binary
         run: cargo build --release -p workpot-cli --target "${MACOS_TARGET}"
 
       - name: Build release app bundle
         run: |
-          npm run build
-          npx tauri build --bundles app --config src-tauri/tauri.ci-build.json --target "${MACOS_TARGET}"
+          pnpm run build
+          pnpm exec tauri build --bundles app --config src-tauri/tauri.ci-build.json --target "${MACOS_TARGET}"
 
       - name: Verify app bundle path
         run: test -d "${BUNDLE_MACOS_DIR}/Workpot.app"

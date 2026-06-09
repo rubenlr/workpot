@@ -7,10 +7,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "clear": "rm -rf build .svelte-kit src-tauri/gen",
+    "clean": "rm -rf build .svelte-kit src-tauri/gen node_modules package-lock.json pnpm-lock.yaml",
     "dev": "vite dev",
     "build": "node scripts/vite-build.mjs",
-    "tauri:build": "npm run build && tauri build --config src-tauri/tauri.ci-build.json",
+    "tauri:build": "node scripts/vite-build.mjs && tauri build --config src-tauri/tauri.ci-build.json",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "format": "prettier --write .",
@@ -63,5 +63,6 @@
     "typescript-eslint": "^8.33.0",
     "vite": "^6.0.3",
     "vitest": "^3.0.0"
-  }
+  },
+  "packageManager": "pnpm@9.15.9"
 }

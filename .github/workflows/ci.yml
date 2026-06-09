@@ -96,21 +96,21 @@ jobs:
           key: macos-latest
       - name: Fetch dependencies (macOS D-12)
         run: cargo fetch
-      - name: Install npm dependencies
-        uses: ./.github/actions/npm-ci
+      - name: Install pnpm dependencies
+        uses: ./.github/actions/pnpm-install
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Test
         run: cargo test -p workpot-core -p workpot-cli -p workpot-tray --all-targets
       - name: Frontend check and test coverage
         run: |
-          npm run format:check
-          npm run lint:check
-          npm run check
-          npm run test:coverage
+          pnpm run format:check
+          pnpm run lint:check
+          pnpm run check
+          pnpm run test:coverage
           cp coverage/lcov.info lcov-js.info
       - name: Tauri bundle smoke
-        run: npm run tauri:build
+        run: pnpm run tauri:build
         env:
           CI: true
       - name: Upload JS coverage
@@ -186,12 +186,12 @@ jobs:
           lcov -a lcov-core-cli.info -a lcov-tray.info -o lcov-rust.info --ignore-errors empty
           test -f lcov-js.info
 
-      - name: Install npm dependencies
-        uses: ./.github/actions/npm-ci
+      - name: Install pnpm dependencies
+        uses: ./.github/actions/pnpm-install
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - run: npx svelte-kit sync
+      - run: pnpm exec svelte-kit sync
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v8
