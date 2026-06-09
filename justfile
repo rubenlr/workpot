@@ -1,14 +1,14 @@
 # Local dev (fast, may auto-fix)
 clean:
     cargo clean
-    npm run clear
+    pnpm run clean
 
 # CLI release + tray bundle (macOS)
 build:
     cargo fetch
     cargo build --release -p workpot-cli
-    npm ci
-    npm run tauri:build
+    pnpm install --frozen-lockfile
+    pnpm run tauri:build
 
 install: build
     cargo install --path crates/workpot-cli -q
@@ -19,30 +19,30 @@ install: build
 # Trace CLI: RUST_LOG=workpot_core=debug,workpot_cli=debug workpot index
 # Webview: right-click panel → Inspect → Console ([workpot-tray] lines)
 launch:
-    RUST_LOG=workpot_tray_lib=debug,workpot_core=debug npm run tauri dev
+    RUST_LOG=workpot_tray_lib=debug,workpot_core=debug pnpm run tauri dev
 
 # Rewrite formatting (run before clippy / tests)
 fmt-fix:
     cargo fmt --all -q
     cargo fix --workspace --allow-dirty --allow-staged --all-targets -q
-    npm run lint
-    npm run format
+    pnpm run lint
+    pnpm run format
 
 # Strict fmt — CI parity; run after fmt if you want to verify
 fmt-check:
     cargo fmt --all -- --check
-    npm run lint:check
-    npm run format:check
-    npm run check
+    pnpm run lint:check
+    pnpm run format:check
+    pnpm run check
     cargo clippy --workspace --fix --allow-dirty --allow-staged --all-targets -q -- -D warnings
 
 # CI test-macos job — cargo/vitest/coverage/bundle only (`fmt-check` covers format/lint/svelte-check)
 test:
     cargo fetch
-    npm ci
+    pnpm install --frozen-lockfile
     cargo test -p workpot-core -p workpot-cli -p workpot-tray --all-targets
-    npm run test:coverage
-    CI=true npm run tauri:build
+    pnpm run test:coverage
+    CI=true pnpm run tauri:build
 
 fix: fmt-fix
 

@@ -26,17 +26,17 @@ Or step by step:
 just fmt-fix     # rewrite formatting first
 just fmt-check   # strict fmt + clippy + frontend format/lint/check
 just test        # cargo test + vitest coverage + CI bundle smoke (after fmt-check)
-just build       # macOS: release CLI + `npm run tauri:build`
+just build       # macOS: release CLI + `pnpm run tauri:build`
 ```
 
 Frontend formatting and lint (also run in CI on macOS):
 
 ```bash
-npm run format      # Prettier (Svelte + Tailwind plugins)
-npm run format:check
-npm run lint        # eslint --fix (unused imports, svelte flat config)
-npm run check       # svelte-check (compiler types)
-npm test
+pnpm run format      # Prettier (Svelte + Tailwind plugins)
+ppnpm run format:check
+pnpm run lint        # eslint --fix (unused imports, svelte flat config)
+pnpm run check       # svelte-check (compiler types)
+pnpm test
 ```
 
 Rust style config at the repo / crate root:

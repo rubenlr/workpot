@@ -22,7 +22,7 @@ hooks {
       }
       ["svelte-check"] {
         glob = List("*.svelte", "*.ts")
-        check = "npm run check"
+        check = "pnpm run check"
       }
       ["vitest"] {
         glob = List("*.js", "*.ts", "*.svelte")
@@ -51,10 +51,10 @@ hooks {
         check = "cargo clippy --workspace --all-targets -- -D warnings"
       }
       ["svelte-check"] {
-        check = "npm run check"
+        check = "pnpm run check"
       }
       ["vitest-run"] {
-        check = "npm run test"
+        check = "pnpm run test"
       }
       ["cargo-test-run"] {
         check = "cargo test --workspace --all-targets"
