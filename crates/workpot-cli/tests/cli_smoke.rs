@@ -644,16 +644,7 @@ fn search_empty_query_equals_list() {
 /// Helper: write a config.toml that uses /usr/bin/true as launch_cmd so open tests don't
 /// try to spawn a real Cursor.
 fn write_true_launch_config(home: &std::path::Path) {
-    let config_dir = home.join(".config").join("workpot");
-    fs::create_dir_all(&config_dir).expect("config dir");
-    fs::write(
-        config_dir.join("config.toml"),
-        r#"watch_roots = []
-excludes = []
-launch_cmd = "/usr/bin/true {path}"
-"#,
-    )
-    .expect("write config");
+    write_launch_config(home, "/usr/bin/true {path}");
 }
 
 #[test]
@@ -784,6 +775,27 @@ fn set_repo_alias(home: &std::path::Path, repo_path: &std::path::Path, alias: &s
     workpot_core::services::org::set_alias(&conn, &path_key, Some(alias)).expect("set alias");
 }
 
+fn set_repo_pin(home: &std::path::Path, repo_path: &std::path::Path) {
+    workpot_cmd(home).arg("paths").assert().success();
+    let db = database_path(home);
+    let canon = repo_path.canonicalize().expect("canonicalize");
+    let path_key = canon.to_string_lossy().into_owned();
+    let conn = workpot_core::infra::store::open_connection(&db).expect("open test db");
+    workpot_core::services::org::set_pin(&conn, &path_key, true, 100).expect("set pin");
+}
+
+fn write_launch_config(home: &std::path::Path, launch_cmd: &str) {
+    let config_dir = home.join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    fs::write(
+        config_dir.join("config.toml"),
+        format!(
+            "watch_roots = []\nexcludes = []\nlaunch_cmd = \"{launch_cmd}\"\n"
+        ),
+    )
+    .expect("write config");
+}
+
 fn bare_git_fixture(parent: &std::path::Path, name: &str) -> PathBuf {
     let repo = parent.join(name);
     let status = StdCommand::new("git")
@@ -831,6 +843,86 @@ fn workpot_list_omits_branch_placeholder_for_bare_repos() {
         .assert()
         .success()
         .stdout(predicate::str::contains("—").not());
+}
+
+#[test]
+fn open_launch_failure_exits_two() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_launch_config(
+        home.path(),
+        "/nonexistent/workpot-launch-test-binary {path}",
+    );
+    let repo_path = git_fixture(home.path());
+    let canon = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["open", canon.to_str().expect("utf8")])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("launch failed"));
+}
+
+#[test]
+fn list_priority_order_pinned_before_rest() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let rest_path = named_git_fixture(home.path(), "rest-repo");
+    let pinned_path = named_git_fixture(home.path(), "pinned-repo");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", rest_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+    workpot_cmd(home.path())
+        .args(["repo", "add", pinned_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    set_repo_pin(home.path(), &pinned_path);
+
+    let out = workpot_cmd(home.path())
+        .arg("list")
+        .output()
+        .expect("list");
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let pinned_pos = stdout.find("pinned-repo").expect("pinned repo in list");
+    let rest_pos = stdout.find("rest-repo").expect("rest repo in list");
+    assert!(
+        pinned_pos < rest_pos,
+        "pinned repo must appear before rest in CLI output:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("📌"),
+        "pinned row must use 📌 icon:\n{stdout}"
+    );
+}
+
+#[test]
+fn list_shows_tags_in_row() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = named_git_fixture(home.path(), "tagged-repo");
+    let canon = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["tag", "add", canon.to_str().expect("utf8"), "backend"])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tagged-repo").and(predicate::str::contains("backend")));
 }
 
 #[test]
