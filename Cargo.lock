@@ -5105,7 +5105,7 @@ dependencies = [
 
 [[package]]
 name = "workpot-cli"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -5120,7 +5120,7 @@ dependencies = [
 
 [[package]]
 name = "workpot-core"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "directories",
  "git2",
@@ -5139,7 +5139,7 @@ dependencies = [
 
 [[package]]
 name = "workpot-tray"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "directories",
  "env_logger",
