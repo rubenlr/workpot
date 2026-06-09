@@ -37,10 +37,6 @@ read_tauri_version() {
   node -e "const j=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')); process.stdout.write(j.version||'')" "$1"
 }
 
-read_package_lock_root_version() {
-  node -e "const j=require('./package-lock.json'); process.stdout.write(j.version||'')"
-}
-
 verify_cargo_lock_versions() {
   local crate="$1"
   local expected="$2"
@@ -87,13 +83,6 @@ verify_all() {
     fi
   done
 
-  local lock_version
-  lock_version="$(read_package_lock_root_version)"
-  if [[ "$lock_version" != "$VERSION" ]]; then
-    echo "package-lock.json root version is $lock_version, expected $VERSION" >&2
-    failed=1
-  fi
-
   for crate in workpot-cli workpot-core workpot-tray; do
     if ! verify_cargo_lock_versions "$crate" "$VERSION"; then
       failed=1
@@ -137,12 +126,6 @@ sync_manifests() {
       data.version = version;
       fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n');
     }
-    const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
-    lock.version = version;
-    if (lock.packages && lock.packages['']) {
-      lock.packages[''].version = version;
-    }
-    fs.writeFileSync('package-lock.json', JSON.stringify(lock, null, 2) + '\n');
   " "$VERSION"
 
   cargo generate-lockfile
