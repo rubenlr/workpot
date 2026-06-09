@@ -8,6 +8,9 @@ pub mod error;
 pub mod infra;
 pub mod services;
 
+#[cfg(test)]
+pub mod testing;
+
 use crate::domain::Config;
 use crate::error::Result;
 use crate::infra::paths;

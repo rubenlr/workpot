@@ -3,6 +3,7 @@ import storybook from "eslint-plugin-storybook";
 
 import js from "@eslint/js";
 import svelte from "eslint-plugin-svelte";
+import unusedImports from "eslint-plugin-unused-imports";
 import globals from "globals";
 import ts from "typescript-eslint";
 import svelteConfig from "./svelte.config.js";
@@ -33,7 +34,21 @@ export default ts.config(
     },
   },
   {
+    plugins: {
+      "unused-imports": unusedImports,
+    },
     rules: {
+      "@typescript-eslint/no-unused-vars": "off",
+      "unused-imports/no-unused-imports": "error",
+      "unused-imports/no-unused-vars": [
+        "error",
+        {
+          vars: "all",
+          varsIgnorePattern: "^_",
+          args: "after-used",
+          argsIgnorePattern: "^_",
+        },
+      ],
       "prefer-const": "off",
       "svelte/prefer-const": [
         "error",

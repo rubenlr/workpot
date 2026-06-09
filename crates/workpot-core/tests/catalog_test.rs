@@ -1,8 +1,9 @@
 #![allow(clippy::disallowed_methods)]
 
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 use workpot_core::AppContext;
 use workpot_core::WorkpotError;
 use workpot_core::domain::{SOURCE_MANUAL, SOURCE_SCAN};
@@ -10,7 +11,7 @@ use workpot_core::infra::{git, store};
 use workpot_core::services::catalog;
 
 fn git_init(repo: &std::path::Path) {
-    let status = Command::new("git")
+    let status = common::git_cmd()
         .args(["init", "-q"])
         .current_dir(repo)
         .status()
@@ -30,7 +31,7 @@ fn bare_git_fixture() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
     let repo = dir.path().join("bare-repo");
     fs::create_dir_all(&repo).expect("bare dir");
-    let status = Command::new("git")
+    let status = common::git_cmd()
         .args(["init", "-q", "--bare"])
         .current_dir(&repo)
         .status()
@@ -55,8 +56,22 @@ fn gitdir_file_worktree_fixture() -> (tempfile::TempDir, PathBuf) {
     let main = dir.path().join("main");
     fs::create_dir_all(&main).expect("main dir");
     git_init(&main);
+    for (key, val) in [("user.email", "t@example.com"), ("user.name", "Test")] {
+        let status = common::git_cmd()
+            .args(["config", key, val])
+            .current_dir(&main)
+            .status()
+            .expect("git config");
+        assert!(status.success(), "git config {key} failed");
+    }
+    let status = common::git_cmd()
+        .args(["commit", "--allow-empty", "-m", "init", "-q"])
+        .current_dir(&main)
+        .status()
+        .expect("git commit");
+    assert!(status.success(), "git commit failed");
     let linked = dir.path().join("linked-worktree");
-    let status = Command::new("git")
+    let status = common::git_cmd()
         .args([
             "worktree",
             "add",

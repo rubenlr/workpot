@@ -34,8 +34,7 @@ Frontend formatting and lint (also run in CI on macOS):
 ```bash
 npm run format      # Prettier (Svelte + Tailwind plugins)
 npm run format:check
-npm run lint        # eslint-plugin-svelte (flat config in eslint.config.js)
-npm run lint:fix
+npm run lint        # eslint --fix (unused imports, svelte flat config)
 npm run check       # svelte-check (compiler types)
 npm test
 ```

@@ -4,10 +4,25 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command as StdCommand;
 
+fn git_cmd() -> StdCommand {
+    let mut cmd = StdCommand::new("git");
+    for key in [
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_COMMON_DIR",
+    ] {
+        cmd.env_remove(key);
+    }
+    cmd
+}
+
 fn git_fixture(parent: &std::path::Path) -> PathBuf {
     let repo = parent.join("sample-repo");
     fs::create_dir_all(&repo).expect("repo dir");
-    let status = StdCommand::new("git")
+    let status = git_cmd()
         .args(["init", "-q"])
         .current_dir(&repo)
         .status()
@@ -576,7 +591,7 @@ fn list_empty_index_exits_zero() {
 fn named_git_fixture(parent: &std::path::Path, name: &str) -> PathBuf {
     let repo = parent.join(name);
     fs::create_dir_all(&repo).expect("repo dir");
-    let status = StdCommand::new("git")
+    let status = git_cmd()
         .args(["init", "-q"])
         .current_dir(&repo)
         .status()
@@ -796,7 +811,7 @@ fn write_launch_config(home: &std::path::Path, launch_cmd: &str) {
 
 fn bare_git_fixture(parent: &std::path::Path, name: &str) -> PathBuf {
     let repo = parent.join(name);
-    let status = StdCommand::new("git")
+    let status = git_cmd()
         .args(["init", "--bare", "-q"])
         .arg(&repo)
         .status()

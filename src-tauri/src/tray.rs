@@ -228,3 +228,54 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tray_icon_from_embedded() -> tauri::image::Image<'static> {
+        tauri::image::Image::from_bytes(include_bytes!("../icons/tray-default.png"))
+            .expect("tray icon bytes")
+    }
+
+    #[test]
+    fn syncing_frame_wraps_index_modulo_frame_count() {
+        let frame0 = tray_icon_from_embedded();
+        let frame1 = tray_icon_from_embedded();
+        let icons = TrayIcons {
+            default: tray_icon_from_embedded(),
+            stale_dirty: tray_icon_from_embedded(),
+            syncing: vec![frame0, frame1],
+        };
+        assert!(std::ptr::eq(icons.syncing_frame(0), icons.syncing_frame(2)));
+        assert!(std::ptr::eq(icons.syncing_frame(1), icons.syncing_frame(3)));
+        assert!(!std::ptr::eq(
+            icons.syncing_frame(0),
+            icons.syncing_frame(1)
+        ));
+    }
+
+    #[test]
+    fn index_summary_dto_maps_all_fields_from_core_summary() {
+        let summary = IndexSummary {
+            added: 1,
+            removed: 2,
+            skipped: 3,
+            git_refreshed: 4,
+            git_errors: 5,
+        };
+        let dto = IndexSummaryDto::from(summary);
+        assert_eq!(dto.added, 1);
+        assert_eq!(dto.removed, 2);
+        assert_eq!(dto.skipped, 3);
+        assert_eq!(dto.git_refreshed, 4);
+        assert_eq!(dto.git_errors, 5);
+    }
+
+    #[test]
+    fn embedded_tray_icon_bytes_decode_to_valid_image() {
+        let icon = tray_icon_from_embedded();
+        assert!(icon.width() > 0);
+        assert!(icon.height() > 0);
+    }
+}

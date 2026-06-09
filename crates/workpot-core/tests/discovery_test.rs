@@ -1,11 +1,12 @@
 #![allow(clippy::disallowed_methods)]
 
+mod common;
+
 use globset::GlobSet;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use workpot_core::WorkpotError;
 use workpot_core::domain::Config;
 use workpot_core::infra::git::resolve_git_common_dir;
@@ -28,7 +29,7 @@ fn git_worktree(parent: &Path, name: &str) -> std::path::PathBuf {
 fn git_init_worktree(parent: &Path, name: &str) -> std::path::PathBuf {
     let repo = parent.join(name);
     fs::create_dir_all(&repo).expect("repo dir");
-    let status = Command::new("git")
+    let status = common::git_cmd()
         .args(["init", "-q"])
         .current_dir(&repo)
         .status()
@@ -65,7 +66,7 @@ fn discovery_skips_nested_git() {
 fn discovery_includes_bare_and_worktree() {
     let root = tempfile::tempdir().expect("tempdir");
     let bare = root.path().join("bare.git");
-    let status = Command::new("git")
+    let status = common::git_cmd()
         .args(["init", "--bare", "-q"])
         .arg(&bare)
         .status()
@@ -73,7 +74,7 @@ fn discovery_includes_bare_and_worktree() {
     assert!(status.success(), "bare init failed");
 
     let clone = root.path().join("clone-tmp");
-    let status = Command::new("git")
+    let status = common::git_cmd()
         .args(["clone", "-q"])
         .arg(&bare)
         .arg(&clone)
@@ -82,20 +83,20 @@ fn discovery_includes_bare_and_worktree() {
     assert!(status.success(), "clone failed");
 
     for (key, val) in [("user.email", "t@example.com"), ("user.name", "Test")] {
-        let status = Command::new("git")
+        let status = common::git_cmd()
             .args(["config", key, val])
             .current_dir(&clone)
             .status()
             .expect("git config");
         assert!(status.success());
     }
-    let status = Command::new("git")
+    let status = common::git_cmd()
         .args(["commit", "--allow-empty", "-m", "init", "-q"])
         .current_dir(&clone)
         .status()
         .expect("git commit");
     assert!(status.success());
-    let status = Command::new("git")
+    let status = common::git_cmd()
         .args(["push", "-q", "origin", "HEAD:main"])
         .current_dir(&clone)
         .status()
@@ -103,7 +104,7 @@ fn discovery_includes_bare_and_worktree() {
     assert!(status.success());
 
     let linked = bare.join("linked");
-    let status = Command::new("git")
+    let status = common::git_cmd()
         .args(["-C"])
         .arg(&bare)
         .args(["worktree", "add", "-q"])

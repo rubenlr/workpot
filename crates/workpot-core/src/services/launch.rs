@@ -178,7 +178,7 @@ launch_cmd = "/usr/bin/true {path}"
         let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
         let repo_path = dir.path().join("sample");
         fs::create_dir_all(&repo_path).expect("mkdir");
-        std::process::Command::new("git")
+        crate::testing::git_cmd()
             .args(["init"])
             .current_dir(&repo_path)
             .output()

@@ -24,6 +24,7 @@ launch:
 # Rewrite formatting (run before clippy / tests)
 fmt-fix:
     cargo fmt --all -q
+    cargo fix --workspace --allow-dirty --allow-staged --all-targets -q
     npm run lint
     npm run format
 
