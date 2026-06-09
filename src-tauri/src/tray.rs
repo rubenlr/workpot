@@ -221,7 +221,7 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                 ..
             } = event
             {
-                toggle_panel_on_tray_click(&tray.app_handle(), rect);
+                toggle_panel_on_tray_click(tray.app_handle(), rect);
             }
         })
         .build(app)?;

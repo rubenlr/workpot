@@ -25,7 +25,11 @@ const baseRepo: RepoDto = {
 
 function renderPane(
   repo: RepoDto,
-  opts: { allTags?: string[]; onClose?: () => void; onMutated?: () => void } = {},
+  opts: {
+    allTags?: string[];
+    onClose?: () => void;
+    onMutated?: () => void;
+  } = {},
 ) {
   const onClose = opts.onClose ?? vi.fn();
   const onMutated = opts.onMutated ?? vi.fn();
@@ -102,9 +106,7 @@ describe("DetailPane", () => {
     expect(input).toBeTruthy();
     await fireEvent.input(input, { target: { value: "fr" } });
     await waitFor(() => {
-      expect(
-        container.querySelector('button[role="option"]'),
-      ).toBeTruthy();
+      expect(container.querySelector('button[role="option"]')).toBeTruthy();
     });
     const options = [
       ...container.querySelectorAll('button[role="option"]'),

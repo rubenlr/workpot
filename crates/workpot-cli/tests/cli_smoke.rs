@@ -789,9 +789,7 @@ fn write_launch_config(home: &std::path::Path, launch_cmd: &str) {
     fs::create_dir_all(&config_dir).expect("config dir");
     fs::write(
         config_dir.join("config.toml"),
-        format!(
-            "watch_roots = []\nexcludes = []\nlaunch_cmd = \"{launch_cmd}\"\n"
-        ),
+        format!("watch_roots = []\nexcludes = []\nlaunch_cmd = \"{launch_cmd}\"\n"),
     )
     .expect("write config");
 }
@@ -884,10 +882,7 @@ fn list_priority_order_pinned_before_rest() {
 
     set_repo_pin(home.path(), &pinned_path);
 
-    let out = workpot_cmd(home.path())
-        .arg("list")
-        .output()
-        .expect("list");
+    let out = workpot_cmd(home.path()).arg("list").output().expect("list");
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     let pinned_pos = stdout.find("pinned-repo").expect("pinned repo in list");
