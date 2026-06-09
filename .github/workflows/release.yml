@@ -198,7 +198,7 @@ jobs:
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
           set -euo pipefail
-          gh release upload "$RELEASE_TAG" artifacts/* --clobber
+          gh release upload "$RELEASE_TAG" artifacts/* --clobber --repo "${{ github.repository }}"
           echo "Uploaded artifacts to release ${RELEASE_TAG}"
 
   tap-update:
