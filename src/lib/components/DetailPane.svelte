@@ -264,7 +264,7 @@
       placeholder="Add notes..."
       autocomplete="off"
       autocapitalize="off"
-      spellcheck="true"
+      spellcheck="false"
       class="max-h-[calc(5*1.5rem)] w-full resize-none rounded-md border border-neutral-200 bg-transparent p-2 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
       onblur={() => void handleNotesSave()}
     ></textarea>

@@ -108,4 +108,45 @@ describe("applyTrayNavigationKey", () => {
     );
     expect(onMoveSelection).toHaveBeenCalledWith(1);
   });
+
+  it("enter_calls_onOpenSelected_plain_open_without_meta", () => {
+    const onOpenSelected = vi.fn();
+    const onMoveSelection = vi.fn();
+    const e = keyEvent("Enter");
+    const handled = applyTrayNavigationKey(
+      e,
+      { detailRepo: null, getSelectedRepo: () => selected },
+      {
+        onRefresh: vi.fn(),
+        onCloseDetail: vi.fn(),
+        onHidePanel: vi.fn(),
+        onOpenDetailForSelection: vi.fn(),
+        onMoveSelection,
+        onOpenSelected,
+      },
+      "panel",
+    );
+    expect(handled).toBe(true);
+    expect(onOpenSelected).toHaveBeenCalledWith(false);
+    expect(onMoveSelection).not.toHaveBeenCalled();
+  });
+
+  it("enter_with_meta_calls_onOpenSelected_as_background", () => {
+    const onOpenSelected = vi.fn();
+    const e = keyEvent("Enter", { metaKey: true });
+    applyTrayNavigationKey(
+      e,
+      { detailRepo: null, getSelectedRepo: () => selected },
+      {
+        onRefresh: vi.fn(),
+        onCloseDetail: vi.fn(),
+        onHidePanel: vi.fn(),
+        onOpenDetailForSelection: vi.fn(),
+        onMoveSelection: vi.fn(),
+        onOpenSelected,
+      },
+      "panel",
+    );
+    expect(onOpenSelected).toHaveBeenCalledWith(true);
+  });
 });
