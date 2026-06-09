@@ -1,4 +1,7 @@
-import { storyRepo } from "$lib/components/repoStoryFixtures";
+import {
+  STORY_REPO_PATH_PREFIX,
+  storyRepo,
+} from "$lib/components/repoStoryFixtures";
 import { sectionSort } from "$lib/sort";
 import type { SectionedRepos } from "$lib/sort";
 import type { RepoDto, TrayConfigDto } from "$lib/types";
@@ -8,7 +11,7 @@ import type { TrayListView } from "$lib/listState";
 export function storyTrayRepos(): RepoDto[] {
   return [
     storyRepo({
-      path: "/tmp/workpot",
+      path: `${STORY_REPO_PATH_PREFIX}/workpot`,
       name: "workpot",
       branch: "main",
       is_dirty: false,
@@ -18,7 +21,7 @@ export function storyTrayRepos(): RepoDto[] {
       last_opened_at: Math.floor(Date.now() / 1000) - 3600,
     }),
     storyRepo({
-      path: "/tmp/alpha",
+      path: `${STORY_REPO_PATH_PREFIX}/alpha`,
       name: "alpha",
       branch: "feat/ui",
       is_dirty: true,
@@ -27,7 +30,7 @@ export function storyTrayRepos(): RepoDto[] {
       last_opened_at: Math.floor(Date.now() / 1000) - 7200,
     }),
     storyRepo({
-      path: "/tmp/beta",
+      path: `${STORY_REPO_PATH_PREFIX}/beta`,
       name: "beta",
       branch: "develop",
       is_dirty: false,
@@ -35,7 +38,7 @@ export function storyTrayRepos(): RepoDto[] {
       last_opened_at: Math.floor(Date.now() / 1000) - 86400 * 3,
     }),
     storyRepo({
-      path: "/tmp/gamma",
+      path: `${STORY_REPO_PATH_PREFIX}/gamma`,
       name: "gamma",
       branch: null,
       is_dirty: null,
@@ -43,7 +46,7 @@ export function storyTrayRepos(): RepoDto[] {
       last_opened_at: null,
     }),
     storyRepo({
-      path: "/tmp/delta",
+      path: `${STORY_REPO_PATH_PREFIX}/delta`,
       name: "delta",
       branch: "release",
       is_dirty: false,

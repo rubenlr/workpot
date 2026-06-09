@@ -148,6 +148,52 @@ fn show_about_dialog(version: &str) {
         .spawn();
 }
 
+fn handle_tray_menu_event(app: &tauri::AppHandle, menu_id: &str) {
+    match menu_id {
+        "refresh_index" => {
+            if let Some(state) = app.try_state::<Arc<Mutex<AppContext>>>() {
+                spawn_background_index(app.clone(), state.inner().clone());
+            }
+        }
+        "preferences" => {
+            if let Some(state) = app.try_state::<Arc<Mutex<AppContext>>>()
+                && let Ok(ctx) = state.lock()
+            {
+                open_path_in_default_app(ctx.config_path());
+            }
+        }
+        "about" => show_about_dialog(workpot_core::version()),
+        "quit" => app.exit(0),
+        _ => {}
+    }
+}
+
+fn toggle_panel_on_tray_click(app: &tauri::AppHandle, rect: tauri::Rect) {
+    let Some(panel) = app.get_webview_window("panel") else {
+        return;
+    };
+    if panel.is_visible().unwrap_or(false) {
+        if let Err(e) = panel.hide() {
+            log::warn!("panel hide on tray click failed: {e}");
+        }
+    } else {
+        show_panel(app, Some(rect));
+    }
+}
+
+fn build_tray_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
+    let refresh_index =
+        MenuItem::with_id(app, "refresh_index", "Refresh index", true, None::<&str>)?;
+    let preferences = MenuItem::with_id(app, "preferences", "Preferences…", true, None::<&str>)?;
+    let about = MenuItem::with_id(app, "about", "About Workpot", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Workpot", true, None::<&str>)?;
+    Menu::with_items(
+        app,
+        &[&refresh_index, &preferences, &about, &separator, &quit],
+    )
+}
+
 pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let default_icon = embedded_tray_icon(include_bytes!("../icons/tray-default.png"));
     let stale_dirty_icon = embedded_tray_icon(include_bytes!("../icons/tray-stale-dirty.png"));
@@ -160,42 +206,13 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         syncing: vec![syncing_frame0, syncing_frame1],
     });
 
-    let refresh_index =
-        MenuItem::with_id(app, "refresh_index", "Refresh index", true, None::<&str>)?;
-    let preferences = MenuItem::with_id(app, "preferences", "Preferences…", true, None::<&str>)?;
-    let about = MenuItem::with_id(app, "about", "About Workpot", true, None::<&str>)?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Workpot", true, None::<&str>)?;
-    let menu = Menu::with_items(
-        app,
-        &[&refresh_index, &preferences, &about, &separator, &quit],
-    )?;
+    let menu = build_tray_menu(app)?;
 
     let _tray = TrayIconBuilder::with_id("main")
         .icon(tray_icon)
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "refresh_index" => {
-                if let Some(state) = app.try_state::<Arc<Mutex<AppContext>>>() {
-                    spawn_background_index(app.clone(), state.inner().clone());
-                }
-            }
-            "preferences" => {
-                if let Some(state) = app.try_state::<Arc<Mutex<AppContext>>>()
-                    && let Ok(ctx) = state.lock()
-                {
-                    open_path_in_default_app(ctx.config_path());
-                }
-            }
-            "about" => {
-                show_about_dialog(workpot_core::version());
-            }
-            "quit" => {
-                app.exit(0);
-            }
-            _ => {}
-        })
+        .on_menu_event(|app, event| handle_tray_menu_event(app, event.id.as_ref()))
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
@@ -204,16 +221,7 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                 ..
             } = event
             {
-                let app = tray.app_handle();
-                if let Some(panel) = app.get_webview_window("panel") {
-                    if panel.is_visible().unwrap_or(false) {
-                        if let Err(e) = panel.hide() {
-                            log::warn!("panel hide on tray click failed: {e}");
-                        }
-                    } else {
-                        show_panel(app, Some(rect));
-                    }
-                }
+                toggle_panel_on_tray_click(&tray.app_handle(), rect);
             }
         })
         .build(app)?;

@@ -13,12 +13,12 @@ export interface TrayLaunchDeps {
   setSelectedIndex: (index: number) => void;
 }
 
+async function hideTrayPanel(): Promise<void> {
+  await getCurrentWindow().hide();
+}
+
 export function createTrayLaunch(deps: TrayLaunchDeps) {
   let launchError = $state<string | null>(null);
-
-  async function hidePanel(): Promise<void> {
-    await getCurrentWindow().hide();
-  }
 
   function dismissLaunchError() {
     launchError = null;
@@ -32,9 +32,7 @@ export function createTrayLaunch(deps: TrayLaunchDeps) {
     launchError = null;
     try {
       await invoke("open_in_cursor", { path: repo.path, background });
-      if (!background) {
-        await hidePanel();
-      } else {
+      if (background) {
         const openedPath = repo.path;
         const query = deps.getFilterQuery();
         await deps.refresh(false);
@@ -46,6 +44,8 @@ export function createTrayLaunch(deps: TrayLaunchDeps) {
             deps.getSectionCfg(),
           ),
         );
+      } else {
+        await hideTrayPanel();
       }
     } catch (e) {
       launchError = String(e);
@@ -58,7 +58,7 @@ export function createTrayLaunch(deps: TrayLaunchDeps) {
     },
     openSelected,
     dismissLaunchError,
-    hidePanel,
+    hidePanel: hideTrayPanel,
   };
 }
 

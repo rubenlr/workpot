@@ -1,7 +1,10 @@
 import type { RepoDto } from "../types";
 
+/** Storybook-only path prefix — not a real publicly writable directory. */
+export const STORY_REPO_PATH_PREFIX = "/Users/storybook/Developer";
+
 export const storyRepoBase: RepoDto = {
-  path: "/tmp/workpot-demo",
+  path: `${STORY_REPO_PATH_PREFIX}/workpot-demo`,
   name: "workpot",
   alias: null,
   branch: "main",

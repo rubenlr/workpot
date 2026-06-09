@@ -13,6 +13,51 @@ fn init_logging() {
         .try_init();
 }
 
+fn handle_repo_context_menu(app: &tauri::AppHandle, menu_id: &str) {
+    if !matches!(menu_id, "pin" | "add_tag" | "remove_tag") {
+        return;
+    }
+    let state = app.state::<commands::ContextMenuRepo>();
+    let repo_path = state
+        .0
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+        .unwrap_or_default();
+    if repo_path.is_empty() {
+        return;
+    }
+    if let Err(e) = app.emit(
+        "repo-context-action",
+        serde_json::json!({
+            "action": menu_id,
+            "repo_path": repo_path,
+        }),
+    ) {
+        log::warn!("failed to emit repo-context-action: {e}");
+    }
+    if let Ok(mut guard) = state.0.lock() {
+        *guard = None;
+    }
+}
+
+fn handle_panel_window_event(window: &tauri::Window, event: &WindowEvent) {
+    match event {
+        WindowEvent::CloseRequested { api, .. } => {
+            api.prevent_close();
+            if let Err(e) = window.hide() {
+                log::warn!("panel hide on close failed: {e}");
+            }
+        }
+        WindowEvent::Focused(false) => {
+            if let Err(e) = window.hide() {
+                log::warn!("panel hide on blur failed: {e}");
+            }
+        }
+        _ => {}
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logging();
@@ -29,53 +74,14 @@ pub fn run() {
             tray::setup_tray(app)?;
 
             app.on_menu_event(|app, event| {
-                let id = event.id.as_ref();
-                if !matches!(id, "pin" | "add_tag" | "remove_tag") {
-                    return;
-                }
-                let state = app.state::<commands::ContextMenuRepo>();
-                let repo_path = state
-                    .0
-                    .lock()
-                    .ok()
-                    .and_then(|g| g.clone())
-                    .unwrap_or_default();
-                if repo_path.is_empty() {
-                    return;
-                }
-                if let Err(e) = app.emit(
-                    "repo-context-action",
-                    serde_json::json!({
-                        "action": id,
-                        "repo_path": repo_path,
-                    }),
-                ) {
-                    log::warn!("failed to emit repo-context-action: {e}");
-                }
-                if let Ok(mut guard) = state.0.lock() {
-                    *guard = None;
-                }
+                handle_repo_context_menu(app, event.id.as_ref());
             });
 
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() != "panel" {
-                return;
-            }
-            match event {
-                WindowEvent::CloseRequested { api, .. } => {
-                    api.prevent_close();
-                    if let Err(e) = window.hide() {
-                        log::warn!("panel hide on close failed: {e}");
-                    }
-                }
-                WindowEvent::Focused(false) => {
-                    if let Err(e) = window.hide() {
-                        log::warn!("panel hide on blur failed: {e}");
-                    }
-                }
-                _ => {}
+            if window.label() == "panel" {
+                handle_panel_window_event(window, event);
             }
         })
         .invoke_handler(tauri::generate_handler![

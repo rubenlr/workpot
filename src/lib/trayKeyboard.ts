@@ -19,6 +19,64 @@ export interface TrayNavActions {
   onOpenSelected: (background: boolean) => void;
 }
 
+function handleDetailViewKeys(
+  e: KeyboardEvent,
+  actions: TrayNavActions,
+): boolean {
+  if (e.key === "ArrowLeft") {
+    e.preventDefault();
+    actions.onCloseDetail();
+    return true;
+  }
+  if (e.key === "Escape") {
+    e.preventDefault();
+    actions.onCloseDetail();
+    actions.onHidePanel();
+    return true;
+  }
+  return false;
+}
+
+function handlePanelListKeys(
+  e: KeyboardEvent,
+  actions: TrayNavActions,
+): boolean {
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    actions.onMoveSelection(1);
+    return true;
+  }
+  if (e.key === "ArrowUp") {
+    e.preventDefault();
+    actions.onMoveSelection(-1);
+    return true;
+  }
+  if (e.key === "Tab" && !e.shiftKey) {
+    e.preventDefault();
+    actions.onMoveSelection(1);
+    return true;
+  }
+  return false;
+}
+
+function handleListGlobalKeys(
+  e: KeyboardEvent,
+  actions: TrayNavActions,
+): boolean {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    actions.onCloseDetail();
+    actions.onHidePanel();
+    return true;
+  }
+  if (e.key === "Enter") {
+    e.preventDefault();
+    actions.onOpenSelected(e.metaKey);
+    return true;
+  }
+  return false;
+}
+
 /**
  * Shared tray list navigation for filter input and panel window handlers.
  * Returns true when the caller should stop processing the event.
@@ -36,15 +94,7 @@ export function applyTrayNavigationKey(
   }
 
   if (ctx.detailRepo !== null) {
-    if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      actions.onCloseDetail();
-      return true;
-    }
-    if (e.key === "Escape") {
-      e.preventDefault();
-      actions.onCloseDetail();
-      actions.onHidePanel();
+    if (handleDetailViewKeys(e, actions)) {
       return true;
     }
     if (shouldSuppressTrayListKeyWhenDetailOpen(e.key, e.metaKey)) {
@@ -62,36 +112,9 @@ export function applyTrayNavigationKey(
     return true;
   }
 
-  if (mode === "panel") {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      actions.onMoveSelection(1);
-      return true;
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      actions.onMoveSelection(-1);
-      return true;
-    }
-    if (e.key === "Tab" && !e.shiftKey) {
-      e.preventDefault();
-      actions.onMoveSelection(1);
-      return true;
-    }
-  }
-
-  if (e.key === "Escape") {
-    e.preventDefault();
-    actions.onCloseDetail();
-    actions.onHidePanel();
+  if (mode === "panel" && handlePanelListKeys(e, actions)) {
     return true;
   }
 
-  if (e.key === "Enter") {
-    e.preventDefault();
-    actions.onOpenSelected(e.metaKey);
-    return true;
-  }
-
-  return false;
+  return handleListGlobalKeys(e, actions);
 }

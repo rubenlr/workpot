@@ -398,17 +398,21 @@ fn ahead_behind_for_local_branch(
     )
 }
 
-fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String> {
-    let repo = git2::Repository::open(repo_path).map_err(|e| e.to_string())?;
+struct LocalBranchNames {
+    names: Vec<String>,
+    with_upstream: HashSet<String>,
+    current: Option<String>,
+}
 
+fn collect_local_branch_names(repo: &git2::Repository) -> Result<LocalBranchNames, String> {
     let current = repo
         .head()
         .ok()
         .filter(|head| head.is_branch())
         .and_then(|head| head.shorthand().ok().map(str::to_string));
 
-    let mut local_names = Vec::new();
-    let mut local_with_upstream = HashSet::new();
+    let mut names = Vec::new();
+    let mut with_upstream = HashSet::new();
     for branch in repo
         .branches(Some(git2::BranchType::Local))
         .map_err(|e| e.to_string())?
@@ -419,11 +423,19 @@ fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String>
         };
         let name = name.to_string();
         if branch.upstream().is_ok() {
-            local_with_upstream.insert(name.clone());
+            with_upstream.insert(name.clone());
         }
-        local_names.push(name);
+        names.push(name);
     }
 
+    Ok(LocalBranchNames {
+        names,
+        with_upstream,
+        current,
+    })
+}
+
+fn collect_remote_branch_short_names(repo: &git2::Repository) -> HashSet<String> {
     let mut remote_short_names = HashSet::new();
     if let Ok(remotes) = repo.branches(Some(git2::BranchType::Remote)) {
         for branch in remotes {
@@ -438,42 +450,56 @@ fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String>
             }
         }
     }
+    remote_short_names
+}
 
-    let local_set: HashSet<_> = local_names.iter().cloned().collect();
-    let mut all_names: HashSet<String> = local_set.clone();
+fn branch_list_item(
+    repo: &git2::Repository,
+    name: String,
+    local: &LocalBranchNames,
+    remote_short_names: &HashSet<String>,
+) -> BranchListItemDto {
+    let is_local = local.names.iter().any(|n| n == &name);
+    let has_upstream = local.with_upstream.contains(&name);
+    let is_remote_only = remote_short_names.contains(&name) && !is_local;
+    let is_checkout = local.current.as_ref() == Some(&name);
+
+    let presence = if is_checkout {
+        BranchPresenceDto::Checkout
+    } else if is_remote_only {
+        BranchPresenceDto::RemoteOnly
+    } else if has_upstream {
+        BranchPresenceDto::LocalRemote
+    } else {
+        BranchPresenceDto::LocalOnly
+    };
+
+    let (ahead, behind) = if is_local && has_upstream {
+        ahead_behind_for_local_branch(repo, &name)
+    } else {
+        (None, None)
+    };
+
+    BranchListItemDto {
+        name,
+        presence,
+        ahead,
+        behind,
+    }
+}
+
+fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String> {
+    let repo = git2::Repository::open(repo_path).map_err(|e| e.to_string())?;
+    let local = collect_local_branch_names(&repo)?;
+    let remote_short_names = collect_remote_branch_short_names(&repo);
+
+    let local_set: HashSet<_> = local.names.iter().cloned().collect();
+    let mut all_names: HashSet<String> = local_set;
     all_names.extend(remote_short_names.iter().cloned());
 
     let mut items: Vec<BranchListItemDto> = all_names
         .into_iter()
-        .map(|name| {
-            let is_local = local_set.contains(&name);
-            let has_upstream = local_with_upstream.contains(&name);
-            let is_remote_only = remote_short_names.contains(&name) && !is_local;
-            let is_checkout = current.as_ref() == Some(&name);
-
-            let presence = if is_checkout {
-                BranchPresenceDto::Checkout
-            } else if is_remote_only {
-                BranchPresenceDto::RemoteOnly
-            } else if has_upstream {
-                BranchPresenceDto::LocalRemote
-            } else {
-                BranchPresenceDto::LocalOnly
-            };
-
-            let (ahead, behind) = if is_local && has_upstream {
-                ahead_behind_for_local_branch(&repo, &name)
-            } else {
-                (None, None)
-            };
-
-            BranchListItemDto {
-                name,
-                presence,
-                ahead,
-                behind,
-            }
-        })
+        .map(|name| branch_list_item(&repo, name, &local, &remote_short_names))
         .collect();
 
     items.sort_by(|a, b| {
