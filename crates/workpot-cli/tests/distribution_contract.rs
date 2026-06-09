@@ -154,3 +154,28 @@ fn release_smoke_asserts_tarball_contract_only() {
     assert!(smoke.contains("Workpot-0.0.0-smoke-aarch64.tar.gz"));
     assert!(smoke.contains("unexpected artifact in smoke output"));
 }
+
+/// Surviving Phase 06.1 SC-05: published release triggers canonical `release.yml` build.
+#[test]
+fn release_artifacts_triggers_on_published_release() {
+    let text = workflow_text("release-artifacts.yml");
+    assert!(text.contains("release:"));
+    assert!(text.contains("types: [published]"));
+    assert!(text.contains("uses: ./.github/workflows/release.yml"));
+    assert!(text.contains("github.event.release.tag_name"));
+}
+
+/// Surviving Phase 06.1 SC-01/SC-05: maintainer docs match aarch64 tarball-only contract.
+#[test]
+fn releasing_md_documents_tarball_contract_without_legacy_install_paths() {
+    let doc = read_repo_file("docs/releasing.md");
+    assert!(doc.contains("Workpot-X.Y.Z-aarch64.tar.gz"));
+    assert!(doc.contains("Workpot-X.Y.Z-aarch64.tar.gz.sha256"));
+    assert!(doc.contains("release-smoke"));
+    assert!(!doc.contains("install.sh"));
+    assert!(!doc.contains("workpot update"));
+    assert!(
+        !doc.to_ascii_lowercase().contains("dmg"),
+        "releasing.md must not document DMG artifacts (removed in phase 7)"
+    );
+}
