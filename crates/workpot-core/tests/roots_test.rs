@@ -350,3 +350,117 @@ fn roots_add_rejects_when_at_max_watch_roots() {
         Err(WorkpotError::LimitsExceeded(_))
     ));
 }
+
+#[cfg(unix)]
+mod readonly_config {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn set_dir_readonly(path: &Path, readonly: bool) {
+        let mut perms = fs::metadata(path).expect("metadata").permissions();
+        perms.set_mode(if readonly { 0o555 } else { 0o755 });
+        fs::set_permissions(path, perms).expect("set_permissions");
+    }
+
+    #[test]
+    fn roots_add_rolls_back_when_config_save_fails() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("config.toml");
+        let db_path = dir.path().join("workpot.db");
+        fs::write(&config_path, empty_config_marker()).expect("write config");
+
+        let watch_parent = dir.path().join("roots");
+        fs::create_dir_all(&watch_parent).expect("watch parent");
+
+        let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+        set_dir_readonly(dir.path(), true);
+
+        let result = ctx.roots_add(&watch_parent);
+        set_dir_readonly(dir.path(), false);
+
+        assert!(result.is_err(), "save_config should fail on read-only dir");
+        assert!(
+            ctx.roots_list().is_empty(),
+            "in-memory watch_roots must roll back after save failure"
+        );
+        let watch_canon = watch_parent.canonicalize().expect("canonicalize");
+        let on_disk = fs::read_to_string(&config_path).expect("read config");
+        assert!(
+            !on_disk.contains(watch_canon.to_str().expect("utf-8")),
+            "config on disk must not contain failed watch root: {on_disk}"
+        );
+    }
+
+    #[test]
+    fn roots_remove_rolls_back_when_config_save_fails() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("config.toml");
+        let db_path = dir.path().join("workpot.db");
+        fs::write(&config_path, empty_config_marker()).expect("write config");
+
+        let watch_root = dir.path().join("watch");
+        fs::create_dir_all(&watch_root).expect("watch root");
+
+        let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+        ctx.roots_add(&watch_root).expect("add watch root");
+        let watch_canon = watch_root.canonicalize().expect("canonicalize");
+
+        set_dir_readonly(dir.path(), true);
+        let result = ctx.roots_remove(&watch_root, true);
+        set_dir_readonly(dir.path(), false);
+
+        assert!(result.is_err(), "save_config should fail on read-only dir");
+        assert_eq!(ctx.roots_list().len(), 1);
+        assert_eq!(
+            ctx.roots_list()[0]
+                .canonicalize()
+                .expect("canonicalize stored root"),
+            watch_canon
+        );
+        let on_disk = fs::read_to_string(&config_path).expect("read config");
+        assert!(
+            on_disk.contains(watch_canon.to_str().expect("utf-8")),
+            "config on disk must still contain watch root after failed remove: {on_disk}"
+        );
+    }
+}
+
+#[test]
+fn roots_remove_rolls_back_when_prune_fails() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(&config_path, empty_config_marker()).expect("write config");
+
+    let watch_root = dir.path().join("watch");
+    fs::create_dir_all(&watch_root).expect("watch root");
+    git_worktree(&watch_root, "repo-under");
+
+    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("open");
+    ctx.roots_add(&watch_root).expect("add watch");
+    let watch_canon = watch_root.canonicalize().expect("canonicalize");
+
+    let lock_conn = rusqlite::Connection::open(&db_path).expect("lock conn");
+    lock_conn
+        .execute("DROP TABLE repos", [])
+        .expect("drop repos to force prune failure");
+
+    let result = ctx.roots_remove(&watch_root, false);
+    assert!(
+        result.is_err(),
+        "prune should fail when repos table is gone"
+    );
+
+    assert_eq!(ctx.roots_list().len(), 1);
+    assert_eq!(
+        ctx.roots_list()[0]
+            .canonicalize()
+            .expect("canonicalize stored root"),
+        watch_canon
+    );
+    let on_disk = fs::read_to_string(&config_path).expect("read config");
+    assert!(
+        on_disk.contains(watch_canon.to_str().expect("utf-8")),
+        "config on disk must restore watch root after prune rollback: {on_disk}"
+    );
+}
