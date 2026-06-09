@@ -56,6 +56,11 @@
     });
   });
 
+  // autocorrect is valid on textarea in browsers but missing from Svelte HTML typings.
+  $effect(() => {
+    notesTextarea?.setAttribute("autocorrect", "off");
+  });
+
   $effect(() => {
     const path = repo.path;
     branchError = null;
@@ -259,7 +264,6 @@
       placeholder="Add notes..."
       autocomplete="off"
       autocapitalize="off"
-      autocorrect="off"
       spellcheck="true"
       class="max-h-[calc(5*1.5rem)] w-full resize-none rounded-md border border-neutral-200 bg-transparent p-2 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
       onblur={() => void handleNotesSave()}
