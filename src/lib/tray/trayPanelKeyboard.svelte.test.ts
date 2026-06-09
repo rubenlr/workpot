@@ -136,4 +136,163 @@ describe("createTrayPanelKeyboard", () => {
     kb.focusFilter();
     expect(input.focus).toHaveBeenCalled();
   });
+
+  it("onPanelKeydown ArrowRight opens detail for selected repo", () => {
+    const repos = [repo("a"), repo("b")];
+    const list = createTrayListSelection({
+      getRepos: () => repos,
+      getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+      getError: () => null,
+    });
+    const detail = createTrayDetail();
+    const kb = createTrayPanelKeyboard({
+      list,
+      detail,
+      launch: createTrayLaunch({
+        getSelectedRepo: () => list.getSelectedRepo(),
+        getFilterQuery: () => list.filterQuery,
+        getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+        getRepos: () => repos,
+        refresh: vi.fn(),
+        setSelectedIndex: (i) => {
+          list.selectedIndex = i;
+        },
+      }),
+      data: createTrayRepoData(),
+    });
+
+    const e = new KeyboardEvent("keydown", {
+      key: "ArrowRight",
+      bubbles: true,
+    });
+    kb.onPanelKeydown(e);
+    expect(detail.detailRepo?.path).toBe(repos[0].path);
+  });
+
+  it("onFilterKeydown delegates refresh shortcut to tray nav", () => {
+    const data = createTrayRepoData();
+    const startRefresh = vi.spyOn(data, "startBackgroundRefresh");
+    const list = createTrayListSelection({
+      getRepos: () => [],
+      getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+      getError: () => null,
+    });
+    const kb = createTrayPanelKeyboard({
+      list,
+      detail: createTrayDetail(),
+      launch: createTrayLaunch({
+        getSelectedRepo: () => list.getSelectedRepo(),
+        getFilterQuery: () => list.filterQuery,
+        getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+        getRepos: () => [],
+        refresh: vi.fn(),
+        setSelectedIndex: (i) => {
+          list.selectedIndex = i;
+        },
+      }),
+      data,
+    });
+    const input = document.createElement("input");
+    const e = new KeyboardEvent("keydown", {
+      key: "r",
+      metaKey: true,
+      bubbles: true,
+    });
+    Object.defineProperty(e, "currentTarget", { value: input });
+    kb.onFilterKeydown(e);
+    expect(startRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("onPanelKeydown ignores repo-filter input target", () => {
+    const list = createTrayListSelection({
+      getRepos: () => [repo("a"), repo("b")],
+      getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+      getError: () => null,
+    });
+    const kb = createTrayPanelKeyboard({
+      list,
+      detail: createTrayDetail(),
+      launch: createTrayLaunch({
+        getSelectedRepo: () => list.getSelectedRepo(),
+        getFilterQuery: () => list.filterQuery,
+        getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+        getRepos: () => [repo("a"), repo("b")],
+        refresh: vi.fn(),
+        setSelectedIndex: (i) => {
+          list.selectedIndex = i;
+        },
+      }),
+      data: createTrayRepoData(),
+    });
+
+    const input = document.createElement("input");
+    input.id = "repo-filter";
+    const e = new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true });
+    Object.defineProperty(e, "target", { value: input });
+    kb.onPanelKeydown(e);
+    expect(list.selectedIndex).toBe(0);
+  });
+
+  it("onPanelKeydown Enter opens selected repo", async () => {
+    const repos = [repo("a")];
+    const list = createTrayListSelection({
+      getRepos: () => repos,
+      getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+      getError: () => null,
+    });
+    const launch = createTrayLaunch({
+      getSelectedRepo: () => list.getSelectedRepo(),
+      getFilterQuery: () => list.filterQuery,
+      getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+      getRepos: () => repos,
+      refresh: vi.fn(),
+      setSelectedIndex: (i) => {
+        list.selectedIndex = i;
+      },
+    });
+    const openSelected = vi.spyOn(launch, "openSelected");
+    const kb = createTrayPanelKeyboard({
+      list,
+      detail: createTrayDetail(),
+      launch,
+      data: createTrayRepoData(),
+    });
+
+    kb.onPanelKeydown(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    expect(openSelected).toHaveBeenCalledWith(false);
+  });
+
+  it("onPanelKeydown ignores detail form inputs", () => {
+    const repos = [repo("a")];
+    const list = createTrayListSelection({
+      getRepos: () => repos,
+      getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+      getError: () => null,
+    });
+    const detail = createTrayDetail();
+    detail.openDetail(repos[0]);
+    const kb = createTrayPanelKeyboard({
+      list,
+      detail,
+      launch: createTrayLaunch({
+        getSelectedRepo: () => list.getSelectedRepo(),
+        getFilterQuery: () => list.filterQuery,
+        getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+        getRepos: () => repos,
+        refresh: vi.fn(),
+        setSelectedIndex: (i) => {
+          list.selectedIndex = i;
+        },
+      }),
+      data: createTrayRepoData(),
+    });
+
+    const notes = document.createElement("textarea");
+    const e = new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true });
+    Object.defineProperty(e, "target", { value: notes });
+    kb.onPanelKeydown(e);
+    expect(list.selectedIndex).toBe(0);
+  });
 });

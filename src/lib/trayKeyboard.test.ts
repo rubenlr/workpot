@@ -149,4 +149,104 @@ describe("applyTrayNavigationKey", () => {
     );
     expect(onOpenSelected).toHaveBeenCalledWith(true);
   });
+
+  it("escape_in_detail_closes_and_hides_panel", () => {
+    const onCloseDetail = vi.fn();
+    const onHidePanel = vi.fn();
+    const e = keyEvent("Escape");
+    const handled = applyTrayNavigationKey(
+      e,
+      { detailRepo: selected, getSelectedRepo: () => selected },
+      {
+        onRefresh: vi.fn(),
+        onCloseDetail,
+        onHidePanel,
+        onOpenDetailForSelection: vi.fn(),
+        onMoveSelection: vi.fn(),
+        onOpenSelected: vi.fn(),
+      },
+      "panel",
+    );
+    expect(handled).toBe(true);
+    expect(onCloseDetail).toHaveBeenCalledOnce();
+    expect(onHidePanel).toHaveBeenCalledOnce();
+  });
+
+  it("moves_selection_on_arrow_up_and_tab_in_panel_mode", () => {
+    const onMoveSelection = vi.fn();
+    const up = keyEvent("ArrowUp");
+    applyTrayNavigationKey(
+      up,
+      { detailRepo: null, getSelectedRepo: () => selected },
+      {
+        onRefresh: vi.fn(),
+        onCloseDetail: vi.fn(),
+        onHidePanel: vi.fn(),
+        onOpenDetailForSelection: vi.fn(),
+        onMoveSelection,
+        onOpenSelected: vi.fn(),
+      },
+      "panel",
+    );
+    expect(onMoveSelection).toHaveBeenCalledWith(-1);
+
+    onMoveSelection.mockClear();
+    const tab = keyEvent("Tab");
+    applyTrayNavigationKey(
+      tab,
+      { detailRepo: null, getSelectedRepo: () => selected },
+      {
+        onRefresh: vi.fn(),
+        onCloseDetail: vi.fn(),
+        onHidePanel: vi.fn(),
+        onOpenDetailForSelection: vi.fn(),
+        onMoveSelection,
+        onOpenSelected: vi.fn(),
+      },
+      "panel",
+    );
+    expect(onMoveSelection).toHaveBeenCalledWith(1);
+  });
+
+  it("escape_in_list_closes_detail_and_hides_panel", () => {
+    const onCloseDetail = vi.fn();
+    const onHidePanel = vi.fn();
+    const e = keyEvent("Escape");
+    const handled = applyTrayNavigationKey(
+      e,
+      { detailRepo: null, getSelectedRepo: () => selected },
+      {
+        onRefresh: vi.fn(),
+        onCloseDetail,
+        onHidePanel,
+        onOpenDetailForSelection: vi.fn(),
+        onMoveSelection: vi.fn(),
+        onOpenSelected: vi.fn(),
+      },
+      "panel",
+    );
+    expect(handled).toBe(true);
+    expect(onCloseDetail).toHaveBeenCalledOnce();
+    expect(onHidePanel).toHaveBeenCalledOnce();
+  });
+
+  it("arrow_right_opens_detail_for_selection", () => {
+    const onOpenDetailForSelection = vi.fn();
+    const e = keyEvent("ArrowRight");
+    const handled = applyTrayNavigationKey(
+      e,
+      { detailRepo: null, getSelectedRepo: () => selected },
+      {
+        onRefresh: vi.fn(),
+        onCloseDetail: vi.fn(),
+        onHidePanel: vi.fn(),
+        onOpenDetailForSelection,
+        onMoveSelection: vi.fn(),
+        onOpenSelected: vi.fn(),
+      },
+      "panel",
+    );
+    expect(handled).toBe(true);
+    expect(onOpenDetailForSelection).toHaveBeenCalledOnce();
+  });
 });
