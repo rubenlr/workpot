@@ -1,0 +1,64 @@
+amends "package://github.com/jdx/hk/releases/download/v1.46.0/hk@1.46.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.46.0/hk@1.46.0#/Builtins.pkl"
+
+hooks {
+  ["pre-commit"] {
+    fix = true
+    stash = "git"
+    steps {
+      ["prettier"] = (Builtins.prettier) {
+        glob = List("*.js", "*.ts", "*.svelte", "*.json", "*.css", "*.md")
+        prefix = "npx"
+      }
+      ["eslint"] = (Builtins.eslint) {
+        glob = List("*.js", "*.ts", "*.svelte")
+        prefix = "npx"
+      }
+      ["cargo-fmt"] = (Builtins.cargo_fmt) {
+        glob = "*.rs"
+      }
+      ["cargo-clippy"] = (Builtins.cargo_clippy) {
+        glob = "*.rs"
+      }
+      ["svelte-check"] {
+        glob = List("*.svelte", "*.ts")
+        check = "npm run check"
+      }
+      ["vitest"] {
+        glob = List("*.js", "*.ts", "*.svelte")
+        check = "npx vitest run related {{files}} --passWithNoTests"
+      }
+      ["cargo-test"] {
+        glob = "*.rs"
+        check = "cargo test --workspace --all-targets"
+      }
+    }
+  }
+
+  ["pre-push"] {
+    fix = false
+    steps {
+      ["prettier-check"] {
+        check = "npx prettier --check ."
+      }
+      ["eslint-check"] {
+        check = "npx eslint ."
+      }
+      ["cargo-fmt-check"] {
+        check = "cargo fmt --all -- --check"
+      }
+      ["cargo-clippy-check"] {
+        check = "cargo clippy --workspace --all-targets -- -D warnings"
+      }
+      ["svelte-check"] {
+        check = "npm run check"
+      }
+      ["vitest-run"] {
+        check = "npm run test"
+      }
+      ["cargo-test-run"] {
+        check = "cargo test --workspace --all-targets"
+      }
+    }
+  }
+}
