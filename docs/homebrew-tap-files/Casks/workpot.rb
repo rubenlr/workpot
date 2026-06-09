@@ -1,5 +1,5 @@
 cask "workpot" do
-  version "0.0.1"
+  version "0.0.2"
   sha256 "PLACEHOLDER_REPLACE_ON_RELEASE_64CHARS_HEXHEXHEXHEXHEXHEXHEXHEX"
 
   url "https://github.com/rubenlr/workpot/releases/download/v#{version}/Workpot-#{version}-aarch64.tar.gz"

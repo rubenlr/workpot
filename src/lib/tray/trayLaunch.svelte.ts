@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SectionConfig } from "$lib/sort";
 import type { RepoDto } from "$lib/types";
-import { computeBackgroundOpenSelection } from "./trayLaunch";
+import { selectionIndexAfterBackgroundOpen } from "$lib/openSelection";
 
 export interface TrayLaunchDeps {
   getSelectedRepo: () => RepoDto | undefined;
@@ -11,10 +11,6 @@ export interface TrayLaunchDeps {
   getRepos: () => RepoDto[];
   refresh: (clearError: boolean) => Promise<void>;
   setSelectedIndex: (index: number) => void;
-}
-
-async function hideTrayPanel(): Promise<void> {
-  await getCurrentWindow().hide();
 }
 
 export function createTrayLaunch(deps: TrayLaunchDeps) {
@@ -37,7 +33,7 @@ export function createTrayLaunch(deps: TrayLaunchDeps) {
         const query = deps.getFilterQuery();
         await deps.refresh(false);
         deps.setSelectedIndex(
-          computeBackgroundOpenSelection(
+          selectionIndexAfterBackgroundOpen(
             deps.getRepos(),
             query,
             openedPath,
@@ -45,7 +41,7 @@ export function createTrayLaunch(deps: TrayLaunchDeps) {
           ),
         );
       } else {
-        await hideTrayPanel();
+        await getCurrentWindow().hide();
       }
     } catch (e) {
       launchError = String(e);
@@ -58,7 +54,7 @@ export function createTrayLaunch(deps: TrayLaunchDeps) {
     },
     openSelected,
     dismissLaunchError,
-    hidePanel: hideTrayPanel,
+    hidePanel: () => getCurrentWindow().hide(),
   };
 }
 
