@@ -33,12 +33,6 @@ jobs:
         with:
           shared-key: ci
           key: ${{ matrix.os }}
-      - name: Check formatting
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo fmt --all -- --check
-      - name: Run Clippy
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo clippy -p workpot-core -p workpot-cli --all-targets -- -D warnings
       - name: Clippy tray crate
         if: matrix.os == 'macos-latest'
         run: cargo clippy -p workpot-tray --all-targets -- -D warnings

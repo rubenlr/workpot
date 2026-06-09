@@ -49,7 +49,7 @@ export function createTrayPanel() {
   const actionDeps: TrayRepoActionsDeps = {
     invoke,
     refresh: () => data.refresh(),
-    onError: (e) => data.setError(e),
+    onError: (e) => data.setListError(String(e)),
     openDetailWithTagFocus: (repo) => detail.openDetailWithTagFocus(repo),
   };
 

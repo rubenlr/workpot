@@ -7,7 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "clean": "rm -rf build .svelte-kit src-tauri/gen node_modules package-lock.json pnpm-lock.yaml",
+    "clean": "rm -rf build .svelte-kit src-tauri/gen",
+    "clean:all": "rm -rf build .svelte-kit src-tauri/gen node_modules package-lock.json pnpm-lock.yaml",
     "dev": "vite dev",
     "build": "node scripts/vite-build.mjs",
     "tauri:build": "node scripts/vite-build.mjs && tauri build --config src-tauri/tauri.ci-build.json",

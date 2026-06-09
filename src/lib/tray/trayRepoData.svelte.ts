@@ -11,10 +11,6 @@ export function createTrayRepoData(options: TrayRepoDataOptions = {}) {
   let allTags = $state<string[]>([]);
   let error = $state<string | null>(null);
 
-  function setError(e: unknown) {
-    error = String(e);
-  }
-
   function setListError(message: string | null) {
     error = message;
   }
@@ -29,7 +25,7 @@ export function createTrayRepoData(options: TrayRepoDataOptions = {}) {
       }
     } catch (e) {
       trayTrace("list_repos failed", e);
-      setError(e);
+      setListError(String(e));
     }
   }
 
@@ -43,8 +39,7 @@ export function createTrayRepoData(options: TrayRepoDataOptions = {}) {
   }
 
   async function refresh(clearError = true): Promise<void> {
-    await loadRepos(clearError);
-    await loadAllTags();
+    await Promise.all([loadRepos(clearError), loadAllTags()]);
     options.onAfterRefresh?.(repos);
   }
 
@@ -54,7 +49,7 @@ export function createTrayRepoData(options: TrayRepoDataOptions = {}) {
       await invoke("refresh_all_git_state");
     } catch (e) {
       trayTrace("refresh_all_git_state failed", e);
-      setError(e);
+      setListError(String(e));
     }
   }
 
@@ -72,7 +67,6 @@ export function createTrayRepoData(options: TrayRepoDataOptions = {}) {
     loadAllTags,
     refresh,
     startBackgroundRefresh,
-    setError,
     setListError,
   };
 }

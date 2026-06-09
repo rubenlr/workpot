@@ -33,6 +33,14 @@
 
   let dragSourceIdx = $state<number | null>(null);
 
+  function rowFlatIndex(path: string): number {
+    const idx = flatIndexByPath.get(path);
+    if (idx === undefined) {
+      throw new Error(`TrayRepoList: missing flat index for ${path}`);
+    }
+    return idx;
+  }
+
   $effect(() => {
     const idx = selectedIndex;
     queueMicrotask(() => {
@@ -77,7 +85,7 @@
         <SectionHeader {label} />
       </li>
       {#each sectionedRepos[key] as repo, i (repo.path)}
-        {@const idx = flatIndexByPath.get(repo.path) ?? 0}
+        {@const idx = rowFlatIndex(repo.path)}
         <li role="presentation">
           <RepoListRow
             {repo}

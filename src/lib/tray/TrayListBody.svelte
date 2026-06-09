@@ -1,10 +1,6 @@
 <script lang="ts">
   import type { TrayListView } from "$lib/listState";
-  import {
-    TRAY_EMPTY_LIST_MESSAGE,
-    TRAY_LIST_ERROR_FALLBACK,
-    TRAY_NO_MATCH_MESSAGE,
-  } from "./constants";
+  import { TRAY_EMPTY_LIST_MESSAGE, TRAY_NO_MATCH_MESSAGE } from "./constants";
   import type { SectionedRepos } from "$lib/sort";
   import type { RepoDto } from "$lib/types";
   import TrayListPlaceholder from "./TrayListPlaceholder.svelte";
@@ -43,10 +39,7 @@
 </script>
 
 {#if listView.kind === "error"}
-  <TrayListPlaceholder
-    message={listView.message || TRAY_LIST_ERROR_FALLBACK}
-    tone="error"
-  />
+  <TrayListPlaceholder message={listView.message} tone="error" />
 {:else if listView.kind === "empty-list"}
   <TrayListPlaceholder message={emptyListMessage} />
 {:else if listView.kind === "no-match"}

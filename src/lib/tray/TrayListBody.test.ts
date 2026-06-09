@@ -4,11 +4,7 @@ import TrayListBody from "./TrayListBody.svelte";
 import type { TrayListView } from "$lib/listState";
 import type { SectionedRepos } from "$lib/sort";
 import type { RepoDto } from "$lib/types";
-import {
-  TRAY_EMPTY_LIST_MESSAGE,
-  TRAY_LIST_ERROR_FALLBACK,
-  TRAY_NO_MATCH_MESSAGE,
-} from "./constants";
+import { TRAY_EMPTY_LIST_MESSAGE, TRAY_NO_MATCH_MESSAGE } from "./constants";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue(undefined),
@@ -50,11 +46,6 @@ describe("TrayListBody", () => {
   it("error_view_shows_placeholder_with_error_message", () => {
     const { getByText } = renderBody({ kind: "error", message: "Load failed" });
     expect(getByText("Load failed")).toBeTruthy();
-  });
-
-  it("error_view_uses_error_fallback_when_message_empty", () => {
-    const { getByText } = renderBody({ kind: "error", message: "" });
-    expect(getByText(TRAY_LIST_ERROR_FALLBACK)).toBeTruthy();
   });
 
   it("empty_list_view_shows_default_empty_message", () => {
