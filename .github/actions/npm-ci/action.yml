@@ -1,15 +1,18 @@
 name: npm ci
-description: Node toolchain + npm cache restore + clean install
+description: Node toolchain + pnpm cache restore + clean install
 inputs:
   node-version:
     required: true
 runs:
   using: composite
   steps:
+    - uses: pnpm/action-setup@v4
+      with:
+        version: 9
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
-        cache: npm
-        cache-dependency-path: package-lock.json
-    - run: npm ci
+        cache: pnpm
+        cache-dependency-path: pnpm-lock.yaml
+    - run: pnpm install --frozen-lockfile
       shell: bash
