@@ -5,24 +5,33 @@
     shouldSaveNotes,
     tagAlreadyOnRepo,
   } from "../orgClient";
-  import type { RepoDto } from "../types";
+  import type { BranchListItemDto, RepoDto } from "../types";
+  import BranchBadge from "./BranchBadge.svelte";
+  import TagAutocomplete from "./TagAutocomplete.svelte";
   import TagChip from "./TagChip.svelte";
 
   let {
     repo,
+    allTags = [],
     onClose,
     onMutated,
     requestTagFocus = false,
     onTagFocusDone,
   }: {
     repo: RepoDto;
+    allTags?: string[];
     onClose: () => void;
     onMutated: () => void;
     requestTagFocus?: boolean;
     onTagFocusDone?: () => void;
   } = $props();
 
-  let branches = $state<string[]>([]);
+  let tagSuggestTags = $derived.by(() => {
+    const onRepo = new Set(repo.tags);
+    return allTags.filter((t) => !onRepo.has(t));
+  });
+
+  let branches = $state<BranchListItemDto[]>([]);
   let branchError = $state<string | null>(null);
   let notesValue = $state("");
   let tagInput = $state("");
@@ -47,16 +56,21 @@
     });
   });
 
+  // autocorrect is valid on textarea in browsers but missing from Svelte HTML typings.
+  $effect(() => {
+    notesTextarea?.setAttribute("autocorrect", "off");
+  });
+
   $effect(() => {
     const path = repo.path;
     branchError = null;
     let cancelled = false;
     void (async () => {
       try {
-        const result = await invoke<string[]>("list_branches", {
+        const result = await invoke<BranchListItemDto[]>("list_branches", {
           repoPath: path,
         });
-        if (!cancelled) {
+        if (!cancelled && repo.path === path) {
           branches = result;
         }
       } catch (e) {
@@ -146,12 +160,12 @@
   }
 </script>
 
+<svelte:window onkeydown={onPaneKeydown} />
+
 <div
   role="region"
   aria-label="Repository details"
-  class="flex h-full flex-col gap-4 overflow-y-auto p-4"
-  tabindex="-1"
-  onkeydown={onPaneKeydown}
+  class="flex h-full flex-col gap-4 overflow-y-auto p-2"
 >
   <div class="flex items-center gap-2">
     <button
@@ -160,19 +174,23 @@
       aria-label="Close detail pane"
       onclick={onClose}
     >
-      ←
+      ◀
     </button>
-    <h2 class="truncate text-lg font-semibold">{repo.name}</h2>
+    <h2 class="min-w-0 flex-1 truncate text-lg font-semibold">
+      {repo.alias ?? repo.name}
+    </h2>
+    <button
+      type="button"
+      class="shrink-0 text-lg leading-none"
+      aria-label={repo.pinned ? "Unpin" : "Pin"}
+      aria-pressed={repo.pinned}
+      onclick={() => void handlePinChange()}
+    >
+      {repo.pinned ? "📌" : "📍"}
+    </button>
   </div>
 
-  <label class="flex cursor-pointer items-center gap-2 text-sm">
-    <input
-      type="checkbox"
-      checked={repo.pinned}
-      onchange={() => void handlePinChange()}
-    />
-    Pinned
-  </label>
+  <hr class="border-neutral-200 dark:border-neutral-700 -my-2" />
 
   <section>
     <h3 class="mb-1 text-sm font-medium text-neutral-600 dark:text-neutral-400">
@@ -183,21 +201,15 @@
     {:else if branches.length === 0}
       <p class="text-sm text-neutral-500">No branches</p>
     {:else}
-      <ul class="flex flex-col gap-0.5 text-sm">
-        {#each branches as b (b)}
-          <li>
-            <span
-              class={b === repo.branch
-                ? "font-semibold text-blue-600 dark:text-blue-400"
-                : "text-neutral-700 dark:text-neutral-300"}
-            >
-              {b}
-            </span>
-          </li>
+      <div class="flex flex-wrap gap-1">
+        {#each branches as b (b.name)}
+          <BranchBadge branch={b} />
         {/each}
-      </ul>
+      </div>
     {/if}
   </section>
+
+  <hr class="border-neutral-200 dark:border-neutral-700 -my-2" />
 
   <section>
     <h3 class="mb-1 text-sm font-medium text-neutral-600 dark:text-neutral-400">
@@ -208,19 +220,33 @@
         <TagChip {tag} onRemove={() => void handleRemoveTag(tag)} />
       {/each}
     </div>
-    <input
-      type="text"
-      bind:this={tagInputEl}
-      bind:value={tagInput}
-      placeholder="Add tag…"
-      class="mt-2 w-full rounded-md border border-neutral-200 bg-transparent px-2 py-1 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-      onkeydown={onTagInputKeydown}
-      onblur={() => {
-        if (tagInput.trim()) {
-          void handleAddTag(tagInput);
-        }
-      }}
-    />
+    <div class="relative mt-2">
+      <input
+        type="text"
+        bind:this={tagInputEl}
+        bind:value={tagInput}
+        placeholder="Add tag…"
+        autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        class="w-full rounded-md border border-neutral-200 bg-transparent px-2 py-1 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        onkeydown={onTagInputKeydown}
+        onblur={() => {
+          if (tagInput.trim()) {
+            void handleAddTag(tagInput);
+          }
+        }}
+      />
+      <TagAutocomplete
+        allTags={tagSuggestTags}
+        visible={tagInput.trim().length > 0 && tagSuggestTags.length > 0}
+        prefix={tagInput.trim()}
+        onSelect={(tag) => {
+          void handleAddTag(tag);
+        }}
+      />
+    </div>
     {#if tagError}
       <p class="mt-1 text-sm text-red-600 dark:text-red-400">{tagError}</p>
     {/if}
@@ -236,8 +262,10 @@
       maxlength="500"
       bind:value={notesValue}
       placeholder="Add notes..."
-      class="w-full resize-none rounded-md border border-neutral-200 bg-transparent p-2 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-      style="max-height: calc(5 * 1.5rem)"
+      autocomplete="off"
+      autocapitalize="off"
+      spellcheck="false"
+      class="max-h-[calc(5*1.5rem)] w-full resize-none rounded-md border border-neutral-200 bg-transparent p-2 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
       onblur={() => void handleNotesSave()}
     ></textarea>
   </section>

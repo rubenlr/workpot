@@ -10,6 +10,7 @@ function repo(
   return {
     path: partial.path ?? `/tmp/${partial.name}`,
     name: partial.name,
+    alias: partial.alias ?? null,
     branch: partial.branch ?? null,
     is_dirty: partial.is_dirty ?? null,
     parent_dir: "",

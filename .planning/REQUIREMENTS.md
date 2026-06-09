@@ -51,9 +51,9 @@
 
 ### CLI (CLI)
 
-- [ ] **CLI-01**: User can list indexed repositories from the terminal
-- [ ] **CLI-02**: User can search and open repositories from the terminal
-- [ ] **CLI-03**: CLI and tray show consistent repository data and ordering
+- [x] **CLI-01**: User can list indexed repositories from the terminal
+- [x] **CLI-02**: User can search and open repositories from the terminal
+- [x] **CLI-03**: CLI and tray show consistent repository data and ordering
 
 ### Data & Privacy (DATA)
 
@@ -98,11 +98,12 @@
 | ORG-01..04 | Phase 5 | Pending |
 | UI-01..04 | Phase 4 | Pending |
 | LAUNCH-01 | Phase 4 | Pending |
-| LAUNCH-02..06 | Phase 7 | Pending |
+| LAUNCH-02..06 | Backlog 999.1 (Recipes) | Deferred |
 | CLI-01..03 | Phase 6 | Pending |
 | DATA-01..02 | Phase 1 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 28 total
 - Mapped to phases: 28
 - Unmapped: 0

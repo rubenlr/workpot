@@ -1,6 +1,7 @@
 name: release
 
-# Builds macOS tarballs and uploads them to an existing GitHub Release.
+# Builds macOS aarch64 combined Workpot.app+CLI tarball + checksum,
+# then uploads to an existing GitHub Release and updates the Homebrew tap.
 # Invoked by release-artifacts.yml on release: published, release-smoke (dry_run),
 # or manually via workflow_dispatch.
 # release-publish.yml creates the GitHub Release and tag on master when version increases.
@@ -110,21 +111,15 @@ jobs:
           fi
           echo "version=${tag_version}" >> "$GITHUB_OUTPUT"
 
-  binary:
-    name: macos ${{ matrix.arch }} binary
+  bundle:
+    name: macos aarch64 app bundle
     needs: [prepare, validate-version]
     if: always() && (needs.prepare.outputs.dry_run == 'true' || needs.validate-version.result == 'success')
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: aarch64
-            artifact: workpot-macos-aarch64
-            runner: macos-latest
-          - arch: x86_64
-            artifact: workpot-macos-x86_64
-            runner: macos-15-intel
+    runs-on: macos-latest
+    env:
+      # Workspace Cargo target dir is repo-root `target/` (src-tauri is a workspace member).
+      MACOS_TARGET: aarch64-apple-darwin
+      BUNDLE_MACOS_DIR: target/aarch64-apple-darwin/release/bundle/macos
     steps:
       - uses: actions/checkout@v5
         with:
@@ -134,37 +129,58 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.96
+          targets: aarch64-apple-darwin
 
       - uses: ./.github/actions/rust-cache
         with:
-          shared-key: release
-          key: ${{ matrix.arch }}
+          shared-key: release-bundle
+          key: aarch64
 
-      - name: Build release binary
-        run: cargo build --release -p workpot-cli
+      - uses: ./.github/actions/pnpm-install
+        with:
+          node-version: 24
+
+      - name: Build release CLI binary
+        run: cargo build --release -p workpot-cli --target "${MACOS_TARGET}"
+
+      - name: Build release app bundle
+        run: |
+          pnpm run build
+          pnpm exec tauri build --bundles app --config src-tauri/tauri.ci-build.json --target "${MACOS_TARGET}"
+
+      - name: Verify app bundle path
+        run: test -d "${BUNDLE_MACOS_DIR}/Workpot.app"
+
+      - name: Inject CLI binary into app bundle
+        run: cp "target/${MACOS_TARGET}/release/workpot" "${BUNDLE_MACOS_DIR}/Workpot.app/Contents/MacOS/workpot"
+
+      - name: Verify both binaries present
+        run: |
+          test -f "${BUNDLE_MACOS_DIR}/Workpot.app/Contents/MacOS/workpot-tray"
+          test -f "${BUNDLE_MACOS_DIR}/Workpot.app/Contents/MacOS/workpot"
 
       - name: Create release tarball
         env:
-          RELEASE_ARTIFACT: ${{ matrix.artifact }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
-          artifact="$RELEASE_ARTIFACT"
-          mkdir -p "dist/$artifact"
-          cp target/release/workpot "dist/$artifact/workpot"
-          cp README.md LICENSE "dist/$artifact/"
-          tar -C "dist/$artifact" -czf "$artifact.tar.gz" .
-          shasum -a 256 "$artifact.tar.gz" > "$artifact.tar.gz.sha256"
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          archive="Workpot-${version}-aarch64.tar.gz"
+          checksum="${archive}.sha256"
+          tar -C "${BUNDLE_MACOS_DIR}" -czf "$archive" Workpot.app
+          shasum -a 256 "$archive" > "$checksum"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ needs.prepare.outputs.dry_run == 'true' && format('smoke-{0}', matrix.artifact) || matrix.artifact }}
+          name: ${{ needs.prepare.outputs.dry_run == 'true' && 'smoke-workpot-bundle-aarch64' || 'workpot-bundle-aarch64' }}
           path: |
-            ${{ matrix.artifact }}.tar.gz
-            ${{ matrix.artifact }}.tar.gz.sha256
+            Workpot-*-aarch64.tar.gz
+            Workpot-*-aarch64.tar.gz.sha256
           retention-days: ${{ needs.prepare.outputs.dry_run == 'true' && 7 || 90 }}
 
   github-release:
     name: github release
-    needs: [prepare, binary, validate-version]
+    needs: [prepare, bundle, validate-version]
     if: needs.prepare.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -173,6 +189,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: workpot-bundle-*
           merge-multiple: true
 
       - name: Upload macOS artifacts to GitHub Release
@@ -183,3 +200,48 @@ jobs:
           set -euo pipefail
           gh release upload "$RELEASE_TAG" artifacts/* --clobber
           echo "Uploaded artifacts to release ${RELEASE_TAG}"
+
+  tap-update:
+    name: update homebrew tap
+    needs: [prepare, github-release, validate-version]
+    if: needs.prepare.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute artifact SHA256 from published release
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          archive="Workpot-${version}-aarch64.tar.gz"
+          gh release download "${RELEASE_TAG}" --pattern "${archive}.sha256" --repo rubenlr/workpot
+          sha256="$(awk '{print $1}' "${archive}.sha256")"
+          echo "SHA256=${sha256}" >> "$GITHUB_ENV"
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+        with:
+          repository: rubenlr/homebrew-workpot
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-workpot
+
+      - name: Patch cask version and sha256
+        working-directory: homebrew-workpot
+        run: |
+          set -euo pipefail
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" Casks/workpot.rb
+          sed -i "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Casks/workpot.rb
+          grep -q "version \"${VERSION}\"" Casks/workpot.rb
+          grep -q "sha256 \"${SHA256}\"" Casks/workpot.rb
+
+      - name: Commit and push tap update
+        working-directory: homebrew-workpot
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin HEAD
+          git add Casks/workpot.rb
+          git commit -m "chore: bump workpot to v${VERSION}"
+          git push

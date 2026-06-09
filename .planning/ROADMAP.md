@@ -1,7 +1,7 @@
 # Roadmap: Workpot
 
 **Project:** Workpot  
-**Phases:** 7  
+**Phases:** 6 + 06.1 + 06.2 + 7 (active); 1 backlog  
 **Requirements mapped:** 28/28 v1  
 **Structure:** Vertical MVP (each phase ships usable capability)
 
@@ -16,8 +16,10 @@
 | 3 | Git state | 4/4 | Complete (UAT 2026-05-30) |
 | 4 | 4/4 | Complete |
 | 5 | Tags & prioritization | 4/4 | In progress (05-09 code done; human re-UAT) |
-| 6 | CLI parity | Terminal workflow matches tray | CLI-01..03 | 3 |
-| 7 | Recipes | Reusable multi-step action bundles | LAUNCH-02..06 | 4 |
+| 6 | CLI parity | 5/5 | Complete | 2026-05-31 |
+| 06.1 | Release & distribution *(INSERTED)* | 3/3 | Complete   | 2026-05-31 |
+| 06.2 | Tray UX polish *(INSERTED)* | 9/9 | Complete    | 2026-05-31 |
+| 7 | Distribution strategy review | 4/4 | Complete   | 2026-06-04 |
 
 ---
 
@@ -220,25 +222,100 @@ Plans:
 2. `workpot search <query>` returns the same results as tray filter
 3. `workpot open <name|path>` opens Cursor for the matched repo
 
-**Plans:** 5 plans in 3 waves
+**Plans:** 5/5 plans complete
 
 **Wave 1** *(parallel — no shared files)*
 
-- [ ] 06-01-PLAN.md — Core `repo_priority`: section sort + flat tray order (CLI-01, CLI-03)
-- [ ] 06-02-PLAN.md — Core `repo_fuzzy`: port tray fuzzy matcher (CLI-02, CLI-03)
+- [x] 06-01-PLAN.md — Core `repo_priority`: section sort + flat tray order (CLI-01, CLI-03)
+- [x] 06-02-PLAN.md — Core `repo_fuzzy`: port tray fuzzy matcher (CLI-02, CLI-03)
 
 **Wave 2** *(parallel — depends on 06-01)*
 
-- [ ] 06-03-PLAN.md — `workpot list` + emoji row formatter (CLI-01, CLI-03)
-- [ ] 06-05-PLAN.md — Move `launch` to core + `workpot open` (CLI-02, LAUNCH-01)
+- [x] 06-03-PLAN.md — `workpot list` + emoji row formatter (CLI-01, CLI-03)
+- [x] 06-05-PLAN.md — Move `launch` to core + `workpot open` (CLI-02, LAUNCH-01)
 
 **Wave 3**
 
-- [ ] 06-04-PLAN.md — `workpot search <query>` (CLI-02, CLI-03; depends 06-01, 06-02, 06-03)
+- [x] 06-04-PLAN.md — `workpot search <query>` (CLI-02, CLI-03; depends 06-01, 06-02, 06-03)
 
 ---
 
-### Phase 7: Recipes
+### Phase 06.1: Release & distribution (INSERTED)
+
+**Goal:** Ship a complete macOS release path — GitHub artifacts, one-line install, self-update, and tray `.dmg` — so users never hand-place binaries.
+
+**Mode:** mvp
+
+**Depends on:** Phase 6 (CLI parity complete)
+
+**Requirements:** Tooling (no new v1 requirement IDs; extends release/docs surface)
+
+**Success Criteria:**
+
+1. Every `v*` GitHub Release publishes `workpot-macos-aarch64.tar.gz` + `.sha256` and `Workpot-<version>-aarch64.dmg` + `.sha256` (signed/notarized when Apple secrets are present)
+2. User can run `curl -fsSL …/install.sh | bash` (or documented equivalent) on macOS and get `workpot` on `PATH` with correct `--version`
+3. `workpot update` upgrades the installed CLI from the latest GitHub Release with clear failure modes (offline, permission denied, already current)
+4. `INSTALL.md` gives equal prominence to script and DMG install paths, and documents update + uninstall/PATH without reading `docs/releasing.md`
+5. Maintainer flow in `docs/releasing.md` references DMG + installer; CI smoke covers new artifacts where feasible
+
+**Plans:** 3/3 plans complete
+
+Plans:
+- [x] 06.1-01-PLAN.md — Lock release artifact/signing contract (aarch64-only + DMG + smoke/docs)
+- [x] 06.1-02-PLAN.md — TDD `workpot update` with strict exit/error/checksum semantics
+- [x] 06.1-03-PLAN.md — Implement `install.sh` + installer smoke + user install docs
+
+---
+
+### Phase 06.2: Tray UX polish (INSERTED)
+
+**Goal:** Tray feels like a daily driver — correct open/detail gestures, honest menu-bar signal for forgotten WIP, clean panel chrome, aliases, and predictable tag/notes inputs.
+
+**Mode:** mvp
+
+**Depends on:** Phases 4–6 (tray MVP, org fields, CLI parity for alias display/search)
+
+**Parallel with:** Phase 06.1 (release) — neither blocks the other
+
+**Requirements:** UX polish (no new v1 requirement IDs; extends tray/org surface)
+
+**Success Criteria:**
+
+1. Plain click on a list row opens Cursor and closes the panel; ⌘+click and row info badge open detail without launching
+2. Menu-bar icon is default unless a repo is dirty and `last_opened_at` is older than `stale_dirty_days`; stale-dirty icon when triggered; animated icon during background refresh
+3. `stale_dirty_days` is configurable in `config.toml` (independent of `max_recent_days`)
+4. Optional per-repo `alias` persists; tray and CLI show alias when set; fuzzy matches alias and folder name
+5. Panel shell is borderless with transparent background and curved bottom; bare repos omit branch when none
+6. Detail header: back + title (alias), pin as 📌/📍 on the right; tag field suggests existing tags only; notes field has no OS autocomplete/spellcheck
+7. Storybook documents list-row and detail-header visual states (same milestone; not a merge gate for interaction fixes)
+8. Automated tests cover stale-dirty tray logic and alias in core/CLI fuzzy where applicable
+
+**Plans:** 9/9 plans complete
+
+Plans:
+**Wave 1** *(parallel — no shared files)*
+
+- [x] 06.2-01-PLAN.md — Alias schema + core DTO propagation (migration 007, RepoRecord.alias, catalog list_repos, org::set_alias, RepoDto.alias, TrayConfigDto.stale_dirty_days)
+- [x] 06.2-02-PLAN.md — TDD: stale-dirty detection logic (Config.stale_dirty_days + validation, has_stale_dirty fn with fallback for never-opened)
+- [x] 06.2-03-PLAN.md — TDD: fuzzy dual-field match with alias (alias_score with name_bonus=true)
+
+**Wave 2** *(parallel — depends on Wave 1)*
+
+- [x] 06.2-04-PLAN.md — Tray interaction model + icon state machine (click handlers, bare-branch, info badge, stale-dirty/syncing icons)
+- [x] 06.2-05-PLAN.md — CLI alias display parity (format_list_row alias-first + branch omission, search/open display)
+
+**Wave 3** *(parallel — depends on Wave 2; requires Plan 04 alias field)*
+
+- [x] 06.2-06-PLAN.md — Visual polish + input hardening (panel chrome CSS, detail header pin toggle, tag/notes attributes)
+- [x] 06.2-08-PLAN.md — Interaction test stub / RED gate (RepoListRow.test.ts — sampling continuity before Plans 05/06 complete)
+
+**Wave 4** *(depends on Wave 3)*
+
+- [x] 06.2-07-PLAN.md — Storybook scaffold + RepoListRow component + stories (non-gating; human checkpoint for package installs)
+- [x] 06.2-09-PLAN.md — Integration + E2E tests, GREEN phase (CLI alias/bare-branch, row interaction Vitest, has_stale_dirty_dto bridge)
+## Backlog
+
+### Phase 999.1: Recipes (BACKLOG)
 
 **Goal:** One-action workflows — open, pull, test, or custom shell chains.
 
@@ -254,7 +331,12 @@ Plans:
 4. Multi-step recipes run in order and stop on first failure with visible error
 5. User can invoke a recipe from CLI and tray
 
-**Plans:** TBD via `/gsd-plan-phase 7`
+**Deferred from:** Phase 7 (2026-05-31) — ship 06.1 release/distribution before recipes
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with `/gsd-review-backlog` when ready)
 
 ---
 
@@ -268,7 +350,43 @@ Plans:
 | 4 | Not started | 0/0 |
 | 5 | Not started | 0/0 |
 | 6 | Not started | 0/0 |
-| 7 | Not started | 0/0 |
+| 06.1 | Not started | 0/0 |
+| 06.2 | Complete | 9/9 |
+| 7 | Complete | 4/4 |
+
+### Phase 7: Review distribution strategy (Homebrew tap + cask)
+
+**Goal:** Pivot v1 distribution away from signed DMG / split install paths to a Homebrew tap with cask that ships **one package** — CLI (`workpot`) and tray app together — so `brew install` and `brew uninstall` add or remove both surfaces atomically.
+
+**Mode:** mvp
+
+**Depends on:** Phase 06.1 (existing tarball/DMG/install.sh release path — review, deprecate, or migrate docs and CI)
+
+**Requirements:** Tooling / release (extends 06.1; decision-driven — D-01 through D-15 from CONTEXT.md)
+
+**Success Criteria:**
+
+1. Distribution strategy doc records decision: **no signed/notarized DMG** for v1; primary path is **brew tap + cask**
+2. Single Homebrew cask installs CLI binary on `PATH` and tray `.app` in one `brew install`
+3. `brew uninstall` removes CLI and tray without orphaning either surface
+4. `INSTALL.md` describes Homebrew-only flow; DMG/install.sh paths removed
+5. CI/release workflow publishes `Workpot-<version>-aarch64.tar.gz` (app+CLI) without Apple signing secrets; tap auto-updated on each release
+
+**Plans:** 4/4 plans complete
+
+**Wave 1** *(parallel — no shared files)*
+
+Plans:
+- [x] 07-01-PLAN.md — Remove update subcommand + update-only deps; remove dmg from tauri.conf.json (D-12, D-14)
+- [x] 07-02-PLAN.md — Rewrite release.yml: new combined tarball job, remove dmg job, add tap-update job; update release-smoke.yml contract (D-02, D-03, D-07, D-08, D-09, D-10, D-13)
+
+**Wave 2** *(depends on Wave 1)*
+
+- [x] 07-03-PLAN.md — Delete install.sh + smoke, rewrite INSTALL.md Homebrew-only, update docs/releasing.md, create docs/distribution-strategy.md (D-04, D-11, D-15)
+
+**Wave 3** *(depends on Wave 2; has human checkpoint)*
+
+- [x] 07-04-PLAN.md — Draft Casks/workpot.rb; human creates homebrew-workpot repo + PAT + HOMEBREW_TAP_TOKEN secret (D-01, D-03, D-05, D-06, D-09, D-10)
 
 ---
 *Roadmap created: 2026-05-28*

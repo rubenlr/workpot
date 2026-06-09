@@ -7,15 +7,10 @@ export function gitRefreshErrorMessage(
   if (summary.errors > 0 && summary.refreshed === 0) {
     return "Git refresh failed for all repositories.";
   }
-  if (summary.errors > 0 && summary.refreshed > 0) {
-    return `Git refresh completed with ${summary.errors} error(s).`;
-  }
   return null;
 }
 
 /** Whether `loadRepos` should clear the list error after refresh completes. */
-export function shouldClearListErrorOnRefreshLoad(
-  summary: GitRefreshSummary,
-): boolean {
-  return summary.errors === 0;
+export function shouldClearListErrorOnRefreshLoad(): boolean {
+  return true;
 }

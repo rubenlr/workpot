@@ -78,6 +78,7 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
             pin_order: None,
             notes: None,
             tags: vec![],
+            alias: None,
         }),
         Err(rusqlite::Error::SqliteFailure(err, _))
             if err.code == rusqlite::ErrorCode::ConstraintViolation =>
@@ -92,7 +93,7 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
     let mut stmt = conn.prepare(
         "SELECT path, name, registered_at, source, git_common_dir,
                 branch, is_dirty, ahead, behind, git_refreshed_at, git_state_error, last_opened_at,
-                pinned, pin_order, notes
+                pinned, pin_order, notes, alias
          FROM repos WHERE excluded = 0 ORDER BY registered_at, path",
     )?;
 
@@ -121,6 +122,7 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
                 pin_order: row.get(13)?,
                 notes: row.get(14)?,
                 tags: vec![],
+                alias: row.get(15)?,
             },
         ))
     })?;
@@ -257,6 +259,33 @@ fn resolve_repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
             path.display()
         ))),
     }
+}
+
+/// Non-excluded repo paths whose working tree no longer exists (stale index rows).
+pub fn missing_repo_paths(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
+    let paths: Vec<String> = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+
+    Ok(paths
+        .into_iter()
+        .filter(|path_key| !Path::new(path_key).exists())
+        .collect())
+}
+
+/// Remove repos whose paths are gone. Returns rows deleted.
+pub fn prune_missing_repos(conn: &Connection) -> Result<u32> {
+    let paths = missing_repo_paths(conn)?;
+    let mut pruned = 0u32;
+    for path_key in paths {
+        let deleted = conn.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
+        pruned += u32::try_from(deleted).unwrap_or(0);
+    }
+    if pruned > 0 {
+        log::info!("pruned {pruned} missing repo(s) from index");
+    }
+    Ok(pruned)
 }
 
 pub fn remove_repo(conn: &Connection, path: &Path) -> Result<()> {

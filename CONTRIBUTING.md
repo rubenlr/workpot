@@ -16,27 +16,27 @@ Rust 1.96 is required (pinned in `rust-toolchain.toml`).
 CI enforces the checks in `.github/workflows/ci.yml`. Locally:
 
 ```bash
-just precommit   # build (CLI release + tray bundle), check, fmt-check
+just precommit   # build (CLI release + tray bundle) + fmt-check (+ auto-fix via fix)
+just test        # CI test-macos: cargo test, vitest coverage, CI tauri:build (run after fmt-check)
 ```
 
 Or step by step:
 
 ```bash
-just fmt         # rewrite formatting first
-just check       # clippy (may fix), tests, frontend format/lint/check/test
-just fmt-check   # strict fmt — same as CI rustfmt job
-just build       # macOS: release CLI + `npm run tauri build`
+just fmt-fix     # rewrite formatting first
+just fmt-check   # strict fmt + clippy + frontend format/lint/check
+just test        # cargo test + vitest coverage + CI bundle smoke (after fmt-check)
+just build       # macOS: release CLI + `pnpm run tauri:build`
 ```
 
 Frontend formatting and lint (also run in CI on macOS):
 
 ```bash
-npm run format      # Prettier (Svelte + Tailwind plugins)
-npm run format:check
-npm run lint        # eslint-plugin-svelte (flat config in eslint.config.js)
-npm run lint:fix
-npm run check       # svelte-check (compiler types)
-npm test
+pnpm run format      # Prettier (Svelte + Tailwind plugins)
+ppnpm run format:check
+pnpm run lint        # eslint --fix (unused imports, svelte flat config)
+pnpm run check       # svelte-check (compiler types)
+pnpm test
 ```
 
 Rust style config at the repo / crate root:

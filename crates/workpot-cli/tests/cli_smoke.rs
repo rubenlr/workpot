@@ -4,10 +4,25 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command as StdCommand;
 
+fn git_cmd() -> StdCommand {
+    let mut cmd = StdCommand::new("git");
+    for key in [
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_COMMON_DIR",
+    ] {
+        cmd.env_remove(key);
+    }
+    cmd
+}
+
 fn git_fixture(parent: &std::path::Path) -> PathBuf {
     let repo = parent.join("sample-repo");
     fs::create_dir_all(&repo).expect("repo dir");
-    let status = StdCommand::new("git")
+    let status = git_cmd()
         .args(["init", "-q"])
         .current_dir(&repo)
         .status()
@@ -559,4 +574,463 @@ fn tag_add_rejects_tag_over_64_graphemes() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains("tag too long"));
+}
+
+#[test]
+fn list_empty_index_exits_zero() {
+    let home = tempfile::tempdir().expect("tempdir");
+
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+/// Helper: create a git repo at `parent/name` and return its path.
+fn named_git_fixture(parent: &std::path::Path, name: &str) -> PathBuf {
+    let repo = parent.join(name);
+    fs::create_dir_all(&repo).expect("repo dir");
+    let status = git_cmd()
+        .args(["init", "-q"])
+        .current_dir(&repo)
+        .status()
+        .expect("git init");
+    assert!(status.success(), "git init failed for {name}");
+    repo
+}
+
+#[test]
+fn search_filters_by_fuzzy_query() {
+    let home = tempfile::tempdir().expect("tempdir");
+
+    let alpha_path = named_git_fixture(home.path(), "repo-alpha");
+    let beta_path = named_git_fixture(home.path(), "repo-beta");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", alpha_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", beta_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    // Use a distinctive query so path subsequence matching on long temp dirs cannot match both.
+    workpot_cmd(home.path())
+        .args(["search", "repo-alpha"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("repo-alpha").and(predicate::str::contains("repo-beta").not()),
+        );
+}
+
+#[test]
+fn search_empty_query_equals_list() {
+    let home = tempfile::tempdir().expect("tempdir");
+
+    let repo_path = named_git_fixture(home.path(), "myrepo");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    let list_out = workpot_cmd(home.path())
+        .arg("list")
+        .output()
+        .expect("list command");
+    let search_out = workpot_cmd(home.path())
+        .args(["search", ""])
+        .output()
+        .expect("search command");
+
+    assert!(list_out.status.success());
+    assert!(search_out.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&list_out.stdout),
+        String::from_utf8_lossy(&search_out.stdout),
+        "workpot search '' must produce the same output as workpot list"
+    );
+}
+
+/// Helper: write a config.toml that uses /usr/bin/true as launch_cmd so open tests don't
+/// try to spawn a real Cursor.
+fn write_true_launch_config(home: &std::path::Path) {
+    write_launch_config(home, "/usr/bin/true {path}");
+}
+
+#[test]
+fn open_exits_zero_and_prints_opening_prefix() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+    let repo_path = git_fixture(home.path());
+    let canon = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["open", canon.to_str().expect("utf8")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("opening:"));
+}
+
+#[test]
+fn open_resolves_by_name_and_prints_full_path() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+    let repo_path = git_fixture(home.path());
+    let canon = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    // Open by name; stdout must contain the full canonical path (D-10)
+    workpot_cmd(home.path())
+        .args(["open", "sample-repo"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(canon.to_str().expect("utf8")));
+}
+
+#[test]
+fn open_not_found_exits_one_with_message() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+
+    workpot_cmd(home.path())
+        .args(["open", "no-such-repo"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("repo not found: no-such-repo"));
+}
+
+#[test]
+fn open_ambiguous_exits_one_with_numbered_paths() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+    let watch = home.path().join("watch");
+    let one = watch.join("one");
+    let two = watch.join("two");
+    fs::create_dir_all(&one).expect("one");
+    fs::create_dir_all(&two).expect("two");
+    let repo1 = git_fixture(&one);
+    let repo2 = git_fixture(&two);
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo1.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo2.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    // Both repos are named "sample-repo" — ambiguous (D-09)
+    workpot_cmd(home.path())
+        .args(["open", "sample-repo"])
+        .assert()
+        .code(1)
+        .stderr(
+            predicate::str::contains("ambiguous repo name")
+                .and(predicate::str::contains("1."))
+                .and(predicate::str::contains("2.")),
+        );
+}
+
+#[test]
+fn open_resolves_by_alias_and_prints_full_path() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+    let repo_path = named_git_fixture(home.path(), "testrepo");
+    let canon = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    set_repo_alias(home.path(), &repo_path, "myalias");
+
+    workpot_cmd(home.path())
+        .args(["open", "myalias"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(canon.to_str().expect("utf8")));
+}
+
+#[test]
+fn open_ambiguous_alias_exits_one_with_numbered_paths() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+    let one = named_git_fixture(home.path(), "repo-one");
+    let two = named_git_fixture(home.path(), "repo-two");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", one.to_str().expect("utf8")])
+        .assert()
+        .success();
+    workpot_cmd(home.path())
+        .args(["repo", "add", two.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    set_repo_alias(home.path(), &one, "dupalias");
+    set_repo_alias(home.path(), &two, "dupalias");
+
+    workpot_cmd(home.path())
+        .args(["open", "dupalias"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("ambiguous repo alias"));
+}
+
+#[test]
+fn roots_add_at_limit_surfaces_limits_message() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config_dir = home.path().join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    fs::write(
+        config_dir.join("config.toml"),
+        "watch_roots = []
+excludes = []
+
+[limits]
+max_watch_roots = 1
+max_repos = 1000
+",
+    )
+    .expect("write config");
+
+    let root_a = home.path().join("root-a");
+    let root_b = home.path().join("root-b");
+    fs::create_dir_all(&root_a).expect("root a");
+    fs::create_dir_all(&root_b).expect("root b");
+
+    workpot_cmd(home.path())
+        .args(["roots", "add", root_a.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["roots", "add", root_b.to_str().expect("utf8")])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("max_watch_roots"));
+}
+
+#[test]
+fn list_registered_repo_shows_icon_and_name() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = git_fixture(home.path());
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    // A freshly-registered repo has no last_opened_at and is not pinned or dirty —
+    // it appears in the Rest section with ⬜ icon.
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("sample-repo")
+                .and(predicate::str::contains("⬜").or(predicate::str::contains("📌"))),
+        );
+}
+
+/// Resolve the test database path the same way `workpot paths` does after bootstrap.
+fn database_path(home: &std::path::Path) -> PathBuf {
+    let out = workpot_cmd(home).arg("paths").output().expect("paths");
+    assert!(out.status.success(), "workpot paths failed");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix("database: ") {
+            return PathBuf::from(rest.trim());
+        }
+    }
+    panic!("database path not found in paths output:\n{stdout}");
+}
+
+fn set_repo_alias(home: &std::path::Path, repo_path: &std::path::Path, alias: &str) {
+    workpot_cmd(home).arg("paths").assert().success();
+    let db = database_path(home);
+    let canon = repo_path.canonicalize().expect("canonicalize");
+    let path_key = canon.to_string_lossy().into_owned();
+    let conn = workpot_core::infra::store::open_connection(&db).expect("open test db");
+    workpot_core::services::org::set_alias(&conn, &path_key, Some(alias)).expect("set alias");
+}
+
+fn set_repo_pin(home: &std::path::Path, repo_path: &std::path::Path) {
+    workpot_cmd(home).arg("paths").assert().success();
+    let db = database_path(home);
+    let canon = repo_path.canonicalize().expect("canonicalize");
+    let path_key = canon.to_string_lossy().into_owned();
+    let conn = workpot_core::infra::store::open_connection(&db).expect("open test db");
+    workpot_core::services::org::set_pin(&conn, &path_key, true, 100).expect("set pin");
+}
+
+fn write_launch_config(home: &std::path::Path, launch_cmd: &str) {
+    let config_dir = home.join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    fs::write(
+        config_dir.join("config.toml"),
+        format!("watch_roots = []\nexcludes = []\nlaunch_cmd = \"{launch_cmd}\"\n"),
+    )
+    .expect("write config");
+}
+
+fn bare_git_fixture(parent: &std::path::Path, name: &str) -> PathBuf {
+    let repo = parent.join(name);
+    let status = git_cmd()
+        .args(["init", "--bare", "-q"])
+        .arg(&repo)
+        .status()
+        .expect("git init --bare");
+    assert!(status.success(), "git init --bare failed for {name}");
+    repo
+}
+
+#[test]
+fn workpot_list_shows_alias_when_set() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = named_git_fixture(home.path(), "testrepo");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    set_repo_alias(home.path(), &repo_path, "myalias");
+
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("myalias"));
+}
+
+#[test]
+fn workpot_list_omits_branch_placeholder_for_bare_repos() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let bare_path = bare_git_fixture(home.path(), "bare.git");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", bare_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path()).arg("index").assert().success();
+
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("—").not());
+}
+
+#[test]
+fn open_launch_failure_exits_two() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_launch_config(
+        home.path(),
+        "/nonexistent/workpot-launch-test-binary {path}",
+    );
+    let repo_path = git_fixture(home.path());
+    let canon = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["open", canon.to_str().expect("utf8")])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("launch failed"));
+}
+
+#[test]
+fn list_priority_order_pinned_before_rest() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let rest_path = named_git_fixture(home.path(), "rest-repo");
+    let pinned_path = named_git_fixture(home.path(), "pinned-repo");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", rest_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+    workpot_cmd(home.path())
+        .args(["repo", "add", pinned_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    set_repo_pin(home.path(), &pinned_path);
+
+    let out = workpot_cmd(home.path()).arg("list").output().expect("list");
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let pinned_pos = stdout.find("pinned-repo").expect("pinned repo in list");
+    let rest_pos = stdout.find("rest-repo").expect("rest repo in list");
+    assert!(
+        pinned_pos < rest_pos,
+        "pinned repo must appear before rest in CLI output:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("📌"),
+        "pinned row must use 📌 icon:\n{stdout}"
+    );
+}
+
+#[test]
+fn list_shows_tags_in_row() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = named_git_fixture(home.path(), "tagged-repo");
+    let canon = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["tag", "add", canon.to_str().expect("utf8"), "backend"])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tagged-repo").and(predicate::str::contains("backend")));
+}
+
+#[test]
+fn workpot_search_matches_by_alias() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = named_git_fixture(home.path(), "testrepo");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    set_repo_alias(home.path(), &repo_path, "myalias");
+
+    workpot_cmd(home.path())
+        .args(["search", "myalias"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("myalias"));
 }

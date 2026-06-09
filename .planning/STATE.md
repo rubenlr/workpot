@@ -2,14 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Phase 05 shipped — PR #4
-last_updated: "2026-05-31T14:00:00Z"
+status: Phase 07 shipped — PR #7
+last_updated: 2026-06-04
 progress:
-  total_phases: 7
-  completed_phases: 5
-  total_plans: 24
-  completed_plans: 24
-  percent: 71
+  total_phases: 10
+  completed_phases: 1
+  total_plans: 4
+  completed_plans: 46
+  percent: 10
+stopped_at: Phase 07 shipped — PR https://github.com/rubenlr/workpot/pull/7
 ---
 
 # Project State
@@ -20,7 +21,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 06 — CLI parity (PR #4 in review)
+**Current focus:** Phase 999.1 — recipes
 
 ## Phase Status
 
@@ -31,11 +32,25 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 3 | Git state | Complete — 3/3 plans, UAT 10/10 (2026-05-30) |
 | 4 | Tray finder MVP | Complete — 4/4 plans (2026-05-30) |
 | 5 | Tags & prioritization | Shipped — PR https://github.com/rubenlr/workpot/pull/4 (2026-05-31) |
-| 6 | CLI parity | Not started |
-| 7 | Recipes | Not started |
+| 6 | CLI parity | Complete — 5/5 plans, UAT 5/6 auto (2026-05-31) |
+| 06.1 | Release & distribution | Not started — inserted 2026-05-31 |
+| 06.2 | Tray UX polish | Complete — 9/9 plans (2026-05-31) |
+| 7 | Distribution strategy review | Shipped — PR https://github.com/rubenlr/workpot/pull/7 (2026-06-04) |
 
 ## Session Notes
 
+- Phase 7 shipped (2026-06-04): PR https://github.com/rubenlr/workpot/pull/7 — branch `feat/06-cli-parity` → `master` (132 commits; includes phases 6, 6.2, 7)
+- Phase 7 UAT auto (2026-06-04): `distribution_contract` 11/11; `brew tap`, `brew info`, `gh` tap repo + HOMEBREW_TAP_TOKEN; `cargo build -p workpot-cli`; 07-UAT.md 12 pass / 1 skip (brew install post-release)
+- Phase 06.2 plan 06.2-09 (2026-05-31): CLI alias/bare smoke, stale_dirty_dto bridge, RepoListRow Vitest GREEN; commits `14cf721`, `e93e9cd`
+- Phase 06.2 plan 06.2-07 (2026-05-31): Storybook + RepoListRow extraction, 10 visual stories; commits `183b2a1`, `1c54e21`
+- Phase 06.2 plan 06.2-06 (2026-05-31): panel-shell CSS, detail pin toggle, input hardening; commits `dfb10cf`, `2f5b526`
+- Phase 06.2 plan 06.2-08 (2026-05-31): RepoListRow interaction test RED gate; commits `c052c2d`, `378809a`
+- Phase 06.2 plan 06.2-04 (2026-05-31): tray row click model, alias display, tri-state icon; commits `9082057`, `da98d25`, docs `90a73fa`
+- Phase 06.2 plan 06.2-05 (2026-05-31): CLI alias-first list_display, bare branch omission, open-by-alias; commits `61a3858`, `85607f1`
+- Phase 06.2 plan 06.2-03 (2026-05-31): alias_score in fuzzy_score; TDD RED `d27d3b4`, GREEN `dff06c0`
+- Phase 06.2 plan 06.2-02 (2026-05-31): has_stale_dirty + 16-case tests; TDD RED `9252f6d`, GREEN `6e1aefc`
+- Phase 06.2 plan 06.2-01 (2026-05-31): migration 007 alias, org::set_alias, RepoDto.alias, TrayConfigDto.stale_dirty_days; commits `5767d80`, `a64345a`, `49ff05f`, `61bf197`
+- Phase 6 UAT auto (2026-05-31): `cargo test -p workpot-core -p workpot-cli` green; list/search/open CLI smoke verified
 - Phase 5 shipped (2026-05-31): PR https://github.com/rubenlr/workpot/pull/4
 - Phase 5 gap 05-09 (2026-05-31): tag blur-save, duplicate feedback, allTags refresh; commits `dbacbbb`, `e359e42`, `a01eb99`
 - Phase 5 plan 05-08 (2026-05-31): `allow-org-commands` — commits `1070e7a`, `ffd36e4`
@@ -56,13 +71,30 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 - Git refresh: rayon batch outside DB tx; `open_and_query` expects pre-canonicalized path (03-02/03)
 - Migration 005 for `last_opened_at` (04-01)
 - Tauri org IPC requires explicit `allow-org-commands` capability (05-08; same class as 04 `get_tray_config`)
+- [Phase ?]: Updater failures map to Network=2 and Install=1 for deterministic CLI exits.
+- [Phase ?]: Checksum verification is enforced before any CLI or tray replacement step.
+- [Phase 06.1]: Installer now enforces checksum-first staging for CLI tarball and DMG before install writes.
+- [Phase 06.1]: Installer smoke tests use local fixture metadata/assets for deterministic default, flag, global, and checksum-failure verification.
+- [Phase 06.2-01]: Alias is user-only (scan upsert does not touch alias); Config.stale_dirty_days default 7 added with plan 01 for TrayConfigDto IPC.
+- [Phase 06.2-02]: has_stale_dirty uses injectable now_secs; never-opened dirty repos use i64::MAX age (immediate stale).
+- [Phase 06.2-05]: CLI format_list_row matches tray: alias ?? name, omit branch when None; open resolves exact alias before folder name.
+- [Phase 06.2-04]: Row is div[role=option] with nested info button; tray icon uses has_stale_dirty_dto + syncing override (not any_dirty).
+- [Phase 06.2-06]: Detail pin is emoji button with aria-pressed; panel-shell border none + 12px bottom radius; tag/notes autocorrect off.
+- [Phase 06.2-07]: Storybook via @storybook/sveltekit; RepoListRow callback props; Tauri mocked in Storybook viteFinal alias.
+- [Phase 06.2-09]: CLI smoke uses org::set_alias; dto_equivalent bridge test locks tray icon policy to core has_stale_dirty.
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 06.1 inserted after Phase 6: Release distribution and install: GitHub tarballs, install.sh, DMG, workpot update, INSTALL.md (URGENT)
+- Phase 06.2 inserted after Phase 6: Tray UX polish — icons, panel chrome, alias, list/detail interaction, Storybook (2026-05-31 explore)
+- Phase 7 (Recipes) deferred to backlog as 999.1 (2026-05-31) — prioritize 06.1 release path first
+- Phase 7 added (2026-06-03): Review distribution strategy — Homebrew tap + cask, no signed DMG; single package for CLI + tray; brew install/uninstall together
+
 ### Pending Todos
 
-1. **Add shell installer with update subcommand** — [todo](todos/pending/2026-05-31-add-shell-installer-with-update-subcommand.md)
-2. **Add macOS DMG distribution at MVP** — [todo](todos/pending/2026-05-31-add-macos-dmg-distribution-at-mvp.md)
+None — install/update and DMG scope live in [Phase 06.1](phases/06.1-release-distribution-and-install-github-release-tarballs-sta/06.1-CONTEXT.md).
 
 ## Blockers
 

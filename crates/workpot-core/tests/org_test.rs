@@ -357,6 +357,65 @@ fn test_list_repos_hydrates_tags() {
 }
 
 #[test]
+fn test_set_alias_not_found() {
+    let (_dir, conn) = temp_db();
+    let err = org::set_alias(&conn, "", Some("x")).unwrap_err();
+    assert!(matches!(err, WorkpotError::NotFound(_)));
+}
+
+#[test]
+fn test_set_alias_clears_with_none() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-alias-clear";
+    insert_repo(&conn, path);
+    org::set_alias(&conn, path, Some("my-alias")).expect("set");
+    org::set_alias(&conn, path, None).expect("clear");
+    let alias: Option<String> = conn
+        .query_row(
+            "SELECT alias FROM repos WHERE path = ?1",
+            params![path],
+            |row| row.get(0),
+        )
+        .expect("select");
+    assert!(alias.is_none());
+}
+
+#[test]
+fn test_set_alias_rejects_empty() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-alias-empty";
+    insert_repo(&conn, path);
+    let err = org::set_alias(&conn, path, Some("")).unwrap_err();
+    assert!(matches!(err, WorkpotError::InvalidInput(_)));
+    let err = org::set_alias(&conn, path, Some("   ")).unwrap_err();
+    assert!(matches!(err, WorkpotError::InvalidInput(_)));
+}
+
+#[test]
+fn test_set_alias_rejects_over_64_chars() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-alias-long";
+    insert_repo(&conn, path);
+    let long = "a".repeat(65);
+    let err = org::set_alias(&conn, path, Some(&long)).unwrap_err();
+    assert!(matches!(err, WorkpotError::InvalidInput(_)));
+}
+
+#[test]
+fn test_set_alias_stores_trimmed_and_list_repos() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-alias-trim";
+    insert_repo(&conn, path);
+    org::set_alias(&conn, path, Some("  my-alias  ")).expect("set");
+    let repos = catalog::list_repos(&conn).expect("list");
+    let record = repos
+        .iter()
+        .find(|r| r.path.to_string_lossy() == path)
+        .expect("repo");
+    assert_eq!(record.alias.as_deref(), Some("my-alias"));
+}
+
+#[test]
 fn test_db_fixture_compiles() {
     let (_dir, conn) = temp_db();
     assert!(conn.is_autocommit());

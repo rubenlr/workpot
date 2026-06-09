@@ -14,6 +14,7 @@ You always know which repo you need and can open it in Cursor in seconds, with g
 
 ### Validated
 
+- CLI parity: `workpot list`, `workpot search`, `workpot open` with shared core (Phase 6, 2026-05-31)
 - Tag, pin, notes, and four-tier tray ordering (Phase 5, 2026-05-31)
 - Tray finder MVP with Cursor launch (Phase 4)
 - Git state refresh and display (Phase 3)
@@ -22,7 +23,6 @@ You always know which repo you need and can open it in Cursor in seconds, with g
 
 ### Active
 
-- [ ] CLI for power users (search, open, index refresh, recipe trigger)
 - [ ] Recipes: reusable action bundles (shell commands, Cursor launch, multi-step workflows)
 
 ### Out of Scope
@@ -81,4 +81,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-31 after Phase 5 completion*
+*Last updated: 2026-05-31 after Phase 6 completion*

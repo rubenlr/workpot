@@ -1,6 +1,7 @@
 name: release-smoke
 
-# PR smoke: full macOS release matrix without creating tags or uploading to GitHub Releases.
+# PR smoke: validate the release artifact contract without creating tags or
+# uploading to GitHub Releases.
 
 on:
   pull_request:
@@ -28,3 +29,33 @@ jobs:
     with:
       tag: v0.0.0-smoke
       dry_run: true
+
+  verify-contract:
+    name: verify release contract
+    needs: smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: smoke-*
+          merge-multiple: true
+
+      - name: Validate aarch64-only artifact contract
+        run: |
+          set -euo pipefail
+          test -f artifacts/Workpot-0.0.0-smoke-aarch64.tar.gz
+          test -f artifacts/Workpot-0.0.0-smoke-aarch64.tar.gz.sha256
+
+          for artifact in artifacts/*; do
+            file="$(basename "$artifact")"
+            case "$file" in
+              Workpot-0.0.0-smoke-aarch64.tar.gz|\
+              Workpot-0.0.0-smoke-aarch64.tar.gz.sha256)
+                ;;
+              *)
+                echo "unexpected artifact in smoke output: $file" >&2
+                exit 1
+                ;;
+            esac
+          done

@@ -9,8 +9,8 @@ describe("trayListView", () => {
     });
   });
 
-  it("shows empty index message", () => {
-    expect(trayListView(null, 0, "", 0)).toEqual({ kind: "empty-index" });
+  it("shows empty list message", () => {
+    expect(trayListView(null, 0, "", 0)).toEqual({ kind: "empty-list" });
   });
 
   it("shows no-match when filter excludes all rows", () => {

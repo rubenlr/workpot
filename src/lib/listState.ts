@@ -1,6 +1,6 @@
 export type TrayListView =
   | { kind: "error"; message: string }
-  | { kind: "empty-index" }
+  | { kind: "empty-list" }
   | { kind: "no-match" }
   | { kind: "list" };
 
@@ -15,7 +15,7 @@ export function trayListView(
     return { kind: "error", message: error };
   }
   if (reposLength === 0) {
-    return { kind: "empty-index" };
+    return { kind: "empty-list" };
   }
   if (filterQuery.trim().length > 0 && displayLength === 0) {
     return { kind: "no-match" };

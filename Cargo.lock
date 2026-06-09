@@ -5113,6 +5113,7 @@ dependencies = [
  "env_logger",
  "humantime",
  "predicates",
+ "serde",
  "tempfile",
  "workpot-core",
 ]
@@ -5130,6 +5131,7 @@ dependencies = [
  "rusqlite",
  "rusqlite_migration",
  "serde",
+ "shell-words",
  "tempfile",
  "thiserror 2.0.18",
  "toml 1.1.2+spec-1.1.0",
@@ -5140,6 +5142,7 @@ name = "workpot-tray"
 version = "0.0.1"
 dependencies = [
  "directories",
+ "env_logger",
  "git2",
  "log",
  "serde",

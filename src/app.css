@@ -11,4 +11,7 @@ body > div {
 /* Native HUD vibrancy provides the frosted surface; keep web content transparent (D-07). */
 .panel-shell {
   background: transparent;
+  border: none;
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
 }

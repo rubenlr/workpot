@@ -8,6 +8,9 @@ pub mod error;
 pub mod infra;
 pub mod services;
 
+#[cfg(test)]
+pub mod testing;
+
 use crate::domain::Config;
 use crate::error::Result;
 use crate::infra::paths;
@@ -21,6 +24,10 @@ pub use crate::domain::GitState;
 pub use crate::domain::RepoRecord;
 pub use crate::error::WorkpotError;
 pub use crate::services::git_state::GitRefreshSummary;
+pub use crate::services::repo_priority::{
+    SectionedRepos, flat_tray_ordered, flat_tray_ordered_repos, section_sort,
+};
+pub use crate::services::stale_dirty::has_stale_dirty;
 
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
@@ -178,10 +185,16 @@ impl AppContext {
 
         let tx = self.conn.unchecked_transaction()?;
         for r in &git_results {
+            let path_exists = Path::new(&r.path).exists();
             if r.state.error.is_some() {
-                errors += 1;
+                if path_exists {
+                    errors += 1;
+                }
             } else {
                 refreshed += 1;
+            }
+            if !path_exists {
+                continue;
             }
             if crate::services::git_state::is_hard_refresh_failure(&r.state) {
                 let err = r.state.error.as_deref().unwrap_or("unknown");
@@ -190,6 +203,7 @@ impl AppContext {
                 crate::services::git_state::persist_git_state(&tx, &r.path, &r.state)?;
             }
         }
+        catalog::prune_missing_repos(&tx)?;
         tx.commit()?;
 
         let any_dirty: bool = self.conn.query_row(
@@ -234,6 +248,10 @@ impl AppContext {
 
     pub fn set_notes(&self, path: &str, notes: Option<&str>) -> Result<()> {
         org::set_notes(&self.conn, path, notes)
+    }
+
+    pub fn set_alias(&self, repo_path: &str, alias: Option<&str>) -> Result<()> {
+        org::set_alias(&self.conn, repo_path, alias)
     }
 
     pub fn set_pin(&self, path: &str, pinned: bool) -> Result<()> {

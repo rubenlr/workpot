@@ -203,3 +203,91 @@ fn detect_ahead_behind(
         Some(i64::try_from(behind).unwrap_or(i64::MAX)),
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use git2::Repository;
+
+    #[test]
+    fn open_and_query_bare_repo_skips_dirty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        Repository::init_bare(&path).expect("init bare");
+        let state = open_and_query(&path).expect("query");
+        assert_eq!(state.is_dirty, None);
+    }
+
+    #[test]
+    fn open_and_query_unborn_branch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        Repository::init(&path).expect("init");
+        let state = open_and_query(&path).expect("query");
+        assert_eq!(state.branch.as_deref(), Some(crate::domain::BRANCH_UNBORN));
+        assert_eq!(state.is_dirty, Some(false));
+    }
+
+    #[test]
+    fn open_and_query_non_git_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        let err = open_and_query(&path).unwrap_err();
+        assert!(matches!(err, WorkpotError::GitUnavailable(_)));
+    }
+
+    #[test]
+    fn open_and_query_reports_branch_and_clean_after_commit() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        let repo = Repository::init(&path).expect("init");
+        std::fs::write(path.join("README"), "hello").expect("write");
+        let mut index = repo.index().expect("index");
+        index.add_path(std::path::Path::new("README")).expect("add");
+        index.write().expect("write index");
+        let tree_id = index.write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+
+        let state = open_and_query(&path).expect("query");
+        assert!(state.branch.is_some(), "branch should be set after commit");
+        assert_eq!(state.is_dirty, Some(false));
+        assert!(state.error.is_none());
+    }
+
+    #[test]
+    fn open_and_query_detects_dirty_worktree() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        let repo = Repository::init(&path).expect("init");
+        std::fs::write(path.join("README"), "hello").expect("write");
+        let mut index = repo.index().expect("index");
+        index.add_path(std::path::Path::new("README")).expect("add");
+        index.write().expect("write index");
+        let tree_id = index.write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+
+        std::fs::write(path.join("README"), "dirty").expect("dirty");
+
+        let state = open_and_query(&path).expect("query");
+        assert_eq!(state.is_dirty, Some(true));
+    }
+
+    #[test]
+    fn resolve_git_common_dir_returns_absolute_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        Repository::init(&path).expect("init");
+        let common = resolve_git_common_dir(&path).expect("common dir");
+        assert!(
+            common.is_absolute(),
+            "common dir must be absolute: {common:?}"
+        );
+        assert!(common.ends_with(".git"), "expected .git dir: {common:?}");
+    }
+}

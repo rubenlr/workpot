@@ -520,17 +520,13 @@ Commands::Open { repo: identifier } => {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `flat_tray_ordered_repos` be added to `AppContext` public API?**
-   - What we know: `AppContext::list_repos()` returns unsorted `Vec<RepoRecord>`; the sort function needs `&Config` too
-   - What's unclear: Whether to add `AppContext::list_repos_priority_ordered()` or expose `repo_priority::flat_tray_ordered_repos` as a free function
-   - Recommendation: Add `AppContext::list_repos_ordered()` that internally calls `flat_tray_ordered_repos(&repos, &self.config)` — keeps the API surface clean
+   - **RESOLVED:** Expose `repo_priority::flat_tray_ordered_repos(repos, config, now_seconds)` as a public free function from `workpot-core` (re-export from `lib.rs`). CLI calls it with `ctx.list_repos()?` + `ctx.config()`. Optional thin `AppContext::list_repos_ordered()` wrapper is discretion-only; plans 06-01/06-03 use the free function.
 
 2. **Should `workpot open` update `last_opened_at`?**
-   - What we know: D-10 says "Uses `launch_cmd` from config" and success prints `opening:`; the Tauri `launch_repo` calls `touch_last_opened_at` on success
-   - What's unclear: D-10 doesn't explicitly say CLI open should record last_opened_at
-   - Recommendation: Yes — the launch function already calls `touch_last_opened_at`; moving launch to core preserves this behavior for both surfaces
+   - **RESOLVED:** Yes — `launch_repo` in shared `workpot-core/src/services/launch.rs` calls `touch_last_opened_at` on successful spawn (same as pre-move Tauri behavior). Plan 06-05 preserves this for CLI and tray.
 
 ---
 

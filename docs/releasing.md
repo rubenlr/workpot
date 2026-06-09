@@ -22,7 +22,7 @@ Updates: `crates/workpot-cli/Cargo.toml`, `crates/workpot-core/Cargo.toml`, `src
 3. Run `just version` and commit `version`, `CHANGELOG.md`, and all synced files.
 4. Merge when CI is green (including **release-check**).
 
-On push to `master`, [`release-publish.yml`](../.github/workflows/release-publish.yml) compares `version` to the latest tag. If it increased, it creates tag `vX.Y.Z` and a GitHub Release from the changelog section. [`release-artifacts.yml`](../.github/workflows/release-artifacts.yml) then builds and uploads macOS tarballs via [`release.yml`](../.github/workflows/release.yml).
+On push to `master`, [`release-publish.yml`](../.github/workflows/release-publish.yml) compares `version` to the latest tag. If it increased, it creates tag `vX.Y.Z` and a GitHub Release from the changelog section. [`release-artifacts.yml`](../.github/workflows/release-artifacts.yml) then builds and uploads macOS release artifacts via [`release.yml`](../.github/workflows/release.yml).
 
 **Feature PRs** that do not touch `version` or `CHANGELOG.md`: `release-check` skips — no bump required.
 
@@ -42,7 +42,7 @@ flowchart LR
   Merge --> Pub[release-publish]
   Pub -->|"version gt latest tag"| Tag["tag vX.Y.Z + GitHub Release"]
   Tag --> Art[release-artifacts]
-  Art --> Bin[release.yml macOS tarballs]
+  Art --> Bin[release.yml aarch64 tarball + checksums + tap-update]
 ```
 
 ## PR gate: release-check
@@ -59,22 +59,34 @@ When a PR changes `version` or `CHANGELOG.md`, CI runs `scripts/check-release-pr
 
 ## Artifacts per release
 
-| Artifact                       | Runner           | Contents                                 |
-| ------------------------------ | ---------------- | ---------------------------------------- |
-| `workpot-macos-aarch64.tar.gz` | `macos-latest`   | `workpot` binary, `README.md`, `LICENSE` |
-| `workpot-macos-x86_64.tar.gz`  | `macos-15-intel` | same                                     |
+| Artifact                              | Runner         | Contents                                                                                                                        |
+| ------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `Workpot-X.Y.Z-aarch64.tar.gz`        | `macos-latest` | `Workpot.app` (with `workpot-tray` Tauri binary and `workpot` CLI binary at `Contents/MacOS/workpot`), managed by Homebrew cask |
+| `Workpot-X.Y.Z-aarch64.tar.gz.sha256` | `macos-latest` | SHA-256 checksum for the tarball                                                                                                |
 
-Each tarball has a `.sha256` checksum on the release page.
+## Signing and notarization policy
+
+Workpot ships unsigned (no Apple Developer account). Distribution security is provided by Homebrew's `sha256` checksum verification on `brew install` and `brew upgrade`. The `postflight xattr -dr com.apple.quarantine` stanza in the Homebrew cask handles Gatekeeper. See `docs/distribution-strategy.md` for rationale.
+
+## Release tag contract checklist
+
+For every release tag (`vX.Y.Z`), keep these contracts aligned:
+
+1. **PR gate:** `release-smoke` must pass with `v0.0.0-smoke` and validate only: `Workpot-0.0.0-smoke-aarch64.tar.gz` + `.sha256`
+2. **Published release:** `release-artifacts` must upload: `Workpot-X.Y.Z-aarch64.tar.gz` + `.sha256`
+3. **Tap auto-update:** after GitHub Release upload, `tap-update` job must push a version bump commit to `rubenlr/homebrew-workpot`
+
+If any of these three disagree on tag or artifact names, treat the release as failed.
 
 ## Testing releases
 
-| Phase        | Trigger                                                                             | Proves                                 | Does not create     |
-| ------------ | ----------------------------------------------------------------------------------- | -------------------------------------- | ------------------- |
-| **PR**       | [release-smoke.yml](../.github/workflows/release-smoke.yml) on release-path changes | Full macOS matrix, tarball layout      | Tag, GitHub Release |
-| **PR**       | [ci.yml](../.github/workflows/ci.yml) `release-build`                               | Fast compile + `--version` on aarch64  | Tarball / x86_64    |
-| **PR**       | `release-check` (when bumping version)                                              | Version sync + changelog               | Tag                 |
-| **master**   | Push with increased `version`                                                       | Tag + GitHub Release + artifact upload | —                   |
-| **Recovery** | `workflow_dispatch` on `release.yml`                                                | Re-upload artifacts for existing tag   | New version         |
+| Phase        | Trigger                                                                             | Proves                                              | Does not create     |
+| ------------ | ----------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------- |
+| **PR**       | [release-smoke.yml](../.github/workflows/release-smoke.yml) on release-path changes | aarch64-only tarball names/checksums match contract | Tag, GitHub Release |
+| **PR**       | [ci.yml](../.github/workflows/ci.yml) `release-build`                               | Fast compile + `--version` on aarch64               | Release assets      |
+| **PR**       | `release-check` (when bumping version)                                              | Version sync + changelog                            | Tag                 |
+| **master**   | Push with increased `version`                                                       | Tag + GitHub Release + artifact upload              | —                   |
+| **Recovery** | `workflow_dispatch` on `release.yml`                                                | Re-upload artifacts for existing tag                | New version         |
 
 ### PR smoke (`dry_run`)
 
@@ -111,6 +123,6 @@ Manual: **Settings → General → Pull requests** → _Allow squash merging_ �
 
 Conventional **PR titles** (`feat:`, `fix:`, …) group changelog entries you write manually; they do not auto-bump the version.
 
-## Phase 4: Tauri tray app + code signing (future)
+## Distribution: Homebrew tap + cask
 
-When distribution requires signed `.app` / `.dmg`, extend `release.yml` with Tauri build jobs and Apple signing secrets. See [Tauri macOS code signing](https://v2.tauri.app/distribute/sign/macos/).
+Workpot is distributed via `brew tap rubenlr/workpot` + `brew install rubenlr/workpot/workpot`. The cask installs `Workpot.app` in `/Applications` and symlinks the CLI binary onto `PATH`. See `docs/distribution-strategy.md` for the full decision record.

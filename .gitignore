@@ -9,3 +9,5 @@
 src-tauri/gen/
 coverage/
 lcov*.info
+*storybook.log
+storybook-static

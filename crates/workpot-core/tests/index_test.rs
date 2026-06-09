@@ -1,8 +1,9 @@
 #![allow(clippy::disallowed_methods)]
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use workpot_core::WorkpotError;
 use workpot_core::domain::Config;
 use workpot_core::infra::store;
@@ -11,7 +12,7 @@ use workpot_core::services::{catalog, index};
 fn git_worktree(parent: &Path, name: &str) -> PathBuf {
     let repo = parent.join(name);
     fs::create_dir_all(&repo).expect("repo dir");
-    let status = Command::new("git")
+    let status = common::git_cmd()
         .args(["init", "-q"])
         .current_dir(&repo)
         .status()
