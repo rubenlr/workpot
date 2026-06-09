@@ -226,6 +226,12 @@ jobs:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: homebrew-workpot
 
+      - name: Sync tap repo
+        working-directory: homebrew-workpot
+        run: |
+          set -euo pipefail
+          git pull --rebase origin HEAD
+
       - name: Patch cask version and sha256
         working-directory: homebrew-workpot
         run: |
@@ -241,7 +247,6 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin HEAD
           git add Casks/workpot.rb
           git commit -m "chore: bump workpot to v${VERSION}"
           git push
