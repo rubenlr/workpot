@@ -14,13 +14,9 @@ permissions:
   pull-requests: write
 
 jobs:
-  fmt:
-    name: rustfmt (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest]
-    runs-on: ${{ matrix.os }}
+  lint:
+    name: rustfmt + clippy (macos-latest)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain
@@ -32,47 +28,11 @@ jobs:
         uses: ./.github/actions/rust-cache
         with:
           shared-key: ci
-          key: ${{ matrix.os }}
+          key: macos-latest
+      - name: rustfmt
+        run: cargo fmt --all -- --check
       - name: Clippy tray crate
-        if: matrix.os == 'macos-latest'
         run: cargo clippy -p workpot-tray --all-targets -- -D warnings
-      # Disabled until Tauri 3 stable — transitive GTK3/unic advisories (macOS v1). See CONTRIBUTING.md.
-      # - name: Install cargo-deny
-      #   if: matrix.os == 'ubuntu-latest'
-      #   uses: taiki-e/install-action@v2
-      #   with:
-      #     tool: cargo-deny
-      #     fallback: none
-      # - name: Run cargo deny
-      #   if: matrix.os == 'ubuntu-latest'
-      #   run: cargo deny check --config .github/ci-assist/deny.toml
-      # - name: Install cargo-audit
-      #   if: matrix.os == 'ubuntu-latest'
-      #   uses: taiki-e/install-action@v2
-      #   with:
-      #     tool: cargo-audit
-      #     fallback: none
-      # - name: Run cargo audit
-      #   if: matrix.os == 'ubuntu-latest'
-      #   run: cargo audit
-
-  # Disabled until Tauri 3 stable — transitive GTK3/unic advisories (macOS v1). See CONTRIBUTING.md.
-  # test-linux:
-  #   name: test (ubuntu-latest)
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v5
-  #     - name: Install Rust toolchain
-  #       uses: dtolnay/rust-toolchain@master
-  #       with:
-  #         toolchain: 1.96
-  #     - name: Restore Rust cache
-  #       uses: ./.github/actions/rust-cache
-  #       with:
-  #         shared-key: ci
-  #         key: ubuntu-latest
-  #     - name: Test
-  #       run: cargo test -p workpot-core -p workpot-cli --all-targets
 
   test-macos:
     name: test (macos-latest)
@@ -197,30 +157,6 @@ jobs:
             -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
             -Dsonar.pullrequest.branch=${{ github.event.pull_request.head.ref }}
             -Dsonar.pullrequest.base=${{ github.event.pull_request.base.ref }}
-
-  release-build:
-    name: cargo build --release
-    needs: [test-macos]
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.96
-      - name: Restore Rust cache
-        uses: ./.github/actions/rust-cache
-        with:
-          shared-key: ci
-          key: ${{ runner.os }}
-      - name: Build release CLI
-        run: cargo build --release -p workpot-cli
-      - name: Verify CLI version
-        run: ./target/release/workpot --version
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ci-workpot-macos-aarch64
-          path: target/release/workpot
 
   release-check:
     name: release-check

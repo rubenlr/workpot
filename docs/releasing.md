@@ -13,7 +13,7 @@ just version          # write/sync
 just version-check    # verify only (CI uses this via release-check)
 ```
 
-Updates: `crates/workpot-cli/Cargo.toml`, `crates/workpot-core/Cargo.toml`, `src-tauri/Cargo.toml` (including `workpot-core` path deps), `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, and `Cargo.lock`.
+Updates: `crates/workpot-cli/Cargo.toml`, `crates/workpot-core/Cargo.toml`, `src-tauri/Cargo.toml` (including `workpot-core` path deps), `package.json`, `src-tauri/tauri.conf.json`, and `Cargo.lock`.
 
 ## Ship checklist
 
@@ -22,7 +22,7 @@ Updates: `crates/workpot-cli/Cargo.toml`, `crates/workpot-core/Cargo.toml`, `src
 3. Run `just version` and commit `version`, `CHANGELOG.md`, and all synced files.
 4. Merge when CI is green (including **release-check**).
 
-On push to `master`, [`release-publish.yml`](../.github/workflows/release-publish.yml) compares `version` to the latest tag. If it increased, it creates tag `vX.Y.Z` and a GitHub Release from the changelog section. [`release-artifacts.yml`](../.github/workflows/release-artifacts.yml) then builds and uploads macOS release artifacts via [`release.yml`](../.github/workflows/release.yml).
+On push to `master`, [`release-publish.yml`](../.github/workflows/release-publish.yml) compares `version` to the latest tag. If it increased, it creates tag `vX.Y.Z`, a GitHub Release from the changelog section, then chains [`release.yml`](../.github/workflows/release.yml) to build/upload macOS artifacts and update the Homebrew tap.
 
 **Feature PRs** that do not touch `version` or `CHANGELOG.md`: `release-check` skips — no bump required.
 
@@ -41,8 +41,7 @@ flowchart LR
   CI --> Merge[Merge to master]
   Merge --> Pub[release-publish]
   Pub -->|"version gt latest tag"| Tag["tag vX.Y.Z + GitHub Release"]
-  Tag --> Art[release-artifacts]
-  Art --> Bin[release.yml aarch64 tarball + checksums + tap-update]
+  Tag --> Bin[release.yml: tarball + checksums + tap-update]
 ```
 
 ## PR gate: release-check
@@ -73,7 +72,7 @@ Workpot ships unsigned (no Apple Developer account). Distribution security is pr
 For every release tag (`vX.Y.Z`), keep these contracts aligned:
 
 1. **PR gate:** `release-smoke` must pass with `v0.0.0-smoke` and validate only: `Workpot-0.0.0-smoke-aarch64.tar.gz` + `.sha256`
-2. **Published release:** `release-artifacts` must upload: `Workpot-X.Y.Z-aarch64.tar.gz` + `.sha256`
+2. **Published release:** `release.yml` must upload: `Workpot-X.Y.Z-aarch64.tar.gz` + `.sha256`
 3. **Tap auto-update:** after GitHub Release upload, `tap-update` job must push a version bump commit to `rubenlr/homebrew-workpot`
 
 If any of these three disagree on tag or artifact names, treat the release as failed.
@@ -83,9 +82,8 @@ If any of these three disagree on tag or artifact names, treat the release as fa
 | Phase        | Trigger                                                                             | Proves                                              | Does not create     |
 | ------------ | ----------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------- |
 | **PR**       | [release-smoke.yml](../.github/workflows/release-smoke.yml) on release-path changes | aarch64-only tarball names/checksums match contract | Tag, GitHub Release |
-| **PR**       | [ci.yml](../.github/workflows/ci.yml) `release-build`                               | Fast compile + `--version` on aarch64               | Release assets      |
 | **PR**       | `release-check` (when bumping version)                                              | Version sync + changelog                            | Tag                 |
-| **master**   | Push with increased `version`                                                       | Tag + GitHub Release + artifact upload              | —                   |
+| **master**   | [release-publish.yml](../.github/workflows/release-publish.yml) on version bump     | Tag + GitHub Release + artifact upload + tap update | —                   |
 | **Recovery** | `workflow_dispatch` on `release.yml`                                                | Re-upload artifacts for existing tag                | New version         |
 
 ### PR smoke (`dry_run`)
@@ -104,12 +102,12 @@ Do **not** push `v*` tags manually for routine releases.
 
 ## Workflows reference
 
-| Workflow                                                            | Role                                                                    |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| [release-publish.yml](../.github/workflows/release-publish.yml)     | Push to `master` → tag + GitHub Release when `version` increases        |
-| [release-artifacts.yml](../.github/workflows/release-artifacts.yml) | `release: published` → macOS build + upload                             |
-| [release.yml](../.github/workflows/release.yml)                     | Guardrails, macOS builds, `gh release upload` (or smoke when `dry_run`) |
-| [release-smoke.yml](../.github/workflows/release-smoke.yml)         | PR-only `dry_run` wrapper                                               |
+| Workflow                                                        | Role                                                                                   |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| [release-publish.yml](../.github/workflows/release-publish.yml) | Push to `master` → tag + GitHub Release + chain `release.yml` when `version` increases |
+| [release.yml](../.github/workflows/release.yml)                 | macOS build, `gh release upload`, Homebrew tap update (or smoke when `dry_run`)        |
+| [release-smoke.yml](../.github/workflows/release-smoke.yml)     | PR-only `dry_run` wrapper                                                              |
+| [ci.yml](../.github/workflows/ci.yml)                           | PR tests, coverage, SonarCloud, release-check                                          |
 
 ## Squash commit = PR title + description
 
