@@ -145,3 +145,41 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 > This section is managed by `generate-claude-profile` -- do not edit manually.
 
 <!-- GSD:profile-end -->
+
+## rr-test Project Testing Context
+
+### Stack
+
+- **Languages:** Rust 1.96 (edition 2024), TypeScript 5.6, Svelte 5
+- **Frameworks:** SvelteKit 2, Tauri 2 (tray app), workspace crates `workpot-core`, `workpot-cli`, `workpot-tray`
+- **Test runners:** `cargo test` (Rust), Vitest 3 + jsdom (frontend), `@testing-library/svelte` (Svelte components), Storybook `@storybook/addon-vitest` (browser mode via Playwright, not in CI gate)
+- **Build tools:** Cargo workspace, npm/Vite, `just` recipes, `hk` git hooks
+
+### Test layout
+
+- **Rust integration:** `crates/<crate>/tests/*_test.rs` — primary coverage for `workpot-core` (domain/services) and `workpot-cli` (smoke/distribution)
+- **Rust unit:** inline `#[cfg(test)]` in `src-tauri/src/{commands,launch,tray}.rs`
+- **Frontend unit/component:** co-located under `src/` as `*.test.ts` (pure logic) and `*.svelte.test.ts` (Svelte runes/components)
+- **Naming:** Rust `snake_case` with `_test` suffix; TS `camelCase` with `.test.ts` / `.svelte.test.ts`
+- **Shared Rust helpers:** `crates/workpot-core/tests/common/` (git fixtures, temp dirs)
+
+### Run command
+
+| Scope                      | Command                                                                                                                                         |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Full CI parity (macOS)     | `just test` — `cargo test -p workpot-core -p workpot-cli -p workpot-tray --all-targets`, `npm run test:coverage`, `CI=true npm run tauri:build` |
+| Rust only                  | `cargo test --workspace --all-targets`                                                                                                          |
+| Frontend only              | `npm test` or `npm run test:coverage`                                                                                                           |
+| Rust LCOV (local)          | `just coverage` (requires `just coverage-tools` once)                                                                                           |
+| Pre-commit (changed files) | `hk run pre-commit` — related Vitest + workspace cargo test                                                                                     |
+| Pre-push                   | `hk run pre-push` — full Vitest + cargo test                                                                                                    |
+
+### Philosophy
+
+Pyramid is **Rust-heavy**: business logic, git/index/catalog behavior, and CLI contracts live in `workpot-core` integration tests with real temp git trees (`tempfile`, shared `common` helpers). Frontend Vitest covers pure TS utilities and Svelte tray UI via Testing Library — mock Tauri IPC boundaries, not internal rune state. No Playwright/E2E suite in CI; bundle smoke is `tauri:build` with `CI=true`. Library Rust forbids `unwrap`/`expect` (clippy); integration tests opt out via crate-level allow. Flake policy: deterministic fixtures, no network in unit tests; git state perf tests are isolated. Coverage feeds SonarCloud (`lcov-rust.info` + `lcov-js.info`); quality gate is zero new issues, not a coverage floor.
+
+### Open decisions
+
+- Whether to adopt `cargo-nextest` locally/CI (mentioned in stack table but CI uses plain `cargo test`)
+- E2E strategy beyond Storybook Vitest browser addon
+- Explicit coverage thresholds vs current Sonar quality-gate-only enforcement
