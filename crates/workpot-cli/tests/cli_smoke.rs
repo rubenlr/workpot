@@ -747,6 +747,87 @@ fn open_ambiguous_exits_one_with_numbered_paths() {
 }
 
 #[test]
+fn open_resolves_by_alias_and_prints_full_path() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+    let repo_path = named_git_fixture(home.path(), "testrepo");
+    let canon = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    set_repo_alias(home.path(), &repo_path, "myalias");
+
+    workpot_cmd(home.path())
+        .args(["open", "myalias"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(canon.to_str().expect("utf8")));
+}
+
+#[test]
+fn open_ambiguous_alias_exits_one_with_numbered_paths() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+    let one = named_git_fixture(home.path(), "repo-one");
+    let two = named_git_fixture(home.path(), "repo-two");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", one.to_str().expect("utf8")])
+        .assert()
+        .success();
+    workpot_cmd(home.path())
+        .args(["repo", "add", two.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    set_repo_alias(home.path(), &one, "dupalias");
+    set_repo_alias(home.path(), &two, "dupalias");
+
+    workpot_cmd(home.path())
+        .args(["open", "dupalias"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("ambiguous repo alias"));
+}
+
+#[test]
+fn roots_add_at_limit_surfaces_limits_message() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config_dir = home.path().join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    fs::write(
+        config_dir.join("config.toml"),
+        "watch_roots = []
+excludes = []
+
+[limits]
+max_watch_roots = 1
+max_repos = 1000
+",
+    )
+    .expect("write config");
+
+    let root_a = home.path().join("root-a");
+    let root_b = home.path().join("root-b");
+    fs::create_dir_all(&root_a).expect("root a");
+    fs::create_dir_all(&root_b).expect("root b");
+
+    workpot_cmd(home.path())
+        .args(["roots", "add", root_a.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args(["roots", "add", root_b.to_str().expect("utf8")])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("max_watch_roots"));
+}
+
+#[test]
 fn list_registered_repo_shows_icon_and_name() {
     let home = tempfile::tempdir().expect("tempdir");
     let repo_path = git_fixture(home.path());

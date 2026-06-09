@@ -296,6 +296,38 @@ fn reload_config_picks_up_disk_edits() {
 }
 
 #[test]
+fn roots_add_rejects_nonexistent_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(&config_path, empty_config_marker()).expect("write config");
+
+    let missing = dir.path().join("no-such-watch-root");
+    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    assert!(matches!(
+        ctx.roots_add(&missing),
+        Err(WorkpotError::InvalidPath(msg)) if msg.contains("does not exist")
+    ));
+}
+
+#[test]
+fn roots_add_rejects_file_not_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(&config_path, empty_config_marker()).expect("write config");
+
+    let file_path = dir.path().join("not-a-dir");
+    fs::write(&file_path, "file").expect("write file");
+
+    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    assert!(matches!(
+        ctx.roots_add(&file_path),
+        Err(WorkpotError::InvalidPath(msg)) if msg.contains("not a directory")
+    ));
+}
+
+#[test]
 fn roots_add_rejects_when_at_max_watch_roots() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("config.toml");
