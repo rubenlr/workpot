@@ -46,6 +46,8 @@ test:
 
 fix: fmt-fix
 
+alias fmt := fmt-fix
+
 # One-time: `just coverage-tools` (crate is cargo-llvm-cov; needs llvm-tools-preview)
 coverage-tools:
     rustup component add llvm-tools-preview

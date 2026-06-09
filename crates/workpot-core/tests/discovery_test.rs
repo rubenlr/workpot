@@ -67,11 +67,12 @@ fn discovery_includes_bare_and_worktree() {
     let root = tempfile::tempdir().expect("tempdir");
     let bare = root.path().join("bare.git");
     let status = common::git_cmd()
-        .args(["init", "--bare", "-q"])
+        .args(["init", "--bare", "-q", "-b", "main"])
         .arg(&bare)
         .status()
         .expect("git init --bare");
     assert!(status.success(), "bare init failed");
+    common::seed_bare_repo(&bare);
 
     let clone = root.path().join("clone-tmp");
     let status = common::git_cmd()
