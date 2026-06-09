@@ -146,6 +146,10 @@ fn release_yml_bundle_and_tap_update_wired() {
     assert!(release.contains("Contents/MacOS/workpot"));
     assert!(release.contains("Workpot-${version}-aarch64.tar.gz"));
     assert!(release.contains("sed -i \"s/version"));
+    assert!(
+        release.contains("aarch64-apple-darwin/release/bundle/macos"),
+        "bundle paths must match `tauri build --target aarch64-apple-darwin` output dir"
+    );
 }
 
 #[test]
