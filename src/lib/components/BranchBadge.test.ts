@@ -4,7 +4,8 @@ import BranchBadge from "./BranchBadge.svelte";
 import type { BranchListItemDto } from "../types";
 
 function branch(
-  partial: Partial<BranchListItemDto> & Pick<BranchListItemDto, "name" | "presence">,
+  partial: Partial<BranchListItemDto> &
+    Pick<BranchListItemDto, "name" | "presence">,
 ): BranchListItemDto {
   return { ahead: null, behind: null, ...partial };
 }
@@ -27,7 +28,9 @@ describe("BranchBadge", () => {
     });
     const span = container.querySelector("span[aria-label]");
     expect(span?.getAttribute("aria-label")).toContain("main");
-    expect(span?.getAttribute("aria-label")?.toLowerCase()).toContain("checked out");
+    expect(span?.getAttribute("aria-label")?.toLowerCase()).toContain(
+      "checked out",
+    );
   });
 
   it("non_checkout_presence_aria_label_differs", () => {
@@ -36,12 +39,21 @@ describe("BranchBadge", () => {
     });
     const span = container.querySelector("span[aria-label]");
     expect(span?.getAttribute("aria-label")).toContain("feat");
-    expect(span?.getAttribute("aria-label")?.toLowerCase()).not.toContain("checked out");
+    expect(span?.getAttribute("aria-label")?.toLowerCase()).not.toContain(
+      "checked out",
+    );
   });
 
   it("sync_suffix_shown_when_ahead_and_behind", () => {
     const { container } = render(BranchBadge, {
-      props: { branch: branch({ name: "main", presence: "checkout", ahead: 2, behind: 1 }) },
+      props: {
+        branch: branch({
+          name: "main",
+          presence: "checkout",
+          ahead: 2,
+          behind: 1,
+        }),
+      },
     });
     expect(container.textContent).toContain("↑");
     expect(container.textContent).toContain("↓");
@@ -49,7 +61,14 @@ describe("BranchBadge", () => {
 
   it("sync_suffix_omitted_when_no_upstream", () => {
     const { container } = render(BranchBadge, {
-      props: { branch: branch({ name: "main", presence: "checkout", ahead: null, behind: null }) },
+      props: {
+        branch: branch({
+          name: "main",
+          presence: "checkout",
+          ahead: null,
+          behind: null,
+        }),
+      },
     });
     expect(container.textContent).not.toContain("↑");
     expect(container.textContent).not.toContain("↓");

@@ -23,7 +23,10 @@ const emptySections: SectionedRepos = {
 
 const noop = vi.fn();
 
-function renderBody(listView: TrayListView, sections: SectionedRepos = emptySections) {
+function renderBody(
+  listView: TrayListView,
+  sections: SectionedRepos = emptySections,
+) {
   return render(TrayListBody, {
     props: {
       listView,

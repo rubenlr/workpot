@@ -2,14 +2,16 @@ import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import TrayFilterBar from "./TrayFilterBar.svelte";
 
-function renderBar(opts: {
-  filterQuery?: string;
-  allTags?: string[];
-  tagAutocompletePrefix?: string;
-  onFilterKeydown?: (e: KeyboardEvent) => void;
-  onTagSelect?: (tag: string) => void;
-  bindFilterInput?: (el: HTMLInputElement | null) => void;
-} = {}) {
+function renderBar(
+  opts: {
+    filterQuery?: string;
+    allTags?: string[];
+    tagAutocompletePrefix?: string;
+    onFilterKeydown?: (e: KeyboardEvent) => void;
+    onTagSelect?: (tag: string) => void;
+    bindFilterInput?: (el: HTMLInputElement | null) => void;
+  } = {},
+) {
   return render(TrayFilterBar, {
     props: {
       filterQuery: opts.filterQuery ?? "",

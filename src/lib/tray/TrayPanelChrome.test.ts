@@ -31,10 +31,12 @@ const baseRepo: RepoDto = {
   branches: [],
 };
 
-function renderChrome(opts: {
-  launchError?: string | null;
-  detailRepo?: RepoDto | null;
-} = {}) {
+function renderChrome(
+  opts: {
+    launchError?: string | null;
+    detailRepo?: RepoDto | null;
+  } = {},
+) {
   return render(TrayPanelChrome, {
     props: {
       listMaxHeightPx: 600,
