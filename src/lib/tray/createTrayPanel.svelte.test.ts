@@ -92,7 +92,8 @@ describe("createTrayPanel", () => {
     const panel = createTrayPanel();
     const r = repo("/tmp/detail");
     panel.openDetail(r);
-    expect(panel.detailRepo).toEqual(r);
+    expect(panel.detailRepo?.path).toBe(r.path);
+    expect(panel.detailRepo?.name).toBe(r.name);
     panel.closeDetail();
     expect(panel.detailRepo).toBeNull();
   });

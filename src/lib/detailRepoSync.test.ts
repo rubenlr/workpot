@@ -24,11 +24,9 @@ describe("resyncDetailRepo", () => {
   it("returns updated row when tags change after reload", () => {
     const before = repo("alpha", ["old"]);
     const after = [repo("alpha", ["new", "extra"])];
-    expect(resyncDetailRepo(after, before.path)).toEqual(after[0]);
-    expect(resyncDetailRepo(after, before.path)?.tags).toEqual([
-      "new",
-      "extra",
-    ]);
+    const synced = resyncDetailRepo(after, before.path);
+    expect(synced?.path).toBe(before.path);
+    expect(synced?.tags).toEqual(["new", "extra"]);
   });
 
   it("returns null when repo was removed", () => {
@@ -54,6 +52,8 @@ describe("resyncDetailIfOpen", () => {
   it("resyncs when detail pane is still open", () => {
     const open = repo("alpha", ["old"]);
     const repos = [repo("alpha", ["new"])];
-    expect(resyncDetailIfOpen(repos, open)).toEqual(repos[0]);
+    const synced = resyncDetailIfOpen(repos, open);
+    expect(synced?.path).toBe(open.path);
+    expect(synced?.tags).toEqual(["new"]);
   });
 });

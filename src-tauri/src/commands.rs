@@ -875,31 +875,89 @@ mod tests {
 
     #[test]
     fn repo_dto_parent_dir_outside_home_uses_absolute_path() {
-        let record = RepoRecord {
-            path: PathBuf::from("/var/tmp/myrepo"),
-            name: "myrepo".to_string(),
-            registered_at: 0,
-            source: SOURCE_MANUAL.to_string(),
-            git_common_dir: String::new(),
-            branch: None,
-            is_dirty: None,
-            ahead: None,
-            behind: None,
-            git_refreshed_at: None,
-            git_state_error: None,
-            last_opened_at: None,
-            pinned: true,
-            pin_order: Some(1),
-            notes: Some("note".to_string()),
-            tags: vec!["rust".to_string()],
-            alias: None,
-        };
+        let record = sample_record(PathBuf::from("/var/tmp/myrepo"));
         let dto = record_to_dto(record);
         assert_eq!(dto.parent_dir, "/var/tmp");
+    }
+
+    #[test]
+    fn record_to_dto_maps_pin_notes_and_tags() {
+        let mut record = sample_record(PathBuf::from("/var/tmp/myrepo"));
+        record.pinned = true;
+        record.pin_order = Some(1);
+        record.notes = Some("note".to_string());
+        record.tags = vec!["rust".to_string()];
+        let dto = record_to_dto(record);
         assert!(dto.pinned);
         assert_eq!(dto.pin_order, Some(1));
-        assert_eq!(dto.notes, Some("note".to_string()));
+        assert_eq!(dto.notes.as_deref(), Some("note"));
         assert_eq!(dto.tags, vec!["rust"]);
+    }
+
+    #[test]
+    fn remote_branch_short_name_strips_origin_and_rejects_head() {
+        assert_eq!(
+            remote_branch_short_name("origin/main").as_deref(),
+            Some("main")
+        );
+        assert_eq!(remote_branch_short_name("origin/HEAD"), None);
+        assert_eq!(
+            remote_branch_short_name("upstream/feature/x").as_deref(),
+            Some("feature/x")
+        );
+    }
+
+    fn stale_dirty_dto(last_opened_at: Option<i64>) -> RepoDto {
+        RepoDto {
+            path: "/tmp/x".to_string(),
+            name: "x".to_string(),
+            alias: None,
+            branch: None,
+            is_dirty: Some(true),
+            parent_dir: String::new(),
+            last_opened_at,
+            git_state_error: None,
+            pinned: false,
+            pin_order: None,
+            notes: None,
+            tags: vec![],
+            branches: vec![],
+        }
+    }
+
+    #[test]
+    fn has_stale_dirty_dto_flags_old_dirty_repos() {
+        assert!(has_stale_dirty_dto(&[stale_dirty_dto(Some(0))], 7));
+        assert!(has_stale_dirty_dto(&[stale_dirty_dto(None)], 7));
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        assert!(!has_stale_dirty_dto(&[stale_dirty_dto(Some(now))], 7));
+        assert!(!has_stale_dirty_dto(
+            &[RepoDto {
+                is_dirty: Some(false),
+                ..stale_dirty_dto(Some(0))
+            }],
+            7
+        ));
+    }
+
+    #[test]
+    fn branch_list_item_marks_checkout_branch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = git2::Repository::init(dir.path()).expect("init");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        let tree_id = repo.index().expect("index").write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("find tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+        let local = collect_local_branch_names(&repo).expect("local branches");
+        let remote_short_names = collect_remote_branch_short_names(&repo);
+        let name = local.current.clone().expect("checkout branch");
+        let item = branch_list_item(&repo, name.clone(), &local, &remote_short_names);
+        assert_eq!(item.name, name);
+        assert_eq!(item.presence, BranchPresenceDto::Checkout);
     }
 
     #[test]
@@ -976,5 +1034,40 @@ mod tests {
         assert!(validate_notes(&Some(long)).is_err());
         assert!(validate_notes(&Some("x".repeat(500))).is_ok());
         assert!(validate_notes(&None).is_ok());
+    }
+
+    #[test]
+    fn list_branches_sync_returns_checkout_for_init_repo() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo_path = dir.path().join("repo");
+        std::fs::create_dir_all(&repo_path).expect("mkdir");
+        let repo = git2::Repository::init(&repo_path).expect("init");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        let tree_id = repo.index().expect("index").write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("find tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+
+        let items = list_branches_sync(repo_path.to_str().expect("utf8 path")).expect("sync");
+        assert!(!items.is_empty());
+        assert_eq!(items[0].presence, BranchPresenceDto::Checkout);
+    }
+
+    #[test]
+    fn list_repos_dto_pipeline_from_registered_repo() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("config.toml");
+        let db_path = dir.path().join("workpot.db");
+        std::fs::write(&config_path, "watch_roots = []\nexcludes = []\n").expect("config");
+        let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+        let repo_path = dir.path().join("sample");
+        std::fs::create_dir_all(&repo_path).expect("mkdir");
+        git2::Repository::init(&repo_path).expect("git init");
+        ctx.register_manual(&repo_path).expect("register");
+        let records = ctx.list_repos().expect("list");
+        let dtos = repo_records_to_dtos(records);
+        assert_eq!(dtos.len(), 1);
+        assert_eq!(dtos[0].name, "sample");
+        assert!(dtos[0].path.ends_with("/sample"));
     }
 }

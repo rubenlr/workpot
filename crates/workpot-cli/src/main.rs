@@ -418,3 +418,74 @@ fn map_roots_error(err: WorkpotError) -> anyhow::Error {
         other => other.into(),
     }
 }
+
+#[cfg(test)]
+mod cli_parse_tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn parses_top_level_subcommands() {
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "paths"]).unwrap().command,
+            Commands::Paths
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "index"]).unwrap().command,
+            Commands::Index
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "list"]).unwrap().command,
+            Commands::List
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "search", "foo"])
+                .unwrap()
+                .command,
+            Commands::Search { .. }
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "open", "myrepo"])
+                .unwrap()
+                .command,
+            Commands::Open { .. }
+        ));
+    }
+
+    #[test]
+    fn parses_repo_roots_and_tag_subcommands() {
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "repo", "add", "/tmp/r"])
+                .unwrap()
+                .command,
+            Commands::Repo(RepoCommands::Add { .. })
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "repo", "remove", "/tmp/r"])
+                .unwrap()
+                .command,
+            Commands::Repo(RepoCommands::Remove { .. })
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "roots", "remove", "/tmp/root", "--skip-prune"])
+                .unwrap()
+                .command,
+            Commands::Roots(RootsCommands::Remove {
+                skip_prune: true,
+                ..
+            })
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "tag", "add", "repo", "work"])
+                .unwrap()
+                .command,
+            Commands::Tag(TagAction::Add { .. })
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "tag", "list", "repo"])
+                .unwrap()
+                .command,
+            Commands::Tag(TagAction::List { .. })
+        ));
+    }
+}

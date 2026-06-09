@@ -150,6 +150,10 @@ fn release_yml_bundle_and_tap_update_wired() {
         release.contains("aarch64-apple-darwin/release/bundle/macos"),
         "bundle paths must match `tauri build --target aarch64-apple-darwin` output dir"
     );
+    assert!(
+        !release.contains("src-tauri/target"),
+        "bundle paths must use workspace-root target/, not src-tauri/target/"
+    );
 }
 
 #[test]

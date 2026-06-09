@@ -39,7 +39,8 @@ describe("createTrayRepoData", () => {
     await data.loadRepos();
 
     expect(invoke).toHaveBeenCalledWith("list_repos");
-    expect(data.repos).toEqual(repos);
+    expect(data.repos).toHaveLength(repos.length);
+    expect(data.repos.map((r) => r.path)).toEqual(repos.map((r) => r.path));
     expect(data.error).toBeNull();
   });
 

@@ -203,3 +203,36 @@ fn detect_ahead_behind(
         Some(i64::try_from(behind).unwrap_or(i64::MAX)),
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use git2::Repository;
+
+    #[test]
+    fn open_and_query_bare_repo_skips_dirty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        Repository::init_bare(&path).expect("init bare");
+        let state = open_and_query(&path).expect("query");
+        assert_eq!(state.is_dirty, None);
+    }
+
+    #[test]
+    fn open_and_query_unborn_branch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        Repository::init(&path).expect("init");
+        let state = open_and_query(&path).expect("query");
+        assert_eq!(state.branch.as_deref(), Some(crate::domain::BRANCH_UNBORN));
+        assert_eq!(state.is_dirty, Some(false));
+    }
+
+    #[test]
+    fn open_and_query_non_git_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        let err = open_and_query(&path).unwrap_err();
+        assert!(matches!(err, WorkpotError::GitUnavailable(_)));
+    }
+}
