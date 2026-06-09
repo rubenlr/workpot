@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable recipes (shell steps, Cursor launch, multi-step workflows) — Phase 7
 - macOS `.app` / DMG distribution and install/update UX
 
+## [0.0.2] - 2026-06-09
+
+Maintenance release: tray error handling cleanup and release pipeline fixes for Homebrew distribution.
+
+- Simplified tray list error handling — repo load failures surface via `setListError` instead of split error paths
+- Added `clean:all` npm script for full frontend artifact and lockfile cleanup
+- Version sync validates pnpm manifests only (dropped stale `package-lock.json` checks)
+
 ## [0.0.1] - 2026-05-31
 
 First public preview: local-only repo index, git-aware menu bar finder, and Cursor launch on macOS.
@@ -36,5 +44,6 @@ First public preview: local-only repo index, git-aware menu bar finder, and Curs
 - Bare and worktree paths canonicalized consistently during discovery
 - Unified CLI message when the repository index cap is exceeded
 
+[0.0.2]: https://github.com/rubenlr/workpot/releases/tag/v0.0.2
 [0.0.1]: https://github.com/rubenlr/workpot/releases/tag/v0.0.1
-[Unreleased]: https://github.com/rubenlr/workpot/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/rubenlr/workpot/compare/v0.0.2...HEAD
