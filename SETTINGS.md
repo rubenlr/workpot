@@ -68,7 +68,7 @@ Path templates are global only — there are no per-repo template overrides in v
 | Key                             | Default                         | Description                                                                                                                          |
 | ------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `migration.temp_suffix`         | `".temp"`                       | Suffix appended to the original directory name during conversion. Must not be empty.                                                 |
-| `migration.delete_original`     | `false`                         | When `true`, the renamed `.temp` directory is deleted after a successful conversion. When `false`, it is kept for manual inspection. |
+| `migration.delete_original`     | `false`                         | When `true`, the renamed `.temp` directory is deleted after a successful conversion (including any untracked files it contains). Conversion is blocked if untracked files exist. When `false`, `.temp` is kept for manual inspection. |
 | `migration.bare_repo_template`  | `"{project}/bare.git"`          | Path template for the bare git repository. Must contain `{project}`.                                                                 |
 | `migration.worktree_template`   | `"{project}/wtrees/{worktree}"` | Path template for the first worktree. Must contain `{project}` and `{worktree}`.                                                     |
 | `migration.project_name_source` | `"folder_name"`                 | Source for `{project}`: `folder_name` uses the directory name; `alias` uses the workpot alias (falls back to folder name if unset).  |
@@ -129,8 +129,16 @@ Conversion is blocked unless all of the following are true:
 
 - No dirty state in any worktree (for bare repos, all linked worktrees are checked).
 - Repository must have at least one commit (unborn HEAD is rejected).
+- Normal repositories must be on a named branch (detached HEAD is rejected).
 - Every local branch has an upstream and is not ahead of it.
 - No stash entries exist.
+- When `migration.delete_original = true`, no untracked files may exist in any worktree (they would be deleted with the `.temp` directory).
+
+Dry-run checks the same path collisions as a real run, including an existing `{original}{temp_suffix}` directory.
+
+### Bare repo launch path
+
+When opening a bare catalog entry, Workpot launches the linked worktree whose checked-out branch matches the catalog `branch` field. If `branch` is unset, the first linked worktree is used — for repos with multiple worktrees, ensure git state is refreshed (`workpot index`) so the catalog branch is current.
 
 ### Recovery from interrupted conversion
 
