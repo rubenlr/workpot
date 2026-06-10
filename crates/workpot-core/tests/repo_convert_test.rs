@@ -107,6 +107,26 @@ fn stash_normal_repo(parent: &Path) -> PathBuf {
     path
 }
 
+fn unborn_normal_repo(parent: &Path) -> PathBuf {
+    let path = parent.join("unborn");
+    fs::create_dir_all(&path).expect("mkdir");
+    let status = common::git_cmd()
+        .args(["init", "-q", "-b", "main"])
+        .arg(&path)
+        .status()
+        .expect("init");
+    assert!(status.success());
+    for (key, val) in [("user.email", "t@example.com"), ("user.name", "Test")] {
+        let status = common::git_cmd()
+            .args(["config", key, val])
+            .current_dir(&path)
+            .status()
+            .expect("config");
+        assert!(status.success());
+    }
+    path
+}
+
 fn no_upstream_normal_repo(parent: &Path) -> PathBuf {
     let path = parent.join("no-upstream");
     fs::create_dir_all(&path).expect("mkdir");
@@ -275,6 +295,14 @@ fn preflight_blocks_dirty() {
     let path = dirty_normal_repo(dir.path());
     let result = repo_convert::run_preflight(&path).expect("preflight");
     assert!(matches!(result, PreflightResult::DirtyWorktree { .. }));
+}
+
+#[test]
+fn preflight_blocks_unborn() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = unborn_normal_repo(dir.path());
+    let result = repo_convert::run_preflight(&path).expect("preflight");
+    assert_eq!(result, PreflightResult::UnbornBranch);
 }
 
 #[test]

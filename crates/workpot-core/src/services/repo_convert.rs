@@ -30,6 +30,7 @@ pub enum PreflightResult {
         count: usize,
     },
     HasStash,
+    UnbornBranch,
     NotInCatalog,
     WrongLayout {
         current: &'static str,
@@ -84,9 +85,7 @@ pub fn run_preflight(path: &Path) -> Result<PreflightResult> {
 
     let state = git::open_and_query(&canonical)?;
     if state.branch.as_deref() == Some(BRANCH_UNBORN) {
-        return Ok(PreflightResult::NoUpstream {
-            branch: BRANCH_UNBORN.to_string(),
-        });
+        return Ok(PreflightResult::UnbornBranch);
     }
 
     let worktree_paths = if is_bare_repo(&canonical) {
@@ -284,6 +283,9 @@ fn preflight_message(result: &PreflightResult) -> String {
             format!("branch '{branch}' is {count} commits ahead of upstream")
         }
         PreflightResult::HasStash => "repository has stash entries".into(),
+        PreflightResult::UnbornBranch => {
+            "repository has no commits; create an initial commit before converting".into()
+        }
         PreflightResult::NotInCatalog => "repository not in catalog".into(),
         PreflightResult::WrongLayout { current, requested } => {
             format!("already {current}, cannot convert to {requested}")
