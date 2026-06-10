@@ -545,7 +545,15 @@ pub fn convert_repo(
             if !status.success() {
                 return Err(WorkpotError::ConversionFailed("clone failed".into()));
             }
-            health_check_normal(&target_path)?;
+            if let Err(e) = health_check_normal(&target_path) {
+                if let Err(cleanup) = std::fs::remove_dir_all(&target_path) {
+                    log::warn!(
+                        "failed to remove partial normal checkout {} after health check failure: {cleanup}",
+                        target_path.display()
+                    );
+                }
+                return Err(e);
+            }
             let gcd = git::resolve_git_common_dir(&target_path)?
                 .display()
                 .to_string();
