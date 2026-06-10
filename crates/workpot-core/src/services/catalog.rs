@@ -1,6 +1,6 @@
 use crate::domain::{Config, RepoRecord, SOURCE_MANUAL, SOURCE_SCAN};
 use crate::error::{Result, WorkpotError};
-use crate::infra::git::resolve_git_common_dir;
+use crate::infra::git::{self, resolve_git_common_dir};
 use crate::save_config;
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
@@ -158,7 +158,48 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
         .collect())
 }
 
+/// Look up a registered repo by its SQLite path key.
+pub fn get_repo_by_path(conn: &Connection, path_key: &str) -> Result<RepoRecord> {
+    conn.query_row(
+        "SELECT path, name, registered_at, source, git_common_dir,
+                branch, is_dirty, ahead, behind, git_refreshed_at, git_state_error, last_opened_at,
+                pinned, pin_order, notes, alias
+         FROM repos WHERE path = ?1 AND excluded = 0",
+        params![path_key],
+        |row| {
+            let path: String = row.get(0)?;
+            let pinned: i64 = row.get(12)?;
+            Ok(RepoRecord {
+                path: PathBuf::from(path),
+                name: row.get(1)?,
+                registered_at: row.get(2)?,
+                source: row.get(3)?,
+                git_common_dir: row.get(4)?,
+                branch: row.get(5)?,
+                is_dirty: row.get::<_, Option<i64>>(6)?.map(|v| v != 0),
+                ahead: row.get(7)?,
+                behind: row.get(8)?,
+                git_refreshed_at: row.get(9)?,
+                git_state_error: row.get(10)?,
+                last_opened_at: row.get(11)?,
+                pinned: pinned != 0,
+                pin_order: row.get(13)?,
+                notes: row.get(14)?,
+                tags: vec![],
+                alias: row.get(15)?,
+            })
+        },
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => WorkpotError::NotFound(path_key.to_string()),
+        e => WorkpotError::Database(e),
+    })
+}
+
 /// Absolute path for an indexed repo launch, after validating it is in the catalog.
+///
+/// Bare repos resolve to their first linked worktree checkout so IDE launch targets
+/// the developer workspace rather than the bare object store.
 pub fn indexed_launch_path(conn: &Connection, path: &Path) -> Result<PathBuf> {
     let (repo_path, path_key) = resolve_repo_location(conn, path)?;
     let count: i64 = conn.query_row(
@@ -168,6 +209,13 @@ pub fn indexed_launch_path(conn: &Connection, path: &Path) -> Result<PathBuf> {
     )?;
     if count == 0 {
         return Err(WorkpotError::NotFound(path_key));
+    }
+    if is_bare_repo(&repo_path) {
+        let worktrees = git::list_worktree_paths(&repo_path)?;
+        return worktrees
+            .into_iter()
+            .next()
+            .ok_or_else(|| WorkpotError::GitUnavailable(repo_path));
     }
     Ok(repo_path)
 }
