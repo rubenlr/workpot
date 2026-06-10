@@ -560,3 +560,174 @@ launch_cmd = "/usr/bin/true {path}"
         "last_opened_at should update when launching via bare catalog key"
     );
 }
+
+fn test_ctx_with_migration(parent: &Path, extra: &str) -> AppContext {
+    let config_path = parent.join("config.toml");
+    let db_path = parent.join("workpot.db");
+    fs::write(
+        &config_path,
+        format!("watch_roots = []\nexcludes = []\n{extra}"),
+    )
+    .expect("config");
+    AppContext::open_with_paths(config_path, db_path).expect("open ctx")
+}
+
+#[test]
+fn resolve_project_name_uses_alias_when_configured() {
+    use workpot_core::domain::RepoRecord;
+    use workpot_core::domain::config::{MigrationConfig, ProjectNameSource};
+
+    let mut cfg = MigrationConfig::default();
+    cfg.project_name_source = ProjectNameSource::Alias;
+    let record = RepoRecord {
+        path: PathBuf::from("/tmp/repo"),
+        name: "folder-name".into(),
+        registered_at: 0,
+        source: "manual".into(),
+        git_common_dir: String::new(),
+        branch: None,
+        is_dirty: None,
+        ahead: None,
+        behind: None,
+        git_refreshed_at: None,
+        git_state_error: None,
+        last_opened_at: None,
+        pinned: false,
+        pin_order: None,
+        notes: None,
+        tags: vec![],
+        alias: Some("display-alias".into()),
+    };
+    assert_eq!(
+        repo_convert::resolve_project_name(&cfg, &record),
+        "display-alias"
+    );
+}
+
+#[test]
+fn resolve_project_name_falls_back_to_folder_without_alias() {
+    use workpot_core::domain::RepoRecord;
+    use workpot_core::domain::config::{MigrationConfig, ProjectNameSource};
+
+    let mut cfg = MigrationConfig::default();
+    cfg.project_name_source = ProjectNameSource::Alias;
+    let record = RepoRecord {
+        path: PathBuf::from("/tmp/repo"),
+        name: "folder-name".into(),
+        registered_at: 0,
+        source: "manual".into(),
+        git_common_dir: String::new(),
+        branch: None,
+        is_dirty: None,
+        ahead: None,
+        behind: None,
+        git_refreshed_at: None,
+        git_state_error: None,
+        last_opened_at: None,
+        pinned: false,
+        pin_order: None,
+        notes: None,
+        tags: vec![],
+        alias: None,
+    };
+    assert_eq!(
+        repo_convert::resolve_project_name(&cfg, &record),
+        "folder-name"
+    );
+}
+
+#[test]
+fn convert_rejects_path_traversal_template() {
+    use workpot_core::WorkpotError;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ctx = test_ctx_with_migration(
+        dir.path(),
+        r#"[migration]
+bare_repo_template = "{project}/../../outside/bare.git"
+worktree_template = "{project}/wtrees/{worktree}"
+"#,
+    );
+    let path = normal_repo_clean_synced(dir.path());
+    ctx.register_manual(&path).expect("register");
+
+    let err = ctx
+        .convert_repo(&path, ConvertTarget::Bare, true)
+        .expect_err("traversal template should fail");
+    assert!(
+        matches!(err, WorkpotError::ConversionPreflight(ref msg) if msg.contains("escapes parent")),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn dry_run_rejects_existing_temp_path() {
+    use workpot_core::WorkpotError;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ctx = test_ctx(dir.path());
+    let path = normal_repo_clean_synced(dir.path());
+    ctx.register_manual(&path).expect("register");
+
+    let temp_path = path.with_file_name(format!(
+        "{}{}",
+        path.file_name().and_then(|n| n.to_str()).expect("name"),
+        ".temp"
+    ));
+    fs::create_dir_all(&temp_path).expect("temp dir");
+
+    let err = ctx
+        .convert_repo(&path, ConvertTarget::Bare, true)
+        .expect_err("existing temp should fail dry-run");
+    assert!(
+        matches!(err, WorkpotError::ConversionPreflight(ref msg) if msg.contains("temp path already exists")),
+        "unexpected error: {err:?}"
+    );
+    assert!(path.exists(), "dry-run must not rename source");
+}
+
+#[test]
+fn convert_blocks_untracked_when_delete_original() {
+    use workpot_core::WorkpotError;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ctx = test_ctx_with_migration(
+        dir.path(),
+        r#"[migration]
+delete_original = true
+"#,
+    );
+    let path = normal_repo_clean_synced(dir.path());
+    ctx.register_manual(&path).expect("register");
+    fs::write(path.join("untracked.txt"), "orphan data\n").expect("untracked");
+
+    let err = ctx
+        .convert_repo(&path, ConvertTarget::Bare, false)
+        .expect_err("untracked with delete_original should fail");
+    assert!(
+        matches!(err, WorkpotError::ConversionPreflight(ref msg) if msg.contains("untracked files")),
+        "unexpected error: {err:?}"
+    );
+    assert!(
+        path.exists(),
+        "conversion must not rename on preflight failure"
+    );
+}
+
+#[test]
+fn convert_rejects_already_bare_layout() {
+    use workpot_core::WorkpotError;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ctx = test_ctx(dir.path());
+    let (bare_path, _) = bare_repo_with_worktree(dir.path());
+    ctx.register_manual(&bare_path).expect("register");
+
+    let err = ctx
+        .convert_repo(&bare_path, ConvertTarget::Bare, false)
+        .expect_err("bare→bare should fail");
+    assert!(
+        matches!(err, WorkpotError::ConversionPreflight(ref msg) if msg.contains("already bare")),
+        "unexpected error: {err:?}"
+    );
+}

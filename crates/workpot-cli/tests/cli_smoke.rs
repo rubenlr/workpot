@@ -1189,3 +1189,38 @@ fn cli_parse_convert_help() {
         .success()
         .stdout(predicate::str::contains("bare").and(predicate::str::contains("normal")));
 }
+
+#[test]
+fn convert_dry_run_rejects_existing_temp() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = normal_repo_clean_synced(home.path());
+    let temp_path = repo_path.with_file_name(format!(
+        "{}{}",
+        repo_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("name"),
+        ".temp"
+    ));
+    std::fs::create_dir_all(&temp_path).expect("temp dir");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args([
+            "repo",
+            "convert",
+            repo_path.to_str().expect("utf8"),
+            "--to",
+            "bare",
+            "--dry-run",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("temp path already exists"));
+
+    assert!(repo_path.exists(), "dry-run must not rename source");
+}
