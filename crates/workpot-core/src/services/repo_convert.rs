@@ -496,6 +496,12 @@ pub fn convert_repo(
             }
 
             if let Err(e) = health_check_bare(&bare_git_path, &worktree_path) {
+                if let Err(cleanup) = std::fs::remove_dir_all(&worktree_path) {
+                    log::warn!(
+                        "failed to remove partial worktree {} after health check failure: {cleanup}",
+                        worktree_path.display()
+                    );
+                }
                 if let Err(cleanup) = std::fs::remove_dir_all(&bare_git_path) {
                     log::warn!(
                         "failed to remove partial bare repo {} after health check failure: {cleanup}",
