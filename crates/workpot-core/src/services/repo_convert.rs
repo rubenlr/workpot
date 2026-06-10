@@ -1,5 +1,5 @@
 use crate::domain::config::{MigrationConfig, ProjectNameSource};
-use crate::domain::{Config, RepoRecord};
+use crate::domain::{BRANCH_UNBORN, Config, RepoRecord};
 use crate::error::{Result, WorkpotError};
 use crate::infra::git::{self, SyncBlocker};
 use crate::services::catalog::{self, is_bare_repo};
@@ -81,6 +81,13 @@ pub fn run_preflight(path: &Path) -> Result<PreflightResult> {
     let canonical = path
         .canonicalize()
         .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?;
+
+    let state = git::open_and_query(&canonical)?;
+    if state.branch.as_deref() == Some(BRANCH_UNBORN) {
+        return Ok(PreflightResult::NoUpstream {
+            branch: BRANCH_UNBORN.to_string(),
+        });
+    }
 
     let worktree_paths = if is_bare_repo(&canonical) {
         git::list_worktree_paths(&canonical)?
@@ -178,10 +185,73 @@ fn is_linked_worktree(path: &Path) -> bool {
 }
 
 fn find_record(conn: &Connection, path_key: &str) -> Result<RepoRecord> {
-    catalog::list_repos(conn)?
+    catalog::get_repo_by_path(conn, path_key)
+}
+
+fn existing_worktree_dir_names(dir: &Path) -> Vec<String> {
+    std::fs::read_dir(dir)
         .into_iter()
-        .find(|r| r.path.display().to_string() == path_key)
-        .ok_or_else(|| WorkpotError::ConversionPreflight("repository not in catalog".into()))
+        .flatten()
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| entry.file_name().to_str().map(String::from))
+        .collect()
+}
+
+fn worktree_parent_dir(config: &MigrationConfig, project: &str, parent_dir: &Path) -> PathBuf {
+    let sample = resolve_template(&config.worktree_template, project, "__wt__");
+    parent_dir
+        .join(sample)
+        .parent()
+        .map_or_else(|| parent_dir.join(project), |p| p.to_path_buf())
+}
+
+fn worktree_name_for_branch(
+    config: &MigrationConfig,
+    project: &str,
+    branch: &str,
+    parent_dir: &Path,
+) -> String {
+    let wt_parent = worktree_parent_dir(config, project, parent_dir);
+    let existing = if wt_parent.exists() {
+        existing_worktree_dir_names(&wt_parent)
+    } else {
+        Default::default()
+    };
+    unique_worktree_name(branch, &existing)
+}
+
+fn reject_blocked_preflight(preflight: PreflightResult) -> Result<ConvertResult> {
+    Err(WorkpotError::ConversionPreflight(preflight_message(
+        &preflight,
+    )))
+}
+
+fn check_target_paths_exist(resolved_paths: &[(String, PathBuf)], source: &Path) -> Result<()> {
+    let source_key = source
+        .canonicalize()
+        .unwrap_or_else(|_| source.to_path_buf())
+        .display()
+        .to_string();
+    for (label, path) in resolved_paths {
+        if label == "temp" {
+            continue;
+        }
+        let path_key = path
+            .canonicalize()
+            .unwrap_or_else(|_| path.clone())
+            .display()
+            .to_string();
+        if path_key == source_key {
+            continue;
+        }
+        if path.exists() {
+            return Err(WorkpotError::ConversionPreflight(format!(
+                "{label} path already exists: {}; remove or adjust templates",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate_resolved_path(resolved: &Path, parent: &Path) -> Result<()> {
@@ -247,7 +317,19 @@ fn health_check_bare(bare_path: &Path, worktree_path: &Path) -> Result<()> {
     let wt = worktree_path
         .canonicalize()
         .unwrap_or_else(|_| worktree_path.to_path_buf());
-    if !listing.contains(wt.to_str().unwrap_or("")) {
+    let wt_str = wt
+        .to_str()
+        .ok_or_else(|| WorkpotError::ConversionFailed("worktree path not UTF-8".into()))?;
+    let mut found = false;
+    for line in listing.lines() {
+        if let Some(path) = line.strip_prefix("worktree ")
+            && path == wt_str
+        {
+            found = true;
+            break;
+        }
+    }
+    if !found {
         return Err(WorkpotError::ConversionFailed(
             "health check failed: expected worktree missing".into(),
         ));
@@ -295,28 +377,31 @@ pub fn convert_repo(
     let currently_bare = is_bare_repo(&canonical);
     match (target, currently_bare) {
         (ConvertTarget::Bare, true) => {
-            return Err(WorkpotError::ConversionPreflight("already bare".into()));
+            return reject_blocked_preflight(PreflightResult::WrongLayout {
+                current: "bare",
+                requested: "bare",
+            });
         }
         (ConvertTarget::Normal, false) => {
-            return Err(WorkpotError::ConversionPreflight("already normal".into()));
+            return reject_blocked_preflight(PreflightResult::WrongLayout {
+                current: "normal",
+                requested: "normal",
+            });
         }
         _ => {}
     }
 
-    let record = find_record(conn, &path_key)?;
+    let record = match find_record(conn, &path_key) {
+        Ok(record) => record,
+        Err(WorkpotError::NotFound(_)) => {
+            return reject_blocked_preflight(PreflightResult::NotInCatalog);
+        }
+        Err(e) => return Err(e),
+    };
 
     let preflight = run_preflight(&canonical)?;
     if preflight != PreflightResult::Ready {
-        if dry_run {
-            let resolved_paths = resolve_target_paths(config, &record, &canonical, target)?;
-            return Ok(ConvertResult::DryRun {
-                preflight,
-                resolved_paths,
-            });
-        }
-        return Err(WorkpotError::ConversionPreflight(preflight_message(
-            &preflight,
-        )));
+        return reject_blocked_preflight(preflight);
     }
 
     let resolved_paths = resolve_target_paths(config, &record, &canonical, target)?;
@@ -327,6 +412,8 @@ pub fn convert_repo(
             resolved_paths,
         });
     }
+
+    check_target_paths_exist(&resolved_paths, &canonical)?;
 
     let folder_name = canonical
         .file_name()
@@ -399,10 +486,24 @@ pub fn convert_repo(
                 .status()
                 .map_err(WorkpotError::Io)?;
             if !status.success() {
+                if let Err(e) = std::fs::remove_dir_all(&bare_git_path) {
+                    log::warn!(
+                        "failed to remove partial bare repo {} after worktree add failure: {e}",
+                        bare_git_path.display()
+                    );
+                }
                 return Err(WorkpotError::ConversionFailed("worktree add failed".into()));
             }
 
-            health_check_bare(&bare_git_path, &worktree_path)?;
+            if let Err(e) = health_check_bare(&bare_git_path, &worktree_path) {
+                if let Err(cleanup) = std::fs::remove_dir_all(&bare_git_path) {
+                    log::warn!(
+                        "failed to remove partial bare repo {} after health check failure: {cleanup}",
+                        bare_git_path.display()
+                    );
+                }
+                return Err(e);
+            }
             let gcd = bare_git_path
                 .canonicalize()
                 .map_err(WorkpotError::Io)?
@@ -511,7 +612,8 @@ fn resolve_target_paths(
                 .branch
                 .ok_or_else(|| WorkpotError::ConversionPreflight("no current branch".into()))?;
             let bare_rel = resolve_template(&config.migration.bare_repo_template, &project, "");
-            let worktree_name = unique_worktree_name(&branch, &[]);
+            let worktree_name =
+                worktree_name_for_branch(&config.migration, &project, &branch, parent_dir);
             let wt_rel = resolve_template(
                 &config.migration.worktree_template,
                 &project,
@@ -552,7 +654,8 @@ fn conversion_targets(
                 .branch
                 .ok_or_else(|| WorkpotError::ConversionPreflight("no current branch".into()))?;
             let bare_rel = resolve_template(&config.migration.bare_repo_template, &project, "");
-            let worktree_name = unique_worktree_name(&branch, &[]);
+            let worktree_name =
+                worktree_name_for_branch(&config.migration, &project, &branch, parent_dir);
             let wt_rel = resolve_template(
                 &config.migration.worktree_template,
                 &project,
