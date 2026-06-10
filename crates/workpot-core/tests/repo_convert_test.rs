@@ -6,6 +6,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use workpot_core::AppContext;
 use workpot_core::domain::config::MigrationConfig;
+use workpot_core::services::catalog;
+use workpot_core::services::git_state::refresh_and_persist;
 use workpot_core::services::launch::launch_repo;
 use workpot_core::services::repo_convert::{
     self, ConvertResult, ConvertTarget, PreflightResult, catalog_path_swap,
@@ -222,6 +224,30 @@ fn bare_repo_with_dirty_worktree(parent: &Path) -> PathBuf {
     bare_path
 }
 
+fn bare_repo_with_two_worktrees(parent: &Path) -> (PathBuf, PathBuf, PathBuf) {
+    let (bare_path, wt_main) = bare_repo_with_worktree(parent);
+    let status = common::git_cmd()
+        .args(["branch", "feature", "main"])
+        .current_dir(&bare_path)
+        .status()
+        .expect("branch feature");
+    assert!(status.success());
+    let wt_feature = parent.join("wt-feature");
+    let status = common::git_cmd()
+        .args([
+            "worktree",
+            "add",
+            "-q",
+            wt_feature.to_str().expect("utf8"),
+            "feature",
+        ])
+        .current_dir(&bare_path)
+        .status()
+        .expect("worktree add feature");
+    assert!(status.success());
+    (bare_path, wt_main, wt_feature)
+}
+
 fn test_ctx(parent: &Path) -> AppContext {
     let config_path = parent.join("config.toml");
     let db_path = parent.join("workpot.db");
@@ -296,6 +322,20 @@ fn preflight_blocks_dirty() {
     let path = dirty_normal_repo(dir.path());
     let result = repo_convert::run_preflight(&path).expect("preflight");
     assert!(matches!(result, PreflightResult::DirtyWorktree { .. }));
+}
+
+#[test]
+fn preflight_blocks_detached_head() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = normal_repo_clean_synced(dir.path());
+    let status = common::git_cmd()
+        .args(["checkout", "--detach", "HEAD"])
+        .current_dir(&path)
+        .status()
+        .expect("detach");
+    assert!(status.success());
+    let result = repo_convert::run_preflight(&path).expect("preflight");
+    assert_eq!(result, PreflightResult::DetachedHead);
 }
 
 #[test]
@@ -454,6 +494,33 @@ fn convert_bare_to_normal() {
     let repos = ctx.list_repos().expect("list");
     assert!(repos.iter().any(|r| r.path == to));
     assert!(to.join(".git").exists());
+}
+
+#[test]
+fn indexed_launch_path_prefers_catalog_branch_among_worktrees() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ctx = test_ctx(dir.path());
+    let (bare_path, wt_main, wt_feature) = bare_repo_with_two_worktrees(dir.path());
+    let bare_key = bare_path
+        .canonicalize()
+        .expect("canon")
+        .display()
+        .to_string();
+    ctx.register_manual(&bare_path).expect("register");
+    let conn = workpot_core::infra::store::open_connection(ctx.database_path()).expect("conn");
+    refresh_and_persist(&conn, &bare_path).expect("refresh");
+    conn.execute(
+        "UPDATE repos SET branch = 'feature' WHERE path = ?1",
+        rusqlite::params![bare_key],
+    )
+    .expect("set branch");
+
+    let resolved = catalog::indexed_launch_path(&conn, &bare_path).expect("resolve");
+    assert_eq!(
+        resolved,
+        wt_feature.canonicalize().expect("canon feature wt")
+    );
+    assert_ne!(resolved, wt_main.canonicalize().expect("canon main wt"));
 }
 
 #[test]
