@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use workpot_core::AppContext;
 use workpot_core::domain::config::MigrationConfig;
+use workpot_core::services::launch::launch_repo;
 use workpot_core::services::repo_convert::{
     self, ConvertResult, ConvertTarget, PreflightResult, catalog_path_swap,
 };
@@ -453,4 +454,42 @@ fn convert_bare_to_normal() {
     let repos = ctx.list_repos().expect("list");
     assert!(repos.iter().any(|r| r.path == to));
     assert!(to.join(".git").exists());
+}
+
+#[test]
+fn launch_bare_catalog_path_updates_last_opened_at() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(
+        &config_path,
+        r#"watch_roots = []
+excludes = []
+launch_cmd = "/usr/bin/true {path}"
+"#,
+    )
+    .expect("write config");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let path = normal_repo_clean_synced(dir.path());
+    ctx.register_manual(&path).expect("register");
+
+    let result = ctx
+        .convert_repo(&path, ConvertTarget::Bare, false)
+        .expect("convert");
+    let ConvertResult::Converted { to: bare_path, .. } = result else {
+        panic!("expected Converted, got {result:?}");
+    };
+    let bare_key = bare_path.display().to_string();
+
+    launch_repo(&ctx, &bare_key).expect("launch");
+
+    let repos = ctx.list_repos().expect("list");
+    let bare = repos
+        .iter()
+        .find(|r| r.path == bare_path)
+        .expect("bare catalog row");
+    assert!(
+        bare.last_opened_at.is_some(),
+        "last_opened_at should update when launching via bare catalog key"
+    );
 }
