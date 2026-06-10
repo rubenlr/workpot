@@ -1034,3 +1034,158 @@ fn workpot_search_matches_by_alias() {
         .success()
         .stdout(predicate::str::contains("myalias"));
 }
+
+fn seed_bare_repo(bare: &std::path::Path) {
+    let seed = bare
+        .parent()
+        .expect("bare parent")
+        .join(".seed-bare-workpot");
+    let status = git_cmd()
+        .args(["init", "-q", "-b", "main"])
+        .arg(&seed)
+        .status()
+        .expect("seed init");
+    assert!(status.success(), "seed init failed");
+    for (key, val) in [("user.email", "t@example.com"), ("user.name", "Test")] {
+        let status = git_cmd()
+            .args(["config", key, val])
+            .current_dir(&seed)
+            .status()
+            .expect("seed config");
+        assert!(status.success(), "seed config {key} failed");
+    }
+    let status = git_cmd()
+        .args(["commit", "--allow-empty", "-m", "seed", "-q"])
+        .current_dir(&seed)
+        .status()
+        .expect("seed commit");
+    assert!(status.success(), "seed commit failed");
+    let status = git_cmd()
+        .args(["remote", "add", "origin"])
+        .arg(bare)
+        .current_dir(&seed)
+        .status()
+        .expect("seed remote");
+    assert!(status.success(), "seed remote failed");
+    let status = git_cmd()
+        .args(["push", "-q", "-u", "origin", "main"])
+        .current_dir(&seed)
+        .status()
+        .expect("seed push");
+    assert!(status.success(), "seed push failed");
+    std::fs::remove_dir_all(&seed).expect("seed cleanup");
+}
+
+fn normal_repo_clean_synced(parent: &std::path::Path) -> PathBuf {
+    let bare_path = parent.join("remote.git");
+    std::fs::create_dir_all(&bare_path).expect("bare dir");
+    let status = git_cmd()
+        .args(["init", "--bare", "-q", "-b", "main"])
+        .current_dir(&bare_path)
+        .status()
+        .expect("bare init");
+    assert!(status.success());
+    seed_bare_repo(&bare_path);
+
+    let clone_path = parent.join("repo");
+    let status = git_cmd()
+        .args([
+            "clone",
+            "-q",
+            bare_path.to_str().expect("utf8"),
+            clone_path.to_str().expect("utf8"),
+        ])
+        .status()
+        .expect("clone");
+    assert!(status.success());
+    for (key, val) in [("user.email", "t@example.com"), ("user.name", "Test")] {
+        let status = git_cmd()
+            .args(["config", key, val])
+            .current_dir(&clone_path)
+            .status()
+            .expect("config");
+        assert!(status.success());
+    }
+    clone_path
+}
+
+fn dirty_normal_repo(parent: &std::path::Path) -> PathBuf {
+    let path = normal_repo_clean_synced(parent);
+    let marker = path.join("README");
+    std::fs::write(&marker, "tracked\n").expect("write");
+    let status = git_cmd()
+        .args(["add", "README"])
+        .current_dir(&path)
+        .status()
+        .expect("add");
+    assert!(status.success());
+    let status = git_cmd()
+        .args(["commit", "-m", "add readme", "-q"])
+        .current_dir(&path)
+        .status()
+        .expect("commit");
+    assert!(status.success());
+    std::fs::write(&marker, "dirty\n").expect("dirty");
+    path
+}
+
+#[test]
+fn convert_dry_run() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = normal_repo_clean_synced(home.path());
+    let canon = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args([
+            "repo",
+            "convert",
+            repo_path.to_str().expect("utf8"),
+            "--to",
+            "bare",
+            "--dry-run",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(": "));
+
+    assert!(canon.exists(), "original repo must remain after dry-run");
+}
+
+#[test]
+fn convert_preflight_rejects_dirty() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = dirty_normal_repo(home.path());
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args([
+            "repo",
+            "convert",
+            repo_path.to_str().expect("utf8"),
+            "--to",
+            "bare",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("preflight failed"));
+
+    assert!(repo_path.exists());
+}
+
+#[test]
+fn cli_parse_convert_help() {
+    workpot_cmd(&tempfile::tempdir().expect("tempdir").path())
+        .args(["repo", "convert", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bare").and(predicate::str::contains("normal")));
+}

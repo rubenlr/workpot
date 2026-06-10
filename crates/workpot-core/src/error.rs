@@ -50,6 +50,12 @@ pub enum WorkpotError {
 
     #[error("index cap exceeded: projected {projected} repos (max {max})")]
     IndexCapExceeded { projected: u32, max: u32 },
+
+    #[error("conversion preflight failed: {0}")]
+    ConversionPreflight(String),
+
+    #[error("conversion failed: {0}")]
+    ConversionFailed(String),
 }
 
 pub type Result<T> = std::result::Result<T, WorkpotError>;

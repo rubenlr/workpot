@@ -36,6 +36,59 @@ fn default_stale_dirty_days() -> u32 {
     7
 }
 
+fn default_temp_suffix() -> String {
+    ".temp".to_string()
+}
+
+fn default_delete_original() -> bool {
+    false
+}
+
+fn default_bare_repo_template() -> String {
+    "{project}/bare.git".to_string()
+}
+
+fn default_worktree_template() -> String {
+    "{project}/wtrees/{worktree}".to_string()
+}
+
+fn default_project_name_source() -> ProjectNameSource {
+    ProjectNameSource::FolderName
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectNameSource {
+    FolderName,
+    Alias,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MigrationConfig {
+    #[serde(default = "default_temp_suffix")]
+    pub temp_suffix: String,
+    #[serde(default = "default_delete_original")]
+    pub delete_original: bool,
+    #[serde(default = "default_bare_repo_template")]
+    pub bare_repo_template: String,
+    #[serde(default = "default_worktree_template")]
+    pub worktree_template: String,
+    #[serde(default = "default_project_name_source")]
+    pub project_name_source: ProjectNameSource,
+}
+
+impl Default for MigrationConfig {
+    fn default() -> Self {
+        Self {
+            temp_suffix: default_temp_suffix(),
+            delete_original: default_delete_original(),
+            bare_repo_template: default_bare_repo_template(),
+            worktree_template: default_worktree_template(),
+            project_name_source: default_project_name_source(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Limits {
     #[serde(default = "default_max_watch_roots")]
@@ -81,6 +134,8 @@ pub struct Config {
     /// Threshold for stale-dirty tray icon: dirty repo last opened longer ago than this (06.2).
     #[serde(default = "default_stale_dirty_days")]
     pub stale_dirty_days: u32,
+    #[serde(default)]
+    pub migration: MigrationConfig,
 }
 
 impl Default for Config {
@@ -95,6 +150,7 @@ impl Default for Config {
             max_recent_days: default_max_recent_days(),
             min_recent_count: default_min_recent_count(),
             stale_dirty_days: default_stale_dirty_days(),
+            migration: MigrationConfig::default(),
         }
     }
 }
@@ -156,6 +212,17 @@ impl Config {
                 "stale_dirty_days {} must be between 1 and 365",
                 self.stale_dirty_days
             ));
+        }
+        if self.migration.temp_suffix.is_empty() {
+            return Err("migration.temp_suffix must not be empty".into());
+        }
+        if !self.migration.bare_repo_template.contains("{project}") {
+            return Err("migration.bare_repo_template must contain {project}".into());
+        }
+        if !self.migration.worktree_template.contains("{project}")
+            || !self.migration.worktree_template.contains("{worktree}")
+        {
+            return Err("migration.worktree_template must contain {project} and {worktree}".into());
         }
         Ok(())
     }

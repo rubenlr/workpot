@@ -8,6 +8,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use workpot_core::services::launch::launch_repo;
+use workpot_core::services::repo_convert::{ConvertResult, ConvertTarget};
 use workpot_core::services::repo_fuzzy::fuzzy_match;
 use workpot_core::{AppContext, RepoRecord, WorkpotError};
 
@@ -57,6 +58,12 @@ enum Commands {
     },
 }
 
+#[derive(Clone, Debug, clap::ValueEnum)]
+enum CliConvertTarget {
+    Bare,
+    Normal,
+}
+
 #[derive(Subcommand)]
 enum RepoCommands {
     /// Register a git worktree or bare repository path.
@@ -65,6 +72,17 @@ enum RepoCommands {
     List,
     /// Remove a registered repository.
     Remove { path: PathBuf },
+    /// Migrate a repository between normal checkout and bare+worktree layouts.
+    Convert {
+        /// Absolute or relative path to the repository to convert.
+        path: PathBuf,
+        /// Target layout: bare or normal.
+        #[arg(long)]
+        to: CliConvertTarget,
+        /// Print resolved target paths and preflight gate results without making any changes.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -251,6 +269,30 @@ fn run_repo(sub: RepoCommands) -> anyhow::Result<()> {
             ctx.remove_repo(&path).context("repo remove failed")?;
             println!("removed: {}", path.display());
         }
+        RepoCommands::Convert { path, to, dry_run } => {
+            let ctx = AppContext::open().context("failed to open workpot")?;
+            let core_target = match to {
+                CliConvertTarget::Bare => ConvertTarget::Bare,
+                CliConvertTarget::Normal => ConvertTarget::Normal,
+            };
+            match ctx
+                .convert_repo(&path, core_target, dry_run)
+                .map_err(map_convert_error)?
+            {
+                ConvertResult::Converted { from, to } => {
+                    println!("converted: {} -> {}", from.display(), to.display());
+                }
+                ConvertResult::DryRun {
+                    preflight,
+                    resolved_paths,
+                } => {
+                    for (label, resolved) in resolved_paths {
+                        println!("  {}: {}", label, resolved.display());
+                    }
+                    println!("preflight: {preflight:?}");
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -410,6 +452,14 @@ fn map_tag_error(err: WorkpotError) -> anyhow::Error {
     }
 }
 
+fn map_convert_error(err: WorkpotError) -> anyhow::Error {
+    match err {
+        WorkpotError::ConversionPreflight(msg) => anyhow::anyhow!("preflight failed: {msg}"),
+        WorkpotError::ConversionFailed(msg) => anyhow::anyhow!("conversion failed: {msg}"),
+        other => other.into(),
+    }
+}
+
 fn map_roots_error(err: WorkpotError) -> anyhow::Error {
     match err {
         WorkpotError::LimitsExceeded(msg) | WorkpotError::WatchRootNotFound(msg) => {
@@ -486,6 +536,34 @@ mod cli_parse_tests {
                 .unwrap()
                 .command,
             Commands::Tag(TagAction::List { .. })
+        ));
+    }
+
+    #[test]
+    fn parses_repo_convert_bare() {
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "repo", "convert", "/tmp/r", "--to", "bare"])
+                .unwrap()
+                .command,
+            Commands::Repo(RepoCommands::Convert { dry_run: false, .. })
+        ));
+    }
+
+    #[test]
+    fn parses_repo_convert_dry_run() {
+        assert!(matches!(
+            Cli::try_parse_from([
+                "workpot",
+                "repo",
+                "convert",
+                "/tmp/r",
+                "--to",
+                "normal",
+                "--dry-run"
+            ])
+            .unwrap()
+            .command,
+            Commands::Repo(RepoCommands::Convert { dry_run: true, .. })
         ));
     }
 }

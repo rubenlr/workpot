@@ -144,7 +144,7 @@ fn head_name(repo: &Repository) -> std::result::Result<String, git2::Error> {
 
 /// Return true if the repo has staged or unstaged changes to tracked files.
 /// Untracked files, ignored files, and submodule changes are excluded (D-10, D-11, D-12).
-fn detect_dirty(repo: &Repository) -> std::result::Result<bool, git2::Error> {
+pub(crate) fn detect_dirty(repo: &Repository) -> std::result::Result<bool, git2::Error> {
     let mut opts = StatusOptions::new();
     opts.include_untracked(false)
         .recurse_untracked_dirs(false)
@@ -202,6 +202,107 @@ fn detect_ahead_behind(
         Some(i64::try_from(ahead).unwrap_or(i64::MAX)),
         Some(i64::try_from(behind).unwrap_or(i64::MAX)),
     ))
+}
+
+/// Branch sync issues discovered during conversion preflight.
+#[derive(Debug, PartialEq, Eq)]
+pub enum SyncBlocker {
+    NoUpstream { branch: String },
+    UnpushedCommits { branch: String, count: usize },
+    NonUtf8BranchName,
+}
+
+/// Return true when the repository has any stash entries.
+pub fn has_stash(repo_path: &Path) -> Result<bool> {
+    let mut repo = Repository::open(repo_path)
+        .map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
+    let mut found = false;
+    repo.stash_foreach(|_i, _msg, _oid| {
+        found = true;
+        false
+    })
+    .map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
+    Ok(found)
+}
+
+/// Check every local branch has an upstream with zero commits ahead.
+pub fn check_all_branches_synced(repo_path: &Path) -> Result<Option<SyncBlocker>> {
+    let repo = Repository::open(repo_path)
+        .map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
+
+    let branches = repo
+        .branches(Some(git2::BranchType::Local))
+        .map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
+
+    for item in branches {
+        let (branch, _) =
+            item.map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
+        let name = match branch.name() {
+            Ok(Some(n)) => n.to_string(),
+            Ok(None) => return Ok(Some(SyncBlocker::NonUtf8BranchName)),
+            Err(_) => return Ok(Some(SyncBlocker::NonUtf8BranchName)),
+        };
+
+        let upstream = match branch.upstream() {
+            Ok(u) => u,
+            Err(_) => {
+                return Ok(Some(SyncBlocker::NoUpstream { branch: name }));
+            }
+        };
+
+        let local_oid = branch
+            .get()
+            .target()
+            .ok_or_else(|| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
+        let upstream_oid = upstream
+            .get()
+            .target()
+            .ok_or_else(|| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
+
+        let (ahead, _behind) = repo
+            .graph_ahead_behind(local_oid, upstream_oid)
+            .map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
+
+        if ahead > 0 {
+            return Ok(Some(SyncBlocker::UnpushedCommits {
+                branch: name,
+                count: ahead,
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
+fn detect_default_branch(repo: &Repository) -> std::result::Result<String, git2::Error> {
+    if let Ok(head_ref) = repo.head()
+        && let Ok(name) = head_ref.shorthand()
+    {
+        return Ok(name.to_string());
+    }
+
+    let branches = repo.branches(Some(git2::BranchType::Local))?;
+    let mut names: Vec<String> = Vec::new();
+    for item in branches {
+        let (branch, _) = item?;
+        if let Ok(Some(name)) = branch.name() {
+            names.push(name.to_string());
+        }
+    }
+    names.sort();
+    names
+        .into_iter()
+        .next()
+        .ok_or_else(|| git2::Error::from_str("no branches found"))
+}
+
+/// Default branch for bare→normal conversion (HEAD symbolic target, else first local branch).
+pub(crate) fn detect_default_branch_for_path(repo_path: &Path) -> Result<String> {
+    let repo = Repository::open(repo_path)
+        .map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
+    detect_default_branch(&repo).map_err(|_| {
+        WorkpotError::InvalidPath("no branches found — cannot determine default branch".into())
+    })
 }
 
 #[cfg(test)]

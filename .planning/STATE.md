@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: "Phase 07 shipped — PR #7"
+status: "Phase 07.1 executed — pending commit/PR"
 last_updated: "2026-06-10T19:28:39.962Z"
 progress:
   total_phases: 11
-  completed_phases: 9
+  completed_phases: 10
   total_plans: 51
-  completed_plans: 46
-  percent: 82
+  completed_plans: 51
+  percent: 90
 ---
 
 # Project State
@@ -20,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 07.1 — repo type migration
+**Current focus:** Phase 07.1 — repo type migration (complete, uncommitted)
 
 ## Phase Status
 
@@ -34,6 +34,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 6 | CLI parity | Complete — 5/5 plans, UAT 5/6 auto (2026-05-31) |
 | 06.1 | Release & distribution | Not started — inserted 2026-05-31 |
 | 06.2 | Tray UX polish | Complete — 9/9 plans (2026-05-31) |
+| 07.1 | Repo type migration | Complete — 5/5 plans (2026-06-10) |
 | 7 | Distribution strategy review | Shipped — PR https://github.com/rubenlr/workpot/pull/7 (2026-06-04) |
 
 ## Session Notes

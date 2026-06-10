@@ -261,6 +261,15 @@ impl AppContext {
     pub fn set_pin_order(&self, items: &[(&str, i64)]) -> Result<()> {
         org::set_pin_order(&self.conn, items)
     }
+
+    pub fn convert_repo(
+        &self,
+        path: &Path,
+        target: crate::services::repo_convert::ConvertTarget,
+        dry_run: bool,
+    ) -> Result<crate::services::repo_convert::ConvertResult> {
+        crate::services::repo_convert::convert_repo(&self.conn, &self.config, path, target, dry_run)
+    }
 }
 
 /// Drop orphaned `config.toml.tmp` left by a crash between write and rename.

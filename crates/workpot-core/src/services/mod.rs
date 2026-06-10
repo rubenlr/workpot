@@ -6,6 +6,7 @@ pub mod index;
 pub mod launch;
 pub mod org;
 pub mod paths;
+pub mod repo_convert;
 pub mod repo_fuzzy;
 pub mod repo_priority;
 pub mod roots;
