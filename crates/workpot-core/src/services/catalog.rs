@@ -198,8 +198,10 @@ pub fn get_repo_by_path(conn: &Connection, path_key: &str) -> Result<RepoRecord>
 
 /// Absolute path for an indexed repo launch, after validating it is in the catalog.
 ///
-/// Bare repos resolve to their first linked worktree checkout so IDE launch targets
-/// the developer workspace rather than the bare object store.
+/// Bare repos resolve to a linked worktree checkout so IDE launch targets the developer
+/// workspace rather than the bare object store. When the catalog row has a `branch`,
+/// the worktree checked out on that branch is preferred; otherwise the first listed
+/// worktree is used.
 pub fn indexed_launch_path(conn: &Connection, path: &Path) -> Result<PathBuf> {
     let (repo_path, path_key) = resolve_repo_location(conn, path)?;
     let count: i64 = conn.query_row(
