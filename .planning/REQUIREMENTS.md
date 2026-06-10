@@ -58,7 +58,7 @@
 ### Data & Privacy (DATA)
 
 - [ ] **DATA-01**: All index data, tags, and recipes persist locally on disk
-- [ ] **DATA-02**: No network calls or accounts are required for core functionality
+- [x] **DATA-02**: No network calls or accounts are required for core functionality
 
 ## v2 Requirements
 
