@@ -110,6 +110,8 @@ Same project and branch:
 
 ### Conversion command
 
+- Repository must be registered (`workpot repo add`) before conversion.
+
 ```bash
 # Normal checkout → bare + worktree
 workpot repo convert <path> --to bare
