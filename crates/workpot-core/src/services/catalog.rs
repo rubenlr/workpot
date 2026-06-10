@@ -212,10 +212,22 @@ pub fn indexed_launch_path(conn: &Connection, path: &Path) -> Result<PathBuf> {
     }
     if is_bare_repo(&repo_path) {
         let worktrees = git::list_worktree_paths(&repo_path)?;
-        return worktrees
-            .into_iter()
-            .next()
-            .ok_or_else(|| WorkpotError::GitUnavailable(repo_path));
+        if worktrees.is_empty() {
+            return Err(WorkpotError::GitUnavailable(repo_path));
+        }
+        let catalog_branch = get_repo_by_path(conn, &path_key)
+            .ok()
+            .and_then(|record| record.branch);
+        if let Some(branch) = catalog_branch {
+            for wt in &worktrees {
+                if let Ok(state) = git::open_and_query(wt)
+                    && state.branch.as_deref() == Some(branch.as_str())
+                {
+                    return Ok(wt.clone());
+                }
+            }
+        }
+        return Ok(worktrees.into_iter().next().expect("non-empty worktrees"));
     }
     Ok(repo_path)
 }
