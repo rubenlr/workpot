@@ -128,6 +128,7 @@ workpot repo convert <path> --to bare --dry-run
 Conversion is blocked unless all of the following are true:
 
 - No dirty state in any worktree (for bare repos, all linked worktrees are checked).
+- Repository must have at least one commit (unborn HEAD is rejected).
 - Every local branch has an upstream and is not ahead of it.
 - No stash entries exist.
 
