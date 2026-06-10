@@ -31,6 +31,7 @@ pub enum PreflightResult {
     },
     HasStash,
     UnbornBranch,
+    DetachedHead,
     NotInCatalog,
     WrongLayout {
         current: &'static str,
@@ -86,6 +87,10 @@ pub fn run_preflight(path: &Path) -> Result<PreflightResult> {
     let state = git::open_and_query(&canonical)?;
     if state.branch.as_deref() == Some(BRANCH_UNBORN) {
         return Ok(PreflightResult::UnbornBranch);
+    }
+
+    if !is_bare_repo(&canonical) && git::is_detached_head(&canonical)? {
+        return Ok(PreflightResult::DetachedHead);
     }
 
     let worktree_paths = if is_bare_repo(&canonical) {
@@ -286,6 +291,9 @@ fn preflight_message(result: &PreflightResult) -> String {
         PreflightResult::UnbornBranch => {
             "repository has no commits; create an initial commit before converting".into()
         }
+        PreflightResult::DetachedHead => {
+            "repository is in detached HEAD state; checkout a branch before converting".into()
+        }
         PreflightResult::NotInCatalog => "repository not in catalog".into(),
         PreflightResult::WrongLayout { current, requested } => {
             format!("already {current}, cannot convert to {requested}")
@@ -416,25 +424,33 @@ pub fn convert_repo(
 
     check_target_paths_exist(&resolved_paths, &canonical)?;
 
-    if dry_run {
-        return Ok(ConvertResult::DryRun {
-            preflight,
-            resolved_paths,
-        });
+    if config.migration.delete_original
+        && let Some(untracked_path) = git::first_untracked_worktree(&canonical)?
+    {
+        return Err(WorkpotError::ConversionPreflight(format!(
+            "untracked files at {}; delete_original=true would destroy them",
+            untracked_path.display()
+        )));
     }
 
-    let folder_name = canonical
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| WorkpotError::InvalidPath("invalid folder name".into()))?;
-    let temp_path =
-        canonical.with_file_name(format!("{folder_name}{}", config.migration.temp_suffix));
+    let temp_path = resolved_paths
+        .iter()
+        .find(|(label, _)| label == "temp")
+        .map(|(_, p)| p.clone())
+        .ok_or_else(|| WorkpotError::ConversionFailed("missing temp path".into()))?;
 
     if temp_path.exists() {
         return Err(WorkpotError::ConversionPreflight(format!(
             "temp path already exists: {}; remove it first",
             temp_path.display()
         )));
+    }
+
+    if dry_run {
+        return Ok(ConvertResult::DryRun {
+            preflight,
+            resolved_paths,
+        });
     }
 
     let (new_path, new_name, branch_for_bare) =
@@ -591,6 +607,13 @@ pub fn convert_repo(
             temp_path.display()
         );
         return Err(e);
+    }
+
+    if let Err(e) = crate::services::git_state::refresh_and_persist(conn, &new_path) {
+        log::warn!(
+            "convert_repo git state refresh failed for {}: {e}",
+            new_path.display()
+        );
     }
 
     log::info!(
