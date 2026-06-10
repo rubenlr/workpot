@@ -65,13 +65,13 @@ Path templates are global only — there are no per-repo template overrides in v
 
 ### Keys and defaults
 
-| Key                             | Default                         | Description                                                                                                                          |
-| ------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `migration.temp_suffix`         | `".temp"`                       | Suffix appended to the original directory name during conversion. Must not be empty.                                                 |
+| Key                             | Default                         | Description                                                                                                                                                                                                                           |
+| ------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `migration.temp_suffix`         | `".temp"`                       | Suffix appended to the original directory name during conversion. Must not be empty.                                                                                                                                                  |
 | `migration.delete_original`     | `false`                         | When `true`, the renamed `.temp` directory is deleted after a successful conversion (including any untracked files it contains). Conversion is blocked if untracked files exist. When `false`, `.temp` is kept for manual inspection. |
-| `migration.bare_repo_template`  | `"{project}/bare.git"`          | Path template for the bare git repository. Must contain `{project}`.                                                                 |
-| `migration.worktree_template`   | `"{project}/wtrees/{worktree}"` | Path template for the first worktree. Must contain `{project}` and `{worktree}`.                                                     |
-| `migration.project_name_source` | `"folder_name"`                 | Source for `{project}`: `folder_name` uses the directory name; `alias` uses the workpot alias (falls back to folder name if unset).  |
+| `migration.bare_repo_template`  | `"{project}/bare.git"`          | Path template for the bare git repository. Must contain `{project}`.                                                                                                                                                                  |
+| `migration.worktree_template`   | `"{project}/wtrees/{worktree}"` | Path template for the first worktree. Must contain `{project}` and `{worktree}`.                                                                                                                                                      |
+| `migration.project_name_source` | `"folder_name"`                 | Source for `{project}`: `folder_name` uses the directory name; `alias` uses the workpot alias (falls back to folder name if unset).                                                                                                   |
 
 ### Template variables
 

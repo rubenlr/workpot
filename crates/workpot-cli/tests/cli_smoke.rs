@@ -1183,7 +1183,7 @@ fn convert_preflight_rejects_dirty() {
 
 #[test]
 fn cli_parse_convert_help() {
-    workpot_cmd(&tempfile::tempdir().expect("tempdir").path())
+    workpot_cmd(tempfile::tempdir().expect("tempdir").path())
         .args(["repo", "convert", "--help"])
         .assert()
         .success()

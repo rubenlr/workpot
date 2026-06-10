@@ -577,8 +577,10 @@ fn resolve_project_name_uses_alias_when_configured() {
     use workpot_core::domain::RepoRecord;
     use workpot_core::domain::config::{MigrationConfig, ProjectNameSource};
 
-    let mut cfg = MigrationConfig::default();
-    cfg.project_name_source = ProjectNameSource::Alias;
+    let cfg = MigrationConfig {
+        project_name_source: ProjectNameSource::Alias,
+        ..Default::default()
+    };
     let record = RepoRecord {
         path: PathBuf::from("/tmp/repo"),
         name: "folder-name".into(),
@@ -609,8 +611,10 @@ fn resolve_project_name_falls_back_to_folder_without_alias() {
     use workpot_core::domain::RepoRecord;
     use workpot_core::domain::config::{MigrationConfig, ProjectNameSource};
 
-    let mut cfg = MigrationConfig::default();
-    cfg.project_name_source = ProjectNameSource::Alias;
+    let cfg = MigrationConfig {
+        project_name_source: ProjectNameSource::Alias,
+        ..Default::default()
+    };
     let record = RepoRecord {
         path: PathBuf::from("/tmp/repo"),
         name: "folder-name".into(),
