@@ -119,7 +119,7 @@ Until the first successful PR analysis, SonarCloud shows no quality gate; after 
 
   Or: **Settings → General → Pull requests** → _Allow squash merging_ → **Default to pull request title and description**.
 
-- Write the **PR title** in [Conventional Commits](https://www.conventionalcommits.org/) form (`feat:`, `fix:`, `feat!:`, …). CI **semantic-pr** checks the title before merge.
+- Write the **PR title** in [Conventional Commits](https://www.conventionalcommits.org/) form (`feat:`, `fix:`, `feat!:`, …) for readable squash commit messages.
 - **Feature PRs:** do not bump `version` or edit `CHANGELOG.md` — no release gate.
 - **Release PRs:** bump repo-root `version`, add a `## [X.Y.Z]` section to `CHANGELOG.md`, run `just version`, merge when **release-check** passes. Push to `master` tags and publishes when `version` exceeds the latest release.
 

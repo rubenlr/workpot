@@ -127,7 +127,7 @@ fn workflow_text(name: &str) -> String {
 
 #[test]
 fn release_workflows_use_bundle_not_dmg() {
-    for file in ["release.yml", "release-smoke.yml", "release-artifacts.yml"] {
+    for file in ["release.yml", "release-smoke.yml", "release-publish.yml"] {
         let text = workflow_text(file);
         assert!(!text.contains("dmg:"), "{file} must not define a dmg job");
         assert!(
@@ -163,14 +163,17 @@ fn release_smoke_asserts_tarball_contract_only() {
     assert!(smoke.contains("unexpected artifact in smoke output"));
 }
 
-/// Surviving Phase 06.1 SC-05: published release triggers canonical `release.yml` build.
+/// release-publish chains canonical `release.yml` after tagging (GITHUB_TOKEN releases do not fire release:published).
 #[test]
-fn release_artifacts_triggers_on_published_release() {
-    let text = workflow_text("release-artifacts.yml");
-    assert!(text.contains("release:"));
-    assert!(text.contains("types: [published]"));
+fn release_publish_chains_release_workflow() {
+    let text = workflow_text("release-publish.yml");
     assert!(text.contains("uses: ./.github/workflows/release.yml"));
-    assert!(text.contains("github.event.release.tag_name"));
+    assert!(text.contains("needs: publish"));
+    assert!(
+        !PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.github/workflows/release-artifacts.yml")
+            .exists()
+    );
 }
 
 /// Surviving Phase 06.1 SC-01/SC-05: maintainer docs match aarch64 tarball-only contract.

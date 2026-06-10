@@ -2,9 +2,7 @@ name: release
 
 # Builds macOS aarch64 combined Workpot.app+CLI tarball + checksum,
 # then uploads to an existing GitHub Release and updates the Homebrew tap.
-# Invoked by release-artifacts.yml on release: published, release-smoke (dry_run),
-# or manually via workflow_dispatch.
-# release-publish.yml creates the GitHub Release and tag on master when version increases.
+# Invoked by release-publish.yml (after tagging), release-smoke (dry_run), or workflow_dispatch.
 
 on:
   workflow_call:

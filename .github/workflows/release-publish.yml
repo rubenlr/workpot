@@ -2,7 +2,6 @@ name: release-publish
 
 # On push to master: tag vX.Y.Z and create GitHub Release when version file exceeds
 # the latest v* tag, then chains release.yml to build/upload macOS artifacts and update the Homebrew tap.
-# release-artifacts.yml remains for manual releases created outside release-publish (uses a PAT or human actor).
 
 on:
   push:
