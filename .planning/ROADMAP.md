@@ -1,7 +1,7 @@
 # Roadmap: Workpot
 
 **Project:** Workpot  
-**Phases:** 6 + 06.1 + 06.2 + 7 (active); 1 backlog  
+**Phases:** 6 + 06.1 + 06.2 + 7 + 07.1 (active); 1 backlog  
 **Requirements mapped:** 28/28 v1  
 **Structure:** Vertical MVP (each phase ships usable capability)
 
@@ -20,6 +20,7 @@
 | 06.1 | Release & distribution *(INSERTED)* | 3/3 | Complete   | 2026-05-31 |
 | 06.2 | Tray UX polish *(INSERTED)* | 9/9 | Complete    | 2026-05-31 |
 | 7 | Distribution strategy review | 4/4 | Complete   | 2026-06-04 |
+| 07.1 | Repo type migration *(INSERTED)* | 0/5 | Not started |
 
 ---
 
@@ -353,6 +354,7 @@ Plans:
 | 06.1 | Not started | 0/0 |
 | 06.2 | Complete | 9/9 |
 | 7 | Complete | 4/4 |
+| 07.1 | Not started | 0/5 |
 
 ### Phase 7: Review distribution strategy (Homebrew tap + cask)
 
@@ -390,3 +392,48 @@ Plans:
 
 ---
 *Roadmap created: 2026-05-28*
+
+### Phase 07.1: Repo type migration bare↔normal with SETTINGS.md and configurable path templates (INSERTED)
+
+**Goal:** Let users migrate a project between **normal git checkout** and **bare + worktree** layouts with configurable path templates, documented in `SETTINGS.md`, and safe conversion only when the repo is fully in sync.
+
+**Mode:** mvp
+
+**Depends on:** Phases 2–3 (repo discovery, git state), Phase 7 complete
+
+**Requirements:** Repo layout / config (no new v1 requirement IDs; extends INDEX + DATA-02 settings surface)
+
+**Success Criteria:**
+
+1. `SETTINGS.md` documents all user-facing settings, including bare-repo path templates, migration temp suffix, and optional original-dir deletion
+2. Bare layout uses user-configurable templates with `{project}` and `{worktree}` variables (slashes in branch names become dots in `{worktree}`)
+3. Example templates work as documented — e.g. `{project}/bare.git` + `{project}/wtrees/{worktree}` → `my-project-test/bare.git` + `my-project-test/feature.my-branch/` for branch `feature/my-branch`; or `{project}.git` + `{project}.{worktree}` → `my-project-test.git` + `my-project-test.feature.my-branch`
+4. Conversion **normal → bare** is blocked unless repo is clean, no dirty state, and no unpushed commits; same gate for **bare → normal**
+5. Conversion **normal → bare**: rename original dir to `{original}{temp_suffix}` (default `.temp`, not optional); clone fresh to target layout; verify healthy repo; optionally delete renamed dir per setting (default **false** — DB drops old path regardless of filesystem delete)
+6. Conversion **bare → normal**: same rename → re-clone → health-check flow; target is `{project}` only (no worktree template)
+7. Settings: `migration.temp_suffix` (default `.temp`), `migration.delete_original` (default `false`)
+8. CLI command (or subcommand) exposes convert with clear preflight errors when sync gate fails
+
+**Plans:** 5 plans
+
+Plans:
+
+**Wave 0** *(TDD RED stubs)*
+
+- [ ] 07.1-01-PLAN.md — TDD Wave 0: all RED test stubs for preflight, sanitize, template, config defaults (repo_convert_test.rs)
+
+**Wave 1** *(blocked on Wave 0)*
+
+- [ ] 07.1-02-PLAN.md — TDD GREEN: MigrationConfig + ProjectNameSource, WorkpotError variants, infra has_stash + check_all_branches_synced, repo_convert.rs pure functions + run_preflight (D-01, D-02, D-04, D-05, D-06, D-07, D-17, D-18)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 07.1-03-PLAN.md — Execute: convert_repo orchestration, catalog_path_swap, ConvertResult, AppContext::convert_repo, integration tests (D-08, D-09, D-10, D-11, D-12, D-18, D-19)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 07.1-04-PLAN.md — Execute: CLI wiring RepoCommands::Convert, --dry-run, map_convert_error, CLI smoke tests (D-13, D-16)
+
+**Wave 4** *(documentation — can run after Wave 3)*
+
+- [ ] 07.1-05-PLAN.md — Execute: SETTINGS.md — all user-facing settings documented with migration section, examples, recovery notes (D-14, SC-1)
