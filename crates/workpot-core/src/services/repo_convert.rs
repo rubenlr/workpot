@@ -322,11 +322,17 @@ fn health_check_bare(bare_path: &Path, worktree_path: &Path) -> Result<()> {
         .ok_or_else(|| WorkpotError::ConversionFailed("worktree path not UTF-8".into()))?;
     let mut found = false;
     for line in listing.lines() {
-        if let Some(path) = line.strip_prefix("worktree ")
-            && path == wt_str
-        {
-            found = true;
-            break;
+        if let Some(path) = line.strip_prefix("worktree ") {
+            let canon = Path::new(path)
+                .canonicalize()
+                .unwrap_or_else(|_| PathBuf::from(path));
+            let canon_str = canon
+                .to_str()
+                .ok_or_else(|| WorkpotError::ConversionFailed("worktree path not UTF-8".into()))?;
+            if canon_str == wt_str {
+                found = true;
+                break;
+            }
         }
     }
     if !found {
