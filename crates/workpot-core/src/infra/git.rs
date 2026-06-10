@@ -165,6 +165,56 @@ pub(crate) fn detect_dirty(repo: &Repository) -> std::result::Result<bool, git2:
     Ok(statuses.iter().any(|e| e.status().intersects(dirty_flags)))
 }
 
+/// Return true when the repo has untracked (non-ignored) files in the working tree.
+pub(crate) fn has_untracked(repo: &Repository) -> std::result::Result<bool, git2::Error> {
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .exclude_submodules(true);
+
+    let statuses = repo.statuses(Some(&mut opts))?;
+    Ok(statuses
+        .iter()
+        .any(|e| e.status().intersects(Status::WT_NEW)))
+}
+
+/// Return the first path under `repo_path` with untracked files, if any.
+pub fn first_untracked_worktree(repo_path: &Path) -> Result<Option<PathBuf>> {
+    let paths = if Repository::open(repo_path)
+        .map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?
+        .is_bare()
+    {
+        list_worktree_paths(repo_path)?
+    } else {
+        vec![
+            repo_path
+                .canonicalize()
+                .map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?,
+        ]
+    };
+
+    for wt_path in paths {
+        let repo = Repository::open(&wt_path)
+            .map_err(|_| WorkpotError::GitUnavailable(wt_path.clone()))?;
+        if has_untracked(&repo).map_err(|_| WorkpotError::GitUnavailable(wt_path.clone()))? {
+            return Ok(Some(wt_path));
+        }
+    }
+    Ok(None)
+}
+
+/// Return true when HEAD points at a commit rather than a named branch.
+pub fn is_detached_head(repo_path: &Path) -> Result<bool> {
+    let repo = Repository::open(repo_path)
+        .map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
+    let head = match repo.head() {
+        Ok(h) => h,
+        Err(ref e) if e.code() == ErrorCode::UnbornBranch => return Ok(false),
+        Err(_) => return Err(WorkpotError::GitUnavailable(repo_path.to_path_buf())),
+    };
+    Ok(!head.is_branch())
+}
+
 /// Return (ahead, behind) counts relative to the configured upstream branch.
 /// Returns (None, None) if HEAD is detached or no upstream is configured (D-04).
 fn detect_ahead_behind(
