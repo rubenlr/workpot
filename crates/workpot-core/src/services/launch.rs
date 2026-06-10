@@ -61,11 +61,12 @@ pub fn build_command(template: &str, repo_path: &Path) -> Result<(String, Vec<St
 
 /// Launch an indexed repo via configured `launch_cmd` and record `last_opened_at` on success.
 pub fn launch_repo(ctx: &AppContext, path: &str) -> Result<(), String> {
-    let repo_path = ctx
-        .indexed_launch_path(Path::new(path))
+    let catalog_path = Path::new(path);
+    let launch_path = ctx
+        .indexed_launch_path(catalog_path)
         .map_err(|e| e.to_string())?;
     let template = ctx.config().launch_cmd.clone();
-    let (program, args) = build_command(&template, &repo_path)?;
+    let (program, args) = build_command(&template, &launch_path)?;
     let program = resolve_launch_program(&program);
     let mut child = Command::new(&program)
         .args(&args)
@@ -74,7 +75,7 @@ pub fn launch_repo(ctx: &AppContext, path: &str) -> Result<(), String> {
     std::thread::spawn(move || {
         let _ = child.wait();
     });
-    ctx.touch_last_opened_at(&repo_path)
+    ctx.touch_last_opened_at(catalog_path)
         .map_err(|e| e.to_string())?;
     Ok(())
 }
