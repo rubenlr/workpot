@@ -406,14 +406,14 @@ pub fn convert_repo(
 
     let resolved_paths = resolve_target_paths(config, &record, &canonical, target)?;
 
+    check_target_paths_exist(&resolved_paths, &canonical)?;
+
     if dry_run {
         return Ok(ConvertResult::DryRun {
             preflight,
             resolved_paths,
         });
     }
-
-    check_target_paths_exist(&resolved_paths, &canonical)?;
 
     let folder_name = canonical
         .file_name()
