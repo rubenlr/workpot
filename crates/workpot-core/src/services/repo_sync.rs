@@ -67,7 +67,11 @@ pub fn run_repo_sync(
             format!("{program} exited with status {code}: {detail}")
         });
     }
-    ctx.refresh_and_persist_git_state(catalog_path)
-        .map_err(|e| e.to_string())?;
+    crate::services::git_state::refresh_and_persist_catalog_entry(
+        ctx.connection(),
+        catalog_path,
+        &launch_path,
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }

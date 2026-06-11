@@ -236,11 +236,8 @@ pub fn indexed_launch_path(conn: &Connection, path: &Path) -> Result<PathBuf> {
 
 /// Record that a repo was opened from the tray (D-25).
 pub fn touch_last_opened_at(conn: &Connection, path: &Path) -> Result<()> {
-    let path_key = resolve_repo_path_key(conn, path)?;
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
+    let path_key = repo_path_key(conn, path)?;
+    let now = crate::services::git_state::unix_now_secs();
     let updated = conn.execute(
         "UPDATE repos SET last_opened_at = ?1 WHERE path = ?2",
         params![now, path_key],
@@ -253,7 +250,7 @@ pub fn touch_last_opened_at(conn: &Connection, path: &Path) -> Result<()> {
 
 /// Resolve repo location and SQLite path key, falling back when the directory is gone.
 fn resolve_repo_location(conn: &Connection, path: &Path) -> Result<(PathBuf, String)> {
-    let path_key = resolve_repo_path_key(conn, path)?;
+    let path_key = repo_path_key(conn, path)?;
     let repo_path = if path.exists() {
         path.canonicalize()
             .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?
@@ -270,7 +267,7 @@ fn escape_like(s: &str) -> String {
 }
 
 /// SQLite `repos.path` key for remove/lookup (canonical when the directory exists).
-fn resolve_repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
+pub(crate) fn repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
     match path.canonicalize() {
         Ok(c) => Ok(c.display().to_string()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -351,7 +348,7 @@ pub fn prune_missing_repos(conn: &Connection) -> Result<u32> {
 }
 
 pub fn remove_repo(conn: &Connection, path: &Path) -> Result<()> {
-    let path_key = resolve_repo_path_key(conn, path)?;
+    let path_key = repo_path_key(conn, path)?;
 
     let deleted = conn.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
     if deleted == 0 {

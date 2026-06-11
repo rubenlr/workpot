@@ -168,6 +168,22 @@ fn main() -> ExitCode {
     }
 }
 
+fn unix_now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn print_ordered_repos(ctx: &AppContext, repos: Vec<RepoRecord>) -> anyhow::Result<()> {
+    let now_secs = unix_now_secs();
+    let ordered = list_display::flat_tray_ordered_with_icons(repos, ctx.config(), now_secs);
+    for (repo, icon) in &ordered {
+        println!("{}", list_display::format_list_row(repo, icon));
+    }
+    Ok(())
+}
+
 fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -212,15 +228,7 @@ fn run_index() -> anyhow::Result<()> {
 fn run_list() -> anyhow::Result<()> {
     let ctx = AppContext::open().context("failed to open workpot")?;
     let repos = ctx.list_repos().context("list failed")?;
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
-    let ordered = list_display::flat_tray_ordered_with_icons(repos, ctx.config(), now_secs);
-    for (repo, icon) in &ordered {
-        println!("{}", list_display::format_list_row(repo, icon));
-    }
-    Ok(())
+    print_ordered_repos(&ctx, repos)
 }
 
 fn run_search(query: &str) -> anyhow::Result<()> {
@@ -233,15 +241,7 @@ fn run_search(query: &str) -> anyhow::Result<()> {
     if !trimmed.is_empty() {
         repos.retain(|r| fuzzy_match(trimmed, r));
     }
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
-    let ordered = list_display::flat_tray_ordered_with_icons(repos, ctx.config(), now_secs);
-    for (repo, icon) in &ordered {
-        println!("{}", list_display::format_list_row(repo, icon));
-    }
-    Ok(())
+    print_ordered_repos(&ctx, repos)
 }
 
 fn run_repo(sub: RepoCommands) -> anyhow::Result<()> {

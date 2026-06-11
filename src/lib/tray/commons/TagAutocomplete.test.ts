@@ -140,7 +140,6 @@ describe("TagAutocomplete", () => {
       visible: true,
       prefix: "re",
     });
-    // only "react" starts with "re"
     expect(queryByText("#react")).toBeTruthy();
     expect(queryByText("#rust")).toBeNull();
     expect(queryByText("#frontend")).toBeNull();

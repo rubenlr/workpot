@@ -47,21 +47,17 @@ pub fn checkout_repo_branch(repo_path: &Path, branch: &str) -> Result<()> {
         return Ok(());
     }
 
+    let local_ref = format!("refs/heads/{branch}");
     if repo.find_branch(branch, BranchType::Local).is_ok() {
-        checkout_tree_for_ref(&repo, &format!("refs/heads/{branch}"))?;
+        checkout_tree_for_ref(&repo, &local_ref)?;
         return Ok(());
-    }
-
-    let remote_ref = format!("refs/remotes/origin/{branch}");
-    if repo.revparse_single(&remote_ref).is_err() {
-        return Err(WorkpotError::InvalidInput(format!(
-            "remote branch origin/{branch} not found"
-        )));
     }
 
     let remote_branch = repo
         .find_branch(&format!("origin/{branch}"), BranchType::Remote)
-        .map_err(|e| WorkpotError::InvalidInput(format!("remote branch not found: {e}")))?;
+        .map_err(|_| {
+            WorkpotError::InvalidInput(format!("remote branch origin/{branch} not found"))
+        })?;
     let target_oid = remote_branch
         .get()
         .target()
@@ -77,7 +73,7 @@ pub fn checkout_repo_branch(repo_path: &Path, branch: &str) -> Result<()> {
         .set_upstream(Some(&format!("origin/{branch}")))
         .map_err(|e| WorkpotError::InvalidInput(format!("failed to set upstream: {e}")))?;
 
-    checkout_tree_for_ref(&repo, &format!("refs/heads/{branch}"))?;
+    checkout_tree_for_ref(&repo, &local_ref)?;
     Ok(())
 }
 

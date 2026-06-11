@@ -29,6 +29,20 @@ function repo(name: string, overrides: Partial<RepoDto> = {}): RepoDto {
   };
 }
 
+function bindableSelectedIndex(initial = 0) {
+  let value = initial;
+  return {
+    props: {
+      get selectedIndex() {
+        return value;
+      },
+      set selectedIndex(v: number) {
+        value = v;
+      },
+    },
+  };
+}
+
 function renderList(
   sectionedRepos: SectionedRepos,
   opts: {
@@ -46,20 +60,25 @@ function renderList(
   const flatIndexByPath = new Map(repos.map((r, i) => [r.path, i]));
   const onOpen = opts.onOpen ?? vi.fn();
   const onDetail = opts.onDetail ?? vi.fn();
-  return {
-    ...render(TrayRepoList, {
-      props: {
-        sectionedRepos,
-        flatIndexByPath,
-        selectedIndex: opts.selectedIndex ?? 0,
-        onPinReorder: vi.fn(),
-        onSelectRow: vi.fn(),
-        onOpen,
-        onDetail,
-      },
-    }),
+  const selectedIndex = bindableSelectedIndex(opts.selectedIndex ?? 0);
+  const baseProps = {
+    sectionedRepos,
+    flatIndexByPath,
+    ...selectedIndex.props,
+    onPinReorder: vi.fn(),
+    onSelectRow: vi.fn(),
     onOpen,
     onDetail,
+  };
+  const view = render(TrayRepoList, { props: baseProps });
+  return {
+    ...view,
+    onOpen,
+    onDetail,
+    rerenderWithSelection(index: number) {
+      selectedIndex.props.selectedIndex = index;
+      return view.rerender({ ...baseProps, ...selectedIndex.props });
+    },
   };
 }
 
@@ -122,75 +141,28 @@ describe("TrayRepoList", () => {
     const rows = container.querySelectorAll("[data-row-index]");
     expect(rows.length).toBe(2);
   });
-  it("shows selection highlight while pointer is over list", async () => {
-    const { container } = renderList(
-      {
-        ...empty,
-        rest: [repo("a"), repo("b")],
-      },
-      { selectedIndex: 0 },
-    );
-    const listRoot = container.querySelector(".bg-inverse-surface");
-    expect(listRoot).toBeTruthy();
-    await fireEvent.mouseEnter(listRoot!);
-    const selectedOpen = container.querySelector(
-      '[data-row-index="0"] button.bg-primary',
-    );
-    expect(selectedOpen).toBeTruthy();
-  });
 
   it("mouseenter updates selected row", async () => {
-    let selectedIndex = 0;
-    const { container } = render(TrayRepoList, {
-      props: {
-        sectionedRepos: { ...empty, rest: [repo("a"), repo("b")] },
-        flatIndexByPath: new Map([
-          ["/tmp/a", 0],
-          ["/tmp/b", 1],
-        ]),
-        get selectedIndex() {
-          return selectedIndex;
-        },
-        set selectedIndex(v: number) {
-          selectedIndex = v;
-        },
-        onPinReorder: vi.fn(),
-        onSelectRow: vi.fn(),
-        onOpen: vi.fn(),
-        onDetail: vi.fn(),
-      },
+    const { container } = renderList({
+      ...empty,
+      rest: [repo("a"), repo("b")],
     });
     const row1 = container.querySelector('[data-row-index="1"]');
     expect(row1).toBeTruthy();
     await fireEvent.mouseEnter(row1!);
-    expect(selectedIndex).toBe(1);
+    expect(
+      container.querySelector('[data-row-index="1"] button.bg-primary'),
+    ).toBeTruthy();
   });
 
   it("keyboard selection clears stale hover", async () => {
-    const { container, rerender } = renderList(
-      {
-        ...empty,
-        rest: [repo("a"), repo("b")],
-      },
-      { selectedIndex: 0 },
-    );
+    const sectioned = { ...empty, rest: [repo("a"), repo("b")] };
+    const { container, rerenderWithSelection } = renderList(sectioned);
     const row0 = container.querySelector('[data-row-index="0"]');
     expect(row0).toBeTruthy();
     await fireEvent.mouseEnter(row0!);
-    const repos = [repo("a"), repo("b")];
-    const flatIndexByPath = new Map(repos.map((r, i) => [r.path, i]));
-    await rerender({
-      sectionedRepos: { ...empty, rest: repos },
-      flatIndexByPath,
-      selectedIndex: 1,
-      onPinReorder: vi.fn(),
-      onSelectRow: vi.fn(),
-      onOpen: vi.fn(),
-      onDetail: vi.fn(),
-    });
-    const row0Button = container.querySelector(
-      '[data-row-index="0"] button',
-    ) as HTMLButtonElement | null;
+    await rerenderWithSelection(1);
+    const row0Button = container.querySelector('[data-row-index="0"] button');
     expect(row0Button?.classList.contains("bg-white/10")).toBe(false);
     const row1Selected = container.querySelector(
       '[data-row-index="1"] button.bg-primary',

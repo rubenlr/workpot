@@ -5,7 +5,6 @@ use crate::services::{catalog, discovery, git_state, paths};
 use rusqlite::{Connection, Transaction, params};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct IndexSummary {
@@ -21,16 +20,9 @@ struct ChangeEntry {
     action: &'static str,
 }
 
-fn now_secs() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
-}
-
 /// Full watch-root rescan with transactional merge, caps, and audit history (D-07, D-14–D-18).
 pub fn run_full(conn: &Connection, config: &Config) -> Result<IndexSummary> {
-    let started_at = now_secs();
+    let started_at = crate::services::git_state::unix_now_secs();
     log::debug!("index run_full: start");
     match run_full_inner(conn, config, started_at) {
         Ok(summary) => {
@@ -193,7 +185,7 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
     }
 
     let git_tx = conn.unchecked_transaction()?;
-    let refresh_time = now_secs();
+    let refresh_time = crate::services::git_state::unix_now_secs();
     for r in &git_results {
         let updated = git_tx.execute(
             "UPDATE repos SET branch=?1, is_dirty=?2, ahead=?3, behind=?4,
@@ -381,7 +373,7 @@ fn projected_repo_count(
 }
 
 fn record_error_run(conn: &Connection, started_at: i64, err: &WorkpotError) -> Result<()> {
-    let finished_at = now_secs();
+    let finished_at = crate::services::git_state::unix_now_secs();
     let message = err.to_string();
     conn.execute(
         "INSERT INTO index_runs (started_at, finished_at, status, added_count, removed_count, skipped_count, message)
@@ -397,7 +389,7 @@ fn record_cap_exceeded_run(
     projected: i64,
     max: u32,
 ) -> Result<()> {
-    let finished_at = now_secs();
+    let finished_at = crate::services::git_state::unix_now_secs();
     let message = format!("projected {projected} repos exceeds max {max}");
     conn.execute(
         "INSERT INTO index_runs (started_at, finished_at, status, added_count, removed_count, skipped_count, message)
@@ -422,7 +414,7 @@ fn finish_index_run(
     summary: &IndexSummary,
     message: Option<&str>,
 ) -> Result<()> {
-    let finished_at = now_secs();
+    let finished_at = crate::services::git_state::unix_now_secs();
     tx.execute(
         "UPDATE index_runs SET finished_at = ?1, status = ?2, added_count = ?3, removed_count = ?4, skipped_count = ?5, message = ?6
          WHERE id = ?7",

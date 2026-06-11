@@ -220,16 +220,19 @@ impl AppContext {
         })
     }
 
-    /// Refresh git state for all non-excluded repos (rayon batch, then single tx persist).
-
     /// Checkout a branch in an indexed repo and persist updated git state.
     pub fn checkout_repo_branch(&self, catalog_path: &Path, branch: &str) -> Result<()> {
         let launch_path = self.indexed_launch_path(catalog_path)?;
         crate::services::branch_checkout::checkout_repo_branch(&launch_path, branch)?;
-        self.refresh_and_persist_git_state(catalog_path)?;
+        crate::services::git_state::refresh_and_persist_catalog_entry(
+            &self.conn,
+            catalog_path,
+            &launch_path,
+        )?;
         Ok(())
     }
 
+    /// Refresh git state for all non-excluded repos (rayon batch, then single tx persist).
     pub fn refresh_all_git_state(&self) -> Result<GitRefreshSummary> {
         let paths = self.git_refresh_paths()?;
         let git_results = crate::services::git_state::refresh_all(paths);
