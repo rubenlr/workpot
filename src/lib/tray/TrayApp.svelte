@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { createTrayPanel } from "./createTrayPanel.svelte";
-  import TrayPanelChrome from "./TrayPanelChrome.svelte";
+  import { createTrayPanel } from "$lib/tray/state/createTrayPanel.svelte";
+  import TrayPanelChrome from "./chrome/TrayPanelChrome.svelte";
 
   const panel = createTrayPanel();
 

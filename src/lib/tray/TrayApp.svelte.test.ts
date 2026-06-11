@@ -10,7 +10,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("./createTrayPanel.svelte", () => ({
+vi.mock("$lib/tray/state/createTrayPanel.svelte", () => ({
   createTrayPanel: () => ({
     mount,
     destroy,
