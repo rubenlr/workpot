@@ -78,7 +78,7 @@
   }
 </script>
 
-<ul class="space-y-0.5" role="listbox">
+<ul class="space-y-0.5" role="list">
   {#each SECTION_META as { key, label, draggable } (key)}
     {#if sectionedRepos[key].length > 0}
       <li role="presentation">
@@ -86,38 +86,34 @@
       </li>
       {#each sectionedRepos[key] as repo, i (repo.path)}
         {@const idx = rowFlatIndex(repo.path)}
-        <li role="presentation">
-          <RepoListRow
-            {repo}
-            rowIndex={idx}
-            listRowDraggable={draggable}
-            selected={idx === selectedIndex}
-            onRowContextMenu={(e) => {
-              e.preventDefault();
-              void invoke("show_repo_context_menu", {
-                repoPath: repo.path,
-                isPinned: repo.pinned,
-                tags: repo.tags,
-              });
-            }}
-            onRowDragStart={draggable
-              ? (e) => handleDragStart(e, i)
-              : undefined}
-            onRowDragOver={draggable ? (e) => e.preventDefault() : undefined}
-            onRowDrop={draggable ? (e) => handleDrop(e, i) : undefined}
-            onRowDragEnd={draggable ? clearDragSource : undefined}
-            onOpen={() => {
-              onSelectRow(idx);
-              onOpen(idx);
-            }}
-            onDetail={() => {
-              onSelectRow(idx);
-              onDetail(repo, idx);
-            }}
-            onTagRemove={(tag) => onTagRemove(repo.path, tag)}
-            {onTagFilter}
-          />
-        </li>
+        <RepoListRow
+          {repo}
+          rowIndex={idx}
+          listRowDraggable={draggable}
+          selected={idx === selectedIndex}
+          onRowContextMenu={(e) => {
+            e.preventDefault();
+            void invoke("show_repo_context_menu", {
+              repoPath: repo.path,
+              isPinned: repo.pinned,
+              tags: repo.tags,
+            });
+          }}
+          onRowDragStart={draggable ? (e) => handleDragStart(e, i) : undefined}
+          onRowDragOver={draggable ? (e) => e.preventDefault() : undefined}
+          onRowDrop={draggable ? (e) => handleDrop(e, i) : undefined}
+          onRowDragEnd={draggable ? clearDragSource : undefined}
+          onOpen={() => {
+            onSelectRow(idx);
+            onOpen(idx);
+          }}
+          onDetail={() => {
+            onSelectRow(idx);
+            onDetail(repo, idx);
+          }}
+          onTagRemove={(tag) => onTagRemove(repo.path, tag)}
+          {onTagFilter}
+        />
       {/each}
     {/if}
   {/each}

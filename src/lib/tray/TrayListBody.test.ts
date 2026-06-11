@@ -76,8 +76,8 @@ describe("TrayListBody", () => {
     expect(getByText(TRAY_NO_MATCH_MESSAGE)).toBeTruthy();
   });
 
-  it("list_view_renders_listbox_not_placeholder", () => {
+  it("list_view_renders_list_not_placeholder", () => {
     const { queryByRole } = renderBody({ kind: "list" });
-    expect(queryByRole("listbox")).toBeTruthy();
+    expect(queryByRole("list")).toBeTruthy();
   });
 });

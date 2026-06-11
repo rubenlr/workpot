@@ -1,13 +1,13 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
-  import RepoListRow from "./RepoListRow.svelte";
+  import RepoListRowStory from "./RepoListRowStory.svelte";
   import { storyRepo } from "./repoStoryFixtures";
 
   const noop = () => {};
 
   const { Story } = defineMeta({
     title: "Tray/RepoListRow",
-    component: RepoListRow,
+    component: RepoListRowStory,
     args: {
       onOpen: noop,
       onDetail: noop,

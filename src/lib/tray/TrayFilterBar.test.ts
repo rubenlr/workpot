@@ -42,7 +42,7 @@ describe("TrayFilterBar", () => {
 
   it("autocomplete_hidden_when_query_has_no_hash", () => {
     const { queryByRole } = renderBar({ filterQuery: "workpot" });
-    expect(queryByRole("listbox")).toBeNull();
+    expect(queryByRole("list")).toBeNull();
   });
 
   it("autocomplete_visible_when_query_contains_hash", () => {
@@ -50,7 +50,7 @@ describe("TrayFilterBar", () => {
       filterQuery: "#rust",
       allTags: ["rust"],
     });
-    expect(getByRole("listbox")).toBeTruthy();
+    expect(getByRole("list")).toBeTruthy();
   });
 
   it("keydown_on_input_calls_onFilterKeydown", async () => {

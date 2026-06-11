@@ -73,7 +73,7 @@ describe("RepoListRow", () => {
     const onOpen = vi.fn();
     const onDetail = vi.fn();
     const { getByLabelText } = renderRow(mockRepo, { onOpen, onDetail });
-    const badge = getByLabelText("Open detail");
+    const badge = getByLabelText("Open detail for testrepo");
     await fireEvent.click(badge);
     expect(onDetail).toHaveBeenCalledOnce();
     expect(onOpen).not.toHaveBeenCalled();

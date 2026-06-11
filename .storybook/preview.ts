@@ -1,7 +1,24 @@
 import type { Preview } from "@storybook/sveltekit";
 import "../src/app.css";
 
+function syncPreviewTheme(background: unknown) {
+  const root = document.documentElement;
+  if (background === "light") {
+    root.setAttribute("data-theme", "light");
+  } else if (background === "dark") {
+    root.setAttribute("data-theme", "dark");
+  } else {
+    root.removeAttribute("data-theme");
+  }
+}
+
 const preview: Preview = {
+  decorators: [
+    (storyFn, context) => {
+      syncPreviewTheme(context.globals.backgrounds?.value);
+      return storyFn();
+    },
+  ],
   parameters: {
     controls: {
       matchers: {

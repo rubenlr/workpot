@@ -75,9 +75,9 @@ describe("TrayRepoList", () => {
     cleanup();
   });
 
-  it("renders_listbox_container", () => {
+  it("renders_list_container", () => {
     const { getByRole } = renderList({ ...empty, rest: [repo("workpot")] });
-    expect(getByRole("listbox")).toBeTruthy();
+    expect(getByRole("list")).toBeTruthy();
   });
 
   it("renders_repo_names_in_rest_section", () => {
