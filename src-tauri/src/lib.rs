@@ -64,6 +64,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(commands::ContextMenuRepo(Arc::new(Mutex::new(None))))
         .manage(commands::GitRefreshGuard::new())
+        .manage(commands::RepoSyncGuard::new())
         .setup(|app| {
             let ctx = AppContext::open().map_err(|e| e.to_string())?;
             app.manage(Arc::new(Mutex::new(ctx)));
@@ -88,6 +89,7 @@ pub fn run() {
             commands::list_repos,
             commands::get_tray_config,
             commands::refresh_all_git_state,
+            commands::sync_repo_branch,
             commands::open_in_cursor,
             commands::set_tags,
             commands::add_tag,

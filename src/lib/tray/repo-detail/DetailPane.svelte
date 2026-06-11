@@ -5,7 +5,12 @@
     shouldSaveNotes,
     tagAlreadyOnRepo,
   } from "$lib/orgClient";
-  import type { BranchListItemDto, RepoDto } from "$lib/types";
+  import type {
+    ActiveSync,
+    BranchListItemDto,
+    RepoDto,
+    SyncDirection,
+  } from "$lib/types";
   import BranchListRow from "./BranchListRow.svelte";
   import DetailPaneHeader from "./DetailPaneHeader.svelte";
   import TagAutocomplete from "$lib/tray/commons/TagAutocomplete.svelte";
@@ -18,6 +23,9 @@
     onMutated,
     requestTagFocus = false,
     onTagFocusDone,
+    activeSync = null,
+    onSync,
+    branchRevision = 0,
   }: {
     repo: RepoDto;
     allTags?: string[];
@@ -25,6 +33,13 @@
     onMutated: () => void;
     requestTagFocus?: boolean;
     onTagFocusDone?: () => void;
+    activeSync?: ActiveSync | null;
+    onSync?: (
+      repoPath: string,
+      branch: string,
+      direction: SyncDirection,
+    ) => void;
+    branchRevision?: number;
   } = $props();
 
   let tagSuggestTags = $derived.by(() => {
@@ -63,6 +78,7 @@
 
   $effect(() => {
     const path = repo.path;
+    branchRevision;
     branchError = null;
     let cancelled = false;
     void (async () => {
@@ -191,7 +207,12 @@
           </p>
         {:else}
           {#each branches as b (b.name)}
-            <BranchListRow branch={b} />
+            <BranchListRow
+              branch={b}
+              repoPath={repo.path}
+              {activeSync}
+              {onSync}
+            />
           {/each}
         {/if}
       </div>

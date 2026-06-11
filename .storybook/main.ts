@@ -21,13 +21,13 @@ const config: StorybookConfig = {
         find: "@tauri-apps/api/core",
         replacement: path.join(
           dirname,
-          "../src/lib/storybook/tauriCoreMock.ts",
+          "../src/lib/tray/storybook/tauriCoreMock.ts",
         ),
       });
     } else {
       alias["@tauri-apps/api/core"] = path.join(
         dirname,
-        "../src/lib/storybook/tauriCoreMock.ts",
+        "../src/lib/tray/storybook/tauriCoreMock.ts",
       );
     }
     return viteConfig;

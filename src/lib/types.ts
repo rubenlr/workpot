@@ -12,6 +12,21 @@ export interface GitRefreshSummary {
   any_dirty: boolean;
 }
 
+export type SyncDirection = "push" | "pull";
+
+export interface RepoSyncEvent {
+  repo_path: string;
+  branch: string;
+  direction: SyncDirection;
+  error?: string;
+}
+
+export interface ActiveSync {
+  repoPath: string;
+  branch: string;
+  direction: SyncDirection;
+}
+
 export type BranchPresence =
   | "checkout"
   | "local_only"

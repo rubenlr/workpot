@@ -20,6 +20,14 @@ import {
   setPinOrder,
   type TrayRepoActionsDeps,
 } from "$lib/tray/logic/handlers/trayRepoActions";
+import {
+  onRepoSyncComplete,
+  onRepoSyncFailed,
+  onRepoSyncStarted,
+  syncRepoBranch,
+  type TrayRepoSyncDeps,
+} from "$lib/tray/logic/handlers/trayRepoSync";
+import type { ActiveSync, SyncDirection } from "$lib/types";
 
 export function createTrayPanel() {
   const config = createTrayConfig();
@@ -45,6 +53,9 @@ export function createTrayPanel() {
   const keyboard = createTrayPanelKeyboard({ list, detail, launch, data });
 
   let unsubscribeEvents: (() => void) | null = null;
+  let activeSync = $state<ActiveSync | null>(null);
+  let refreshing = $state(false);
+  let branchRevision = $state(0);
 
   const actionDeps: TrayRepoActionsDeps = {
     invoke,
@@ -53,12 +64,32 @@ export function createTrayPanel() {
     openDetailWithTagFocus: (repo) => detail.openDetailWithTagFocus(repo),
   };
 
+  const syncDeps: TrayRepoSyncDeps = {
+    invoke,
+    refresh: () => data.refresh(),
+    onError: (e) => data.setListError(String(e)),
+    setActiveSync: (sync) => {
+      activeSync = sync;
+    },
+    bumpBranchRevision: () => {
+      branchRevision += 1;
+    },
+  };
+
   async function removeTagFromRepo(repoPath: string, tag: string) {
     await removeTag(repoPath, tag, actionDeps);
   }
 
   async function handlePinReorder(items: ReturnType<typeof toPinOrderPayload>) {
     await setPinOrder(items, actionDeps);
+  }
+
+  async function handleSync(
+    repoPath: string,
+    branch: string,
+    direction: SyncDirection,
+  ) {
+    await syncRepoBranch(repoPath, branch, direction, syncDeps);
   }
 
   const gitRefreshDeps = {
@@ -74,10 +105,23 @@ export function createTrayPanel() {
     trayTrace("mount start");
     unsubscribeEvents = await subscribeTrayPanelEvents({
       onPanelOpened: () => onPanelOpened(gitRefreshDeps),
-      onGitRefreshComplete: (summary) =>
-        onGitRefreshComplete(summary, gitRefreshDeps),
-      onGitRefreshFailed: (message) =>
-        onGitRefreshFailed(message, gitRefreshDeps),
+      onGitRefreshStarted: () => {
+        refreshing = true;
+      },
+      onGitRefreshComplete: (summary) => {
+        refreshing = false;
+        onGitRefreshComplete(summary, gitRefreshDeps);
+      },
+      onGitRefreshFailed: (message) => {
+        refreshing = false;
+        onGitRefreshFailed(message, gitRefreshDeps);
+      },
+      onRepoSyncStarted: (payload) =>
+        onRepoSyncStarted(payload, syncDeps.setActiveSync),
+      onRepoSyncComplete: (payload) => {
+        void onRepoSyncComplete(payload, syncDeps);
+      },
+      onRepoSyncFailed: (payload) => onRepoSyncFailed(payload, syncDeps),
       onRepoContextAction: (payload) => {
         void handleRepoContextAction(payload, data.repos, actionDeps);
       },
@@ -138,6 +182,15 @@ export function createTrayPanel() {
     get focusTagOnDetailOpen() {
       return detail.focusTagOnDetailOpen;
     },
+    get activeSync() {
+      return activeSync;
+    },
+    get refreshing() {
+      return refreshing;
+    },
+    get branchRevision() {
+      return branchRevision;
+    },
     clearTagFocusRequest: detail.clearTagFocusRequest,
     openDetail: detail.openDetail,
     moveSelection: list.moveSelection,
@@ -149,6 +202,7 @@ export function createTrayPanel() {
     onTagAutocompleteSelect: list.onTagAutocompleteSelect,
     removeTagFromRepo,
     handlePinReorder,
+    handleSync,
     onFilterKeydown: keyboard.onFilterKeydown,
     onPanelKeydown: keyboard.onPanelKeydown,
     dismissLaunchError: launch.dismissLaunchError,

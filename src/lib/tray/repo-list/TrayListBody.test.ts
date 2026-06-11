@@ -4,7 +4,10 @@ import TrayListBody from "./TrayListBody.svelte";
 import type { TrayListView } from "$lib/tray/logic/list/listState";
 import type { SectionedRepos } from "$lib/tray/logic/list/sort";
 import type { RepoDto } from "$lib/types";
-import { TRAY_EMPTY_LIST_MESSAGE, TRAY_NO_MATCH_MESSAGE } from "$lib/tray/logic/handlers/constants";
+import {
+  TRAY_EMPTY_LIST_MESSAGE,
+  TRAY_NO_MATCH_MESSAGE,
+} from "$lib/tray/logic/handlers/constants";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue(undefined),

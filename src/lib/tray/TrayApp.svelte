@@ -37,6 +37,10 @@
     panel.openDetail(repo);
   }}
   onRefresh={() => void panel.startBackgroundRefresh()}
+  refreshing={panel.refreshing}
+  activeSync={panel.activeSync}
+  onSync={panel.handleSync}
+  branchRevision={panel.branchRevision}
   detailRepo={panel.detailRepo}
   focusTagOnDetailOpen={panel.focusTagOnDetailOpen}
   onTagFocusDone={panel.clearTagFocusRequest}

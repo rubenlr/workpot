@@ -32,3 +32,8 @@ commands.allow = [
   "list_branches",
   "show_repo_context_menu",
 ]
+
+[[permission]]
+identifier = "allow-sync-repo-branch"
+description = "Allows sync_repo_branch IPC."
+commands.allow = ["sync_repo_branch"]

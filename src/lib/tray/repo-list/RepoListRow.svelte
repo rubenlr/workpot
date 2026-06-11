@@ -2,15 +2,17 @@
   import MaterialIcon from "$lib/tray/commons/MaterialIcon.svelte";
   import SyncBadge from "$lib/tray/commons/SyncBadge.svelte";
   import { dirtyDotClass } from "$lib/tray/logic/list/repoRow";
-  import type { RepoDto } from "$lib/types";
+  import type { ActiveSync, RepoDto, SyncDirection } from "$lib/types";
 
   let {
     repo,
     selected = false,
     rowIndex,
     listRowDraggable = false,
+    activeSync = null,
     onOpen,
     onDetail,
+    onSync,
     onRowContextMenu,
     onRowDragStart,
     onRowDragOver,
@@ -21,8 +23,14 @@
     selected?: boolean;
     rowIndex?: number;
     listRowDraggable?: boolean;
+    activeSync?: ActiveSync | null;
     onOpen: () => void;
     onDetail: () => void;
+    onSync?: (
+      repoPath: string,
+      branch: string,
+      direction: SyncDirection,
+    ) => void;
     onRowContextMenu?: (e: MouseEvent) => void;
     onRowDragStart?: (e: DragEvent) => void;
     onRowDragOver?: (e: DragEvent) => void;
@@ -31,6 +39,16 @@
   } = $props();
 
   const rowLabel = $derived(repo.alias ?? repo.name);
+
+  const syncingDirection = $derived(
+    activeSync &&
+      activeSync.repoPath === repo.path &&
+      activeSync.branch === repo.branch
+      ? activeSync.direction
+      : null,
+  );
+
+  const syncDisabled = $derived(activeSync != null);
 
   function activateRow(metaKey: boolean) {
     if (metaKey) {
@@ -80,8 +98,22 @@
           </span>
         {/if}
       </span>
-      <SyncBadge ahead={repo.ahead} behind={repo.behind} />
     </button>
+    <div class="flex shrink-0 items-center self-center pr-1">
+      <SyncBadge
+        ahead={repo.ahead}
+        behind={repo.behind}
+        branch={repo.branch}
+        {syncingDirection}
+        disabled={syncDisabled}
+        onPush={repo.branch && onSync
+          ? () => onSync(repo.path, repo.branch!, "push")
+          : undefined}
+        onPull={repo.branch && onSync
+          ? () => onSync(repo.path, repo.branch!, "pull")
+          : undefined}
+      />
+    </div>
     <div
       role="separator"
       aria-orientation="vertical"

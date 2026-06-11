@@ -2,7 +2,7 @@
   import DetailPane from "$lib/tray/repo-detail/DetailPane.svelte";
   import type { TrayListView } from "$lib/tray/logic/list/listState";
   import type { SectionedRepos } from "$lib/tray/logic/list/sort";
-  import type { RepoDto } from "$lib/types";
+  import type { ActiveSync, RepoDto, SyncDirection } from "$lib/types";
   import type { toPinOrderPayload } from "$lib/tray/logic/list/pinOrder";
   import LaunchErrorBanner from "./LaunchErrorBanner.svelte";
   import TrayFilterBar from "$lib/tray/repo-list/TrayFilterBar.svelte";
@@ -37,6 +37,9 @@
     onTagFocusDone,
     onCloseDetail,
     onDetailMutated,
+    activeSync = null,
+    onSync,
+    branchRevision = 0,
   }: {
     listMaxHeightPx: number;
     launchError?: string | null;
@@ -66,6 +69,13 @@
     onTagFocusDone?: () => void;
     onCloseDetail?: () => void;
     onDetailMutated?: () => void;
+    activeSync?: ActiveSync | null;
+    onSync?: (
+      repoPath: string,
+      branch: string,
+      direction: SyncDirection,
+    ) => void;
+    branchRevision?: number;
   } = $props();
 </script>
 
@@ -93,6 +103,9 @@
       <DetailPane
         repo={detailRepo}
         {allTags}
+        {activeSync}
+        {onSync}
+        {branchRevision}
         requestTagFocus={focusTagOnDetailOpen}
         {onTagFocusDone}
         onClose={onCloseDetail}
@@ -108,6 +121,8 @@
         bind:selectedIndex
         {onPinReorder}
         {onSelectRow}
+        {activeSync}
+        {onSync}
         {onOpen}
         {onDetail}
       />

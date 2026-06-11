@@ -27,6 +27,7 @@ pub use crate::services::git_state::GitRefreshSummary;
 pub use crate::services::repo_priority::{
     SectionedRepos, flat_tray_ordered, flat_tray_ordered_repos, section_sort,
 };
+pub use crate::services::repo_sync::{SyncDirection, run_repo_sync};
 pub use crate::services::stale_dirty::has_stale_dirty;
 
 pub fn version() -> &'static str {

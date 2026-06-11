@@ -1,8 +1,11 @@
 <script lang="ts">
   import type { TrayListView } from "$lib/tray/logic/list/listState";
-  import { TRAY_EMPTY_LIST_MESSAGE, TRAY_NO_MATCH_MESSAGE } from "$lib/tray/logic/handlers/constants";
+  import {
+    TRAY_EMPTY_LIST_MESSAGE,
+    TRAY_NO_MATCH_MESSAGE,
+  } from "$lib/tray/logic/handlers/constants";
   import type { SectionedRepos } from "$lib/tray/logic/list/sort";
-  import type { RepoDto } from "$lib/types";
+  import type { ActiveSync, RepoDto, SyncDirection } from "$lib/types";
   import TrayListPlaceholder from "./TrayListPlaceholder.svelte";
   import TrayRepoList from "./TrayRepoList.svelte";
   import type { toPinOrderPayload } from "$lib/tray/logic/list/pinOrder";
@@ -18,6 +21,8 @@
     onSelectRow,
     onOpen,
     onDetail,
+    activeSync = null,
+    onSync,
   }: {
     listView: TrayListView;
     emptyListMessage?: string;
@@ -31,6 +36,12 @@
     onSelectRow: (index: number) => void;
     onOpen: (index: number) => void;
     onDetail: (repo: RepoDto, index: number) => void;
+    activeSync?: ActiveSync | null;
+    onSync?: (
+      repoPath: string,
+      branch: string,
+      direction: SyncDirection,
+    ) => void;
   } = $props();
 </script>
 
@@ -47,6 +58,8 @@
     bind:selectedIndex
     {onPinReorder}
     {onSelectRow}
+    {activeSync}
+    {onSync}
     {onOpen}
     {onDetail}
   />

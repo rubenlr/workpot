@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::menu::{ContextMenu, Menu, MenuItem};
 use tauri::{AppHandle, Emitter, Manager, State, Window};
-use workpot_core::{AppContext, GitRefreshSummary, RepoRecord};
+use workpot_core::{AppContext, GitRefreshSummary, RepoRecord, SyncDirection, run_repo_sync};
 
 /// Prevents overlapping background git refresh jobs (panel open + Cmd+R).
 #[derive(Clone)]
@@ -27,6 +27,35 @@ impl GitRefreshGuard {
     pub fn finish(&self) {
         self.0.store(false, Ordering::Release);
     }
+}
+
+/// Prevents overlapping per-branch push/pull sync jobs.
+#[derive(Clone)]
+pub struct RepoSyncGuard(pub Arc<AtomicBool>);
+
+impl RepoSyncGuard {
+    pub fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+
+    pub fn try_start(&self) -> bool {
+        self.0
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    pub fn finish(&self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RepoSyncEventDto {
+    pub repo_path: String,
+    pub branch: String,
+    pub direction: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 struct TraySyncAnimationCancel(Arc<AtomicBool>);
@@ -779,6 +808,89 @@ pub async fn refresh_all_git_state(
 ) -> Result<(), String> {
     spawn_background_git_refresh(app, state.inner().clone());
     Ok(())
+}
+
+#[tauri::command]
+pub async fn sync_repo_branch(
+    app: AppHandle,
+    state: State<'_, Arc<Mutex<AppContext>>>,
+    guard: State<'_, RepoSyncGuard>,
+    repo_path: String,
+    branch: String,
+    direction: String,
+) -> Result<(), String> {
+    let sync_direction = SyncDirection::parse(&direction)?;
+    if branch.trim().is_empty() {
+        return Err("branch must not be empty".to_string());
+    }
+    if !guard.try_start() {
+        return Err("a repo sync is already in progress".to_string());
+    }
+
+    let started_payload = RepoSyncEventDto {
+        repo_path: repo_path.clone(),
+        branch: branch.clone(),
+        direction: direction.clone(),
+        error: None,
+    };
+    if let Err(e) = app.emit("repo-sync-started", &started_payload) {
+        log_emit_err("repo-sync-started", e);
+    }
+
+    let state_clone = state.inner().clone();
+    let repo_path_blocking = repo_path.clone();
+    let branch_blocking = branch.clone();
+    let direction_str = direction.clone();
+
+    let blocking_result = tauri::async_runtime::spawn_blocking(move || {
+        let ctx = state_clone
+            .lock()
+            .map_err(|_| "AppContext lock poisoned".to_string())?;
+        run_repo_sync(&ctx, &repo_path_blocking, &branch_blocking, sync_direction)
+    })
+    .await;
+
+    guard.finish();
+
+    match blocking_result {
+        Ok(Ok(())) => {
+            let complete_payload = RepoSyncEventDto {
+                repo_path,
+                branch,
+                direction: direction_str,
+                error: None,
+            };
+            if let Err(e) = app.emit("repo-sync-complete", &complete_payload) {
+                log_emit_err("repo-sync-complete", e);
+            }
+            Ok(())
+        }
+        Ok(Err(e)) => {
+            let failed_payload = RepoSyncEventDto {
+                repo_path: repo_path.clone(),
+                branch: branch.clone(),
+                direction: direction_str.clone(),
+                error: Some(e.clone()),
+            };
+            if let Err(err) = app.emit("repo-sync-failed", &failed_payload) {
+                log_emit_err("repo-sync-failed", err);
+            }
+            Err(e)
+        }
+        Err(join_err) => {
+            let msg = format!("repo sync task panicked or was cancelled: {join_err}");
+            let failed_payload = RepoSyncEventDto {
+                repo_path,
+                branch,
+                direction: direction_str,
+                error: Some(msg.clone()),
+            };
+            if let Err(err) = app.emit("repo-sync-failed", &failed_payload) {
+                log_emit_err("repo-sync-failed", err);
+            }
+            Err(msg)
+        }
+    }
 }
 
 #[tauri::command]

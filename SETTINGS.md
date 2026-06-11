@@ -18,6 +18,8 @@ max_watch_roots = 100
 max_repos = 1000
 
 launch_cmd = "cursor --new-window {path}"
+push_cmd = "git -C {path} push origin {branch}"
+pull_cmd = "git -C {path} pull origin {branch}"
 max_visible_rows = 15
 max_pinned = 5
 max_recent_days = 14
@@ -56,6 +58,15 @@ project_name_source = "folder_name"
 | Key          | Default                        | Description                                                                               |
 | ------------ | ------------------------------ | ----------------------------------------------------------------------------------------- |
 | `launch_cmd` | `"cursor --new-window {path}"` | Shell command template for opening a repo. `{path}` is replaced with the repository path. |
+
+## Sync settings
+
+| Key        | Default                                | Description                                                                                       |
+| ---------- | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `push_cmd` | `"git -C {path} push origin {branch}"` | Shell command template for pushing a branch. `{path}` and `{branch}` are replaced at invoke time. |
+| `pull_cmd` | `"git -C {path} pull origin {branch}"` | Shell command template for pulling a branch. `{path}` and `{branch}` are replaced at invoke time. |
+
+`{path}` resolves to the indexed launch path (worktree for bare repos). `{branch}` is the branch name from the tray row. Both placeholders are required. Commands run synchronously and refresh git state on success.
 
 ## Repo migration settings (`[migration]`)
 

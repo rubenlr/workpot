@@ -1,7 +1,10 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
   import RepoListRowStory from "./RepoListRowStory.svelte";
-  import { storyRepo, storyRepoWithSync } from "$lib/tray/repo-list/repoStoryFixtures";
+  import {
+    storyRepo,
+    storyRepoWithSync,
+  } from "$lib/tray/repo-list/repoStoryFixtures";
 
   const noop = () => {};
 

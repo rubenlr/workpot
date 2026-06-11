@@ -2,9 +2,12 @@
   import { invoke } from "@tauri-apps/api/core";
   import RepoListRow from "./RepoListRow.svelte";
   import SectionHeader from "./SectionHeader.svelte";
-  import { reorderPinned, toPinOrderPayload } from "$lib/tray/logic/list/pinOrder";
+  import {
+    reorderPinned,
+    toPinOrderPayload,
+  } from "$lib/tray/logic/list/pinOrder";
   import type { SectionedRepos } from "$lib/tray/logic/list/sort";
-  import type { RepoDto } from "$lib/types";
+  import type { ActiveSync, RepoDto, SyncDirection } from "$lib/types";
   import { SECTION_META } from "$lib/tray/logic/handlers/constants";
 
   let {
@@ -15,6 +18,8 @@
     onSelectRow,
     onOpen,
     onDetail,
+    activeSync = null,
+    onSync,
   }: {
     sectionedRepos: SectionedRepos;
     flatIndexByPath: Map<string, number>;
@@ -25,6 +30,12 @@
     onSelectRow: (index: number) => void;
     onOpen: (index: number) => void;
     onDetail: (repo: RepoDto, index: number) => void;
+    activeSync?: ActiveSync | null;
+    onSync?: (
+      repoPath: string,
+      branch: string,
+      direction: SyncDirection,
+    ) => void;
   } = $props();
 
   let dragSourceIdx = $state<number | null>(null);
@@ -104,6 +115,8 @@
                 onSelectRow(idx);
                 onOpen(idx);
               }}
+              {activeSync}
+              {onSync}
               onDetail={() => {
                 onSelectRow(idx);
                 onDetail(repo, idx);

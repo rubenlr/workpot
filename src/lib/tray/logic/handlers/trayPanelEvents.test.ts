@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { subscribeTrayPanelEvents, type ListenFn } from "./trayPanelEvents";
-import type { GitRefreshSummary } from "$lib/types";
+import type { GitRefreshSummary, RepoSyncEvent } from "$lib/types";
 
 function mockListen(): {
   listen: ListenFn;
@@ -21,27 +21,38 @@ function mockListen(): {
 }
 
 describe("subscribeTrayPanelEvents", () => {
-  it("registers four listeners and unsubscribes all", async () => {
+  it("registers eight listeners and unsubscribes all", async () => {
     const { listen, unsubs, handlers } = mockListen();
     const onPanelOpened = vi.fn();
+    const onGitRefreshStarted = vi.fn();
     const onGitRefreshComplete = vi.fn();
     const onGitRefreshFailed = vi.fn();
+    const onRepoSyncStarted = vi.fn();
+    const onRepoSyncComplete = vi.fn();
+    const onRepoSyncFailed = vi.fn();
     const onRepoContextAction = vi.fn();
 
     const unsubscribe = await subscribeTrayPanelEvents(
       {
         onPanelOpened,
+        onGitRefreshStarted,
         onGitRefreshComplete,
         onGitRefreshFailed,
+        onRepoSyncStarted,
+        onRepoSyncComplete,
+        onRepoSyncFailed,
         onRepoContextAction,
       },
       listen,
     );
 
-    expect(listen).toHaveBeenCalledTimes(4);
+    expect(listen).toHaveBeenCalledTimes(8);
 
     handlers.get("panel-opened")!({ payload: undefined });
     expect(onPanelOpened).toHaveBeenCalledOnce();
+
+    handlers.get("git-refresh-started")!({ payload: undefined });
+    expect(onGitRefreshStarted).toHaveBeenCalledOnce();
 
     const summary: GitRefreshSummary = {
       refreshed: 1,
@@ -53,6 +64,22 @@ describe("subscribeTrayPanelEvents", () => {
 
     handlers.get("git-refresh-failed")!({ payload: "boom" });
     expect(onGitRefreshFailed).toHaveBeenCalledWith("boom");
+
+    const syncEvent: RepoSyncEvent = {
+      repo_path: "/tmp/x",
+      branch: "main",
+      direction: "push",
+    };
+    handlers.get("repo-sync-started")!({ payload: syncEvent });
+    expect(onRepoSyncStarted).toHaveBeenCalledWith(syncEvent);
+
+    handlers.get("repo-sync-complete")!({ payload: syncEvent });
+    expect(onRepoSyncComplete).toHaveBeenCalledWith(syncEvent);
+
+    handlers.get("repo-sync-failed")!({
+      payload: { ...syncEvent, error: "failed" },
+    });
+    expect(onRepoSyncFailed).toHaveBeenCalled();
 
     const ctx = { action: "pin", repo_path: "/tmp/x" };
     handlers.get("repo-context-action")!({ payload: ctx });

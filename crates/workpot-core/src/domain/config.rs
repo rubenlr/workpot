@@ -16,6 +16,14 @@ fn default_launch_cmd() -> String {
     "cursor --new-window {path}".to_string()
 }
 
+fn default_push_cmd() -> String {
+    "git -C {path} push origin {branch}".to_string()
+}
+
+fn default_pull_cmd() -> String {
+    "git -C {path} pull origin {branch}".to_string()
+}
+
 fn default_max_visible_rows() -> u32 {
     15
 }
@@ -119,6 +127,12 @@ pub struct Config {
     /// Shell command template for opening a repo in the IDE (D-33). `{path}` is substituted.
     #[serde(default = "default_launch_cmd")]
     pub launch_cmd: String,
+    /// Shell command template for pushing a branch. `{path}` and `{branch}` are substituted.
+    #[serde(default = "default_push_cmd")]
+    pub push_cmd: String,
+    /// Shell command template for pulling a branch. `{path}` and `{branch}` are substituted.
+    #[serde(default = "default_pull_cmd")]
+    pub pull_cmd: String,
     /// Maximum repo rows visible in the tray panel before scrolling (D-12).
     #[serde(default = "default_max_visible_rows")]
     pub max_visible_rows: u32,
@@ -145,6 +159,8 @@ impl Default for Config {
             excludes: Vec::new(),
             limits: Limits::default(),
             launch_cmd: default_launch_cmd(),
+            push_cmd: default_push_cmd(),
+            pull_cmd: default_pull_cmd(),
             max_visible_rows: default_max_visible_rows(),
             max_pinned: default_max_pinned(),
             max_recent_days: default_max_recent_days(),
@@ -188,6 +204,18 @@ impl Config {
         }
         if !self.launch_cmd.contains("{path}") {
             return Err("launch_cmd must contain {path} placeholder".into());
+        }
+        if self.push_cmd.trim().is_empty() {
+            return Err("push_cmd must not be empty".into());
+        }
+        if !self.push_cmd.contains("{path}") || !self.push_cmd.contains("{branch}") {
+            return Err("push_cmd must contain {path} and {branch} placeholders".into());
+        }
+        if self.pull_cmd.trim().is_empty() {
+            return Err("pull_cmd must not be empty".into());
+        }
+        if !self.pull_cmd.contains("{path}") || !self.pull_cmd.contains("{branch}") {
+            return Err("pull_cmd must contain {path} and {branch} placeholders".into());
         }
         if self.max_pinned < 1 || self.max_pinned > 20 {
             return Err(format!(

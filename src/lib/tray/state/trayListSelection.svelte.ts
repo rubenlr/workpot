@@ -1,13 +1,19 @@
 import { SvelteMap } from "svelte/reactivity";
 import { trayListView } from "$lib/tray/logic/list/listState";
-import { clampSelectionIndex, moveSelectionIndex } from "$lib/tray/logic/list/selection";
+import {
+  clampSelectionIndex,
+  moveSelectionIndex,
+} from "$lib/tray/logic/list/selection";
 import type { SectionConfig } from "$lib/tray/logic/list/sort";
 import {
   appendTagToFilterQuery,
   replaceTrailingTagAutocomplete,
   trailingTagAutocompletePrefix,
 } from "$lib/tagFilter";
-import { filterAndSectionRepos, flatSectioned } from "$lib/tray/logic/list/trayList";
+import {
+  filterAndSectionRepos,
+  flatSectioned,
+} from "$lib/tray/logic/list/trayList";
 import type { RepoDto } from "$lib/types";
 
 export interface TrayListSelectionDeps {

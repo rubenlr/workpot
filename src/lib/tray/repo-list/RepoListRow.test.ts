@@ -108,4 +108,37 @@ describe("RepoListRow", () => {
     });
     expect(getByText("folder")).toBeTruthy();
   });
+
+  it("sync badges are outside the open button", () => {
+    const onSync = vi.fn();
+    const { getByRole } = render(RepoListRow, {
+      props: {
+        repo: { ...mockRepo, ahead: 2, behind: 1 },
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+        onSync,
+      },
+    });
+    const openBtn = getByRole("button", { name: "Open testrepo" });
+    const pushBtn = getByRole("button", { name: /Push 2 commits on main/ });
+    expect(openBtn.contains(pushBtn)).toBe(false);
+  });
+
+  it("push chip click does not call onOpen", async () => {
+    const onOpen = vi.fn();
+    const onSync = vi.fn();
+    const { getByRole } = render(RepoListRow, {
+      props: {
+        repo: { ...mockRepo, ahead: 2, behind: 0 },
+        onOpen,
+        onDetail: vi.fn(),
+        onSync,
+      },
+    });
+    await fireEvent.click(
+      getByRole("button", { name: /Push 2 commits on main/ }),
+    );
+    expect(onSync).toHaveBeenCalledWith("/tmp/testrepo", "main", "push");
+    expect(onOpen).not.toHaveBeenCalled();
+  });
 });

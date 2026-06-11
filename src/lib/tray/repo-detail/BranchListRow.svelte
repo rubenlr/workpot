@@ -2,12 +2,40 @@
   import MaterialIcon from "$lib/tray/commons/MaterialIcon.svelte";
   import SyncBadge from "$lib/tray/commons/SyncBadge.svelte";
   import { branchPresenceLabel } from "$lib/branchStatus";
-  import type { BranchListItemDto } from "$lib/types";
+  import type {
+    ActiveSync,
+    BranchListItemDto,
+    SyncDirection,
+  } from "$lib/types";
 
-  let { branch }: { branch: BranchListItemDto } = $props();
+  let {
+    branch,
+    repoPath,
+    activeSync = null,
+    onSync,
+  }: {
+    branch: BranchListItemDto;
+    repoPath: string;
+    activeSync?: ActiveSync | null;
+    onSync?: (
+      repoPath: string,
+      branch: string,
+      direction: SyncDirection,
+    ) => void;
+  } = $props();
 
   const isCheckout = $derived(branch.presence === "checkout");
   const isRemoteOnly = $derived(branch.presence === "remote_only");
+
+  const syncingDirection = $derived(
+    activeSync &&
+      activeSync.repoPath === repoPath &&
+      activeSync.branch === branch.name
+      ? activeSync.direction
+      : null,
+  );
+
+  const syncDisabled = $derived(activeSync != null);
 </script>
 
 <div
@@ -35,5 +63,13 @@
       remote
     </span>
   {/if}
-  <SyncBadge ahead={branch.ahead} behind={branch.behind} />
+  <SyncBadge
+    ahead={branch.ahead}
+    behind={branch.behind}
+    branch={branch.name}
+    {syncingDirection}
+    disabled={syncDisabled}
+    onPush={onSync ? () => onSync(repoPath, branch.name, "push") : undefined}
+    onPull={onSync ? () => onSync(repoPath, branch.name, "pull") : undefined}
+  />
 </div>
