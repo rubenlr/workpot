@@ -20,6 +20,8 @@ function repo(path: string): RepoDto {
     name: path.split("/").pop()!,
     alias: null,
     branch: "main",
+    ahead: null,
+    behind: null,
     is_dirty: false,
     parent_dir: "",
     last_opened_at: 1,

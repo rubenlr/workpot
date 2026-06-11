@@ -18,8 +18,6 @@
     onSelectRow,
     onOpen,
     onDetail,
-    onTagRemove,
-    onTagFilter,
   }: {
     listView: TrayListView;
     emptyListMessage?: string;
@@ -33,8 +31,6 @@
     onSelectRow: (index: number) => void;
     onOpen: (index: number) => void;
     onDetail: (repo: RepoDto, index: number) => void;
-    onTagRemove: (repoPath: string, tag: string) => void | Promise<void>;
-    onTagFilter: (tag: string) => void;
   } = $props();
 </script>
 
@@ -53,7 +49,5 @@
     {onSelectRow}
     {onOpen}
     {onDetail}
-    {onTagRemove}
-    {onTagFilter}
   />
 {/if}

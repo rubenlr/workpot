@@ -1,7 +1,7 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
   import RepoListRowStory from "./RepoListRowStory.svelte";
-  import { storyRepo } from "./repoStoryFixtures";
+  import { storyRepo, storyRepoWithSync } from "./repoStoryFixtures";
 
   const noop = () => {};
 
@@ -34,7 +34,20 @@
     repo: storyRepo({
       alias: null,
       branch: "main",
-      is_dirty: null,
+      is_dirty: false,
+      pinned: false,
+    }),
+    selected: true,
+  }}
+/>
+
+<Story
+  name="SelectedDirty"
+  args={{
+    repo: storyRepo({
+      alias: null,
+      branch: "feat/ui",
+      is_dirty: true,
       pinned: false,
     }),
     selected: true,
@@ -55,13 +68,27 @@
 />
 
 <Story
-  name="Pinned"
+  name="AheadBehind"
+  args={{
+    repo: storyRepoWithSync({
+      alias: null,
+      branch: "feat/sync",
+      is_dirty: false,
+      pinned: false,
+    }),
+    selected: false,
+  }}
+/>
+
+<Story
+  name="GitError"
   args={{
     repo: storyRepo({
       alias: null,
-      branch: "main",
-      is_dirty: false,
-      pinned: true,
+      branch: null,
+      is_dirty: null,
+      git_state_error: "bare repo",
+      pinned: false,
     }),
     selected: false,
   }}
@@ -75,19 +102,6 @@
       name: "workpot-folder",
       branch: "feat/alias",
       is_dirty: false,
-      pinned: false,
-    }),
-    selected: false,
-  }}
-/>
-
-<Story
-  name="BareRepo"
-  args={{
-    repo: storyRepo({
-      alias: null,
-      branch: null,
-      is_dirty: null,
       pinned: false,
     }),
     selected: false,

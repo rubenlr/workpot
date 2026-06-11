@@ -30,6 +30,8 @@ export interface RepoDto {
   name: string;
   alias: string | null;
   branch: string | null;
+  ahead: number | null;
+  behind: number | null;
   is_dirty: boolean | null;
   parent_dir: string;
   last_opened_at: number | null;

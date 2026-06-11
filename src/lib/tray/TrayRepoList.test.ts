@@ -14,6 +14,8 @@ function repo(name: string, overrides: Partial<RepoDto> = {}): RepoDto {
     name,
     alias: null,
     branch: "main",
+    ahead: null,
+    behind: null,
     is_dirty: false,
     parent_dir: "~/tmp",
     last_opened_at: null,
@@ -54,8 +56,6 @@ function renderList(
         onSelectRow: vi.fn(),
         onOpen,
         onDetail,
-        onTagRemove: vi.fn(),
-        onTagFilter: vi.fn(),
       },
     }),
     onOpen,
@@ -76,8 +76,8 @@ describe("TrayRepoList", () => {
   });
 
   it("renders_list_container", () => {
-    const { getByRole } = renderList({ ...empty, rest: [repo("workpot")] });
-    expect(getByRole("list")).toBeTruthy();
+    const { getAllByRole } = renderList({ ...empty, rest: [repo("workpot")] });
+    expect(getAllByRole("list").length).toBeGreaterThan(0);
   });
 
   it("renders_repo_names_in_rest_section", () => {

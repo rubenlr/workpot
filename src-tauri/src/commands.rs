@@ -44,6 +44,8 @@ pub struct RepoDto {
     pub name: String,
     pub alias: Option<String>,
     pub branch: Option<String>,
+    pub ahead: Option<i64>,
+    pub behind: Option<i64>,
     pub is_dirty: Option<bool>,
     pub parent_dir: String,
     pub last_opened_at: Option<i64>,
@@ -82,6 +84,8 @@ fn record_to_dto(record: RepoRecord) -> RepoDto {
         name: record.name,
         alias: record.alias,
         branch: record.branch,
+        ahead: record.ahead,
+        behind: record.behind,
         is_dirty: record.is_dirty,
         parent_dir: parent_dir_display(&record.path),
         last_opened_at: record.last_opened_at,
@@ -881,6 +885,16 @@ mod tests {
     }
 
     #[test]
+    fn record_to_dto_maps_ahead_behind() {
+        let mut record = sample_record(PathBuf::from("/var/tmp/sync-repo"));
+        record.ahead = Some(2);
+        record.behind = Some(1);
+        let dto = record_to_dto(record);
+        assert_eq!(dto.ahead, Some(2));
+        assert_eq!(dto.behind, Some(1));
+    }
+
+    #[test]
     fn record_to_dto_maps_pin_notes_and_tags() {
         let mut record = sample_record(PathBuf::from("/var/tmp/myrepo"));
         record.pinned = true;
@@ -913,6 +927,8 @@ mod tests {
             name: "x".to_string(),
             alias: None,
             branch: None,
+            ahead: None,
+            behind: None,
             is_dirty: Some(true),
             parent_dir: String::new(),
             last_opened_at,

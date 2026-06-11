@@ -1,15 +1,15 @@
 import type { RepoDto } from "./types";
 
-/** Tailwind classes for per-row dirty/clean/error dot (UI-02). */
+/** Tailwind classes for per-row dirty/clean/error dot (Stitch Status Indicators). */
 export function dirtyDotClass(repo: RepoDto): string {
   if (repo.git_state_error) {
-    return "bg-neutral-400";
+    return "bg-git-error-neutral shadow-[var(--shadow-dot-error)]";
   }
   if (repo.is_dirty === true) {
-    return "bg-amber-500";
+    return "bg-dirty-amber shadow-[var(--shadow-dot-dirty)]";
   }
   if (repo.is_dirty === false) {
-    return "bg-emerald-500";
+    return "bg-clean-emerald shadow-[var(--shadow-dot-clean)]";
   }
-  return "bg-neutral-400";
+  return "bg-git-error-neutral shadow-[var(--shadow-dot-error)]";
 }

@@ -8,6 +8,8 @@ function repo(name: string, path?: string): RepoDto {
     alias: null,
     path: path ?? `/tmp/${name}`,
     branch: null,
+    ahead: null,
+    behind: null,
     is_dirty: null,
     parent_dir: "",
     last_opened_at: null,

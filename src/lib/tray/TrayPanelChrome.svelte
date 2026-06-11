@@ -30,8 +30,8 @@
     onSelectRow,
     onOpen,
     onDetail,
-    onTagRemove,
-    onTagFilter,
+    onRefresh,
+    refreshing = false,
     detailRepo = null,
     focusTagOnDetailOpen = false,
     onTagFocusDone,
@@ -59,8 +59,8 @@
     onSelectRow: (index: number) => void;
     onOpen: (index: number) => void;
     onDetail: (repo: RepoDto, index: number) => void;
-    onTagRemove: (repoPath: string, tag: string) => void | Promise<void>;
-    onTagFilter: (tag: string) => void;
+    onRefresh?: () => void;
+    refreshing?: boolean;
     detailRepo?: RepoDto | null;
     focusTagOnDetailOpen?: boolean;
     onTagFocusDone?: () => void;
@@ -70,7 +70,7 @@
 </script>
 
 <main
-  class="panel-shell flex h-screen flex-col overflow-hidden rounded-xl text-neutral-900 shadow-2xl dark:text-neutral-100"
+  class="panel-shell flex h-screen flex-col overflow-hidden rounded-xl bg-inverse-surface text-inverse-on-surface shadow-2xl"
   style="max-height: {listMaxHeightPx}px"
 >
   {#if launchError && onDismissLaunchError}
@@ -78,6 +78,8 @@
   {/if}
 
   <TrayFilterBar
+    {onRefresh}
+    {refreshing}
     bind:filterQuery
     {allTags}
     tagAutocompletePrefix={tagAutocompletePrefix ?? ""}
@@ -108,8 +110,6 @@
         {onSelectRow}
         {onOpen}
         {onDetail}
-        {onTagRemove}
-        {onTagFilter}
       />
     {/if}
   </div>

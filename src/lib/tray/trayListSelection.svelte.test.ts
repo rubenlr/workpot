@@ -10,6 +10,8 @@ function repo(name: string, overrides: Partial<RepoDto> = {}): RepoDto {
     name,
     alias: null,
     branch: null,
+    ahead: null,
+    behind: null,
     is_dirty: null,
     parent_dir: "",
     last_opened_at: null,

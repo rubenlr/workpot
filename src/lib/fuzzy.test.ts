@@ -8,6 +8,8 @@ function repo(partial: Partial<RepoDto> & Pick<RepoDto, "name">): RepoDto {
     name: partial.name,
     alias: partial.alias ?? null,
     branch: partial.branch ?? "main",
+    ahead: null,
+    behind: null,
     is_dirty: partial.is_dirty ?? null,
     parent_dir: "",
     last_opened_at: partial.last_opened_at ?? null,

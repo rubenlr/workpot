@@ -12,6 +12,8 @@ const mockRepo: RepoDto = {
   name: "testrepo",
   alias: null,
   branch: "main",
+  ahead: null,
+  behind: null,
   is_dirty: false,
   parent_dir: "~/tmp",
   last_opened_at: null,

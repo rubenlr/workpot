@@ -9,8 +9,6 @@
     listRowDraggable?: boolean;
     onOpen: () => void;
     onDetail: () => void;
-    onTagRemove?: (tag: string) => void | Promise<void>;
-    onTagFilter?: (tag: string) => void;
     onRowContextMenu?: (e: MouseEvent) => void;
     onRowDragStart?: (e: DragEvent) => void;
     onRowDragOver?: (e: DragEvent) => void;
@@ -22,7 +20,7 @@
 </script>
 
 <div
-  class="panel-shell w-full max-w-md rounded-xl text-neutral-900 dark:text-neutral-100"
+  class="panel-shell w-full max-w-md rounded-xl bg-inverse-surface p-2 text-inverse-on-surface"
 >
   <ul role="list" class="w-full">
     <RepoListRow {...props} />

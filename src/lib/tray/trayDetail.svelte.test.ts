@@ -8,6 +8,8 @@ function repo(path: string, overrides: Partial<RepoDto> = {}): RepoDto {
     name: path.split("/").pop()!,
     alias: null,
     branch: null,
+    ahead: null,
+    behind: null,
     is_dirty: null,
     parent_dir: "",
     last_opened_at: null,

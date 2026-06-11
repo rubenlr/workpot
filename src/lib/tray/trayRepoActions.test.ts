@@ -14,6 +14,8 @@ function repo(overrides: Partial<RepoDto> = {}): RepoDto {
     name: "foo",
     alias: null,
     branch: null,
+    ahead: null,
+    behind: null,
     is_dirty: null,
     parent_dir: "",
     last_opened_at: null,

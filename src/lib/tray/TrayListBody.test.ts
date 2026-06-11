@@ -19,6 +19,26 @@ const emptySections: SectionedRepos = {
 
 const noop = vi.fn();
 
+function repo(name: string): RepoDto {
+  return {
+    path: `/tmp/${name}`,
+    name,
+    alias: null,
+    branch: "main",
+    ahead: null,
+    behind: null,
+    is_dirty: false,
+    parent_dir: "~/tmp",
+    last_opened_at: null,
+    git_state_error: null,
+    pinned: false,
+    pin_order: null,
+    notes: null,
+    tags: [],
+    branches: [],
+  };
+}
+
 function renderBody(
   listView: TrayListView,
   sections: SectionedRepos = emptySections,
@@ -32,8 +52,6 @@ function renderBody(
       onSelectRow: noop,
       onOpen: noop,
       onDetail: noop as (repo: RepoDto, index: number) => void,
-      onTagRemove: noop,
-      onTagFilter: noop,
     },
   });
 }
@@ -64,8 +82,6 @@ describe("TrayListBody", () => {
         onSelectRow: noop,
         onOpen: noop,
         onDetail: noop as (repo: RepoDto, index: number) => void,
-        onTagRemove: noop,
-        onTagFilter: noop,
       },
     });
     expect(getByText("Nothing here yet.")).toBeTruthy();
@@ -77,7 +93,19 @@ describe("TrayListBody", () => {
   });
 
   it("list_view_renders_list_not_placeholder", () => {
-    const { queryByRole } = renderBody({ kind: "list" });
-    expect(queryByRole("list")).toBeTruthy();
+    const workpot = repo("workpot");
+    const sections: SectionedRepos = { ...emptySections, rest: [workpot] };
+    const { getAllByRole } = render(TrayListBody, {
+      props: {
+        listView: { kind: "list" },
+        sectionedRepos: sections,
+        flatIndexByPath: new Map([[workpot.path, 0]]),
+        onPinReorder: noop,
+        onSelectRow: noop,
+        onOpen: noop,
+        onDetail: noop as (repo: RepoDto, index: number) => void,
+      },
+    });
+    expect(getAllByRole("list").length).toBeGreaterThan(0);
   });
 });

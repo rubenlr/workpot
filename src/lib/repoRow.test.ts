@@ -8,6 +8,8 @@ function repo(partial: Partial<RepoDto> & Pick<RepoDto, "name">): RepoDto {
     name: partial.name,
     alias: partial.alias ?? null,
     branch: null,
+    ahead: null,
+    behind: null,
     is_dirty: partial.is_dirty ?? null,
     parent_dir: "",
     last_opened_at: null,
@@ -23,13 +25,13 @@ function repo(partial: Partial<RepoDto> & Pick<RepoDto, "name">): RepoDto {
 describe("dirtyDotClass", () => {
   it("uses amber when dirty", () => {
     expect(dirtyDotClass(repo({ name: "a", is_dirty: true }))).toBe(
-      "bg-amber-500",
+      "bg-dirty-amber shadow-[var(--shadow-dot-dirty)]",
     );
   });
 
   it("uses emerald when clean", () => {
     expect(dirtyDotClass(repo({ name: "a", is_dirty: false }))).toBe(
-      "bg-emerald-500",
+      "bg-clean-emerald shadow-[var(--shadow-dot-clean)]",
     );
   });
 
@@ -38,12 +40,12 @@ describe("dirtyDotClass", () => {
       dirtyDotClass(
         repo({ name: "a", is_dirty: true, git_state_error: "bare" }),
       ),
-    ).toBe("bg-neutral-400");
+    ).toBe("bg-git-error-neutral shadow-[var(--shadow-dot-error)]");
   });
 
   it("uses neutral when dirty state is unknown", () => {
     expect(dirtyDotClass(repo({ name: "a", is_dirty: null }))).toBe(
-      "bg-neutral-400",
+      "bg-git-error-neutral shadow-[var(--shadow-dot-error)]",
     );
   });
 });

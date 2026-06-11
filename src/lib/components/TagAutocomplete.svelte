@@ -70,13 +70,13 @@
   <div
     role="listbox"
     tabindex="-1"
-    class="absolute z-10 mt-1 w-48 rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-800"
+    class="absolute z-10 mt-1 w-48 rounded-lg border border-card-border bg-inverse-surface py-1 shadow-lg"
     onkeydown={onKeydown}
   >
     <input
       type="text"
       bind:value={inputValue}
-      class="w-full border-0 border-b border-neutral-200 bg-transparent px-3 py-1.5 text-sm outline-none dark:border-neutral-700"
+      class="w-full border-0 border-b border-card-border bg-transparent px-3 py-1.5 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant"
       placeholder="Filter tags…"
     />
     <ul class="max-h-40 overflow-y-auto">
@@ -86,9 +86,9 @@
             type="button"
             role="option"
             aria-selected={i === highlightedIndex}
-            class="w-full px-3 py-1 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-700 {i ===
+            class="w-full px-3 py-1 text-left text-sm text-inverse-on-surface hover:bg-white/10 {i ===
             highlightedIndex
-              ? 'bg-neutral-100 dark:bg-neutral-700'
+              ? 'bg-white/10'
               : ''}"
             onclick={() => selectTag(tag)}
           >

@@ -36,8 +36,7 @@
     panel.selectedIndex = idx;
     panel.openDetail(repo);
   }}
-  onTagRemove={panel.removeTagFromRepo}
-  onTagFilter={panel.appendTagFilter}
+  onRefresh={() => void panel.startBackgroundRefresh()}
   detailRepo={panel.detailRepo}
   focusTagOnDetailOpen={panel.focusTagOnDetailOpen}
   onTagFocusDone={panel.clearTagFocusRequest}

@@ -20,6 +20,14 @@ const preview: Preview = {
     },
   ],
   parameters: {
+    layout: "padded",
+    backgrounds: {
+      default: "dark",
+      values: [
+        { name: "dark", value: "#0f0f10" },
+        { name: "light", value: "#f5f5f7" },
+      ],
+    },
     controls: {
       matchers: {
         color: /(background|color)$/i,

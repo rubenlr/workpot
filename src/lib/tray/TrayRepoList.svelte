@@ -15,8 +15,6 @@
     onSelectRow,
     onOpen,
     onDetail,
-    onTagRemove,
-    onTagFilter,
   }: {
     sectionedRepos: SectionedRepos;
     flatIndexByPath: Map<string, number>;
@@ -27,8 +25,6 @@
     onSelectRow: (index: number) => void;
     onOpen: (index: number) => void;
     onDetail: (repo: RepoDto, index: number) => void;
-    onTagRemove: (repoPath: string, tag: string) => void | Promise<void>;
-    onTagFilter: (tag: string) => void;
   } = $props();
 
   let dragSourceIdx = $state<number | null>(null);
@@ -44,9 +40,8 @@
   $effect(() => {
     const idx = selectedIndex;
     queueMicrotask(() => {
-      document
-        .querySelector(`[data-row-index="${idx}"]`)
-        ?.scrollIntoView({ block: "nearest" });
+      const el = document.querySelector(`[data-row-index="${idx}"]`);
+      el?.scrollIntoView?.({ block: "nearest" });
     });
   });
 
@@ -78,43 +73,45 @@
   }
 </script>
 
-<ul class="space-y-0.5" role="list">
+<div class="bg-inverse-surface px-1.5 py-1">
   {#each SECTION_META as { key, label, draggable } (key)}
     {#if sectionedRepos[key].length > 0}
-      <li role="presentation">
+      <section aria-label="{label} repositories">
         <SectionHeader {label} />
-      </li>
-      {#each sectionedRepos[key] as repo, i (repo.path)}
-        {@const idx = rowFlatIndex(repo.path)}
-        <RepoListRow
-          {repo}
-          rowIndex={idx}
-          listRowDraggable={draggable}
-          selected={idx === selectedIndex}
-          onRowContextMenu={(e) => {
-            e.preventDefault();
-            void invoke("show_repo_context_menu", {
-              repoPath: repo.path,
-              isPinned: repo.pinned,
-              tags: repo.tags,
-            });
-          }}
-          onRowDragStart={draggable ? (e) => handleDragStart(e, i) : undefined}
-          onRowDragOver={draggable ? (e) => e.preventDefault() : undefined}
-          onRowDrop={draggable ? (e) => handleDrop(e, i) : undefined}
-          onRowDragEnd={draggable ? clearDragSource : undefined}
-          onOpen={() => {
-            onSelectRow(idx);
-            onOpen(idx);
-          }}
-          onDetail={() => {
-            onSelectRow(idx);
-            onDetail(repo, idx);
-          }}
-          onTagRemove={(tag) => onTagRemove(repo.path, tag)}
-          {onTagFilter}
-        />
-      {/each}
+        <ul class="space-y-0.5" role="list">
+          {#each sectionedRepos[key] as repo, i (repo.path)}
+            {@const idx = rowFlatIndex(repo.path)}
+            <RepoListRow
+              {repo}
+              rowIndex={idx}
+              listRowDraggable={draggable}
+              selected={idx === selectedIndex}
+              onRowContextMenu={(e) => {
+                e.preventDefault();
+                void invoke("show_repo_context_menu", {
+                  repoPath: repo.path,
+                  isPinned: repo.pinned,
+                  tags: repo.tags,
+                });
+              }}
+              onRowDragStart={draggable
+                ? (e) => handleDragStart(e, i)
+                : undefined}
+              onRowDragOver={draggable ? (e) => e.preventDefault() : undefined}
+              onRowDrop={draggable ? (e) => handleDrop(e, i) : undefined}
+              onRowDragEnd={draggable ? clearDragSource : undefined}
+              onOpen={() => {
+                onSelectRow(idx);
+                onOpen(idx);
+              }}
+              onDetail={() => {
+                onSelectRow(idx);
+                onDetail(repo, idx);
+              }}
+            />
+          {/each}
+        </ul>
+      </section>
     {/if}
   {/each}
-</ul>
+</div>

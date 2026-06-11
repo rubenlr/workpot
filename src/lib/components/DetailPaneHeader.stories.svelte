@@ -1,44 +1,29 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
-  import DetailPane from "./DetailPane.svelte";
+  import DetailPaneHeader from "./DetailPaneHeader.svelte";
   import { storyRepo } from "./repoStoryFixtures";
 
   const noop = () => {};
 
   const { Story } = defineMeta({
     title: "Tray/DetailPaneHeader",
-    component: DetailPane,
+    component: DetailPaneHeader,
     args: {
       onClose: noop,
-      onMutated: noop,
+      onPinToggle: noop,
     },
   });
 </script>
 
 <Story
   name="AliasSet"
-  args={{
-    repo: storyRepo({ alias: "my-project", pinned: false }),
-  }}
+  args={{ repo: storyRepo({ alias: "my-project", pinned: false }) }}
 />
-
-<Story
-  name="AliasNull"
-  args={{
-    repo: storyRepo({ alias: null, name: "workpot-folder", pinned: false }),
-  }}
-/>
-
 <Story
   name="Pinned"
-  args={{
-    repo: storyRepo({ alias: null, pinned: true }),
-  }}
+  args={{ repo: storyRepo({ alias: null, pinned: true }) }}
 />
-
 <Story
-  name="Unpinned"
-  args={{
-    repo: storyRepo({ alias: null, pinned: false }),
-  }}
+  name="DarkSurface"
+  args={{ repo: storyRepo({ alias: "alpha", pinned: false }) }}
 />

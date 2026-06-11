@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./lib/styles/stitch-tokens.css";
 
 /* App follows OS appearance; Storybook sets data-theme to match preview background. */
 @custom-variant dark {

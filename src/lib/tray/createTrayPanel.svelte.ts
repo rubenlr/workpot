@@ -154,6 +154,7 @@ export function createTrayPanel() {
     dismissLaunchError: launch.dismissLaunchError,
     bindFilterInput: keyboard.bindFilterInput,
     refreshReposAndDetail: () => data.refresh(),
+    startBackgroundRefresh: () => data.startBackgroundRefresh(),
     mount,
     destroy,
   };

@@ -19,6 +19,7 @@
   const { Story } = defineMeta({
     title: "Tray/Panel",
     component: TrayPanelChrome,
+    parameters: { layout: "fullscreen" },
     args: {
       listMaxHeightPx: 480,
       filterQuery: "",
@@ -27,6 +28,8 @@
       onFilterKeydown: noop,
       onTagSelect: noop,
       bindFilterInput: noopBindFilter,
+      onRefresh: noop,
+      refreshing: false,
       listView: storyListViews.list,
       sectionedRepos: sectioned,
       flatIndexByPath: flatIndex,
@@ -35,13 +38,15 @@
       onSelectRow: noop,
       onOpen: noop,
       onDetail: noop,
-      onTagRemove: noopAsync,
-      onTagFilter: noop,
     },
   });
 </script>
 
 <Story name="PopulatedList" />
+
+<Story name="DarkMode" parameters={{ backgrounds: { default: "dark" } }} />
+
+<Story name="LightMode" parameters={{ backgrounds: { default: "light" } }} />
 
 <Story
   name="EmptyList"

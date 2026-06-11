@@ -12,6 +12,8 @@ const baseRepo: RepoDto = {
   name: "testrepo",
   alias: null,
   branch: "main",
+  ahead: null,
+  behind: null,
   is_dirty: false,
   parent_dir: "~/tmp",
   last_opened_at: null,
@@ -62,14 +64,14 @@ describe("DetailPane", () => {
     const pinned = renderPane({ ...baseRepo, pinned: true });
     const pinnedBtn = pinned.getByRole("button", { name: "Unpin" });
     expect(pinnedBtn.getAttribute("aria-pressed")).toBe("true");
-    expect(pinnedBtn.textContent).toContain("📌");
+    expect(pinnedBtn.className).toContain("text-primary");
 
     cleanup();
 
     const unpinned = renderPane({ ...baseRepo, pinned: false });
     const unpinnedBtn = unpinned.getByRole("button", { name: "Pin" });
     expect(unpinnedBtn.getAttribute("aria-pressed")).toBe("false");
-    expect(unpinnedBtn.textContent).toContain("📍");
+    expect(unpinnedBtn.className).toContain("text-inverse-on-surface-variant");
   });
 
   it("tag_input_has_os_correction_disabled", () => {

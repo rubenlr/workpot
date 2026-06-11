@@ -12,6 +12,8 @@ function repo(
     name: partial.name,
     alias: partial.alias ?? null,
     branch: partial.branch ?? null,
+    ahead: null,
+    behind: null,
     is_dirty: partial.is_dirty ?? null,
     parent_dir: "",
     last_opened_at: partial.last_opened_at ?? null,

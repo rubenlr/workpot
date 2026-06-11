@@ -26,7 +26,7 @@ describe("LaunchErrorBanner", () => {
     const { getByText } = render(LaunchErrorBanner, {
       props: { message: "Error", onDismiss },
     });
-    await fireEvent.click(getByText("Dismiss"));
+    await fireEvent.click(getByText("DISMISS"));
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 

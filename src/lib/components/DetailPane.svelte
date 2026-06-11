@@ -6,7 +6,8 @@
     tagAlreadyOnRepo,
   } from "../orgClient";
   import type { BranchListItemDto, RepoDto } from "../types";
-  import BranchBadge from "./BranchBadge.svelte";
+  import BranchListRow from "./BranchListRow.svelte";
+  import DetailPaneHeader from "./DetailPaneHeader.svelte";
   import TagAutocomplete from "./TagAutocomplete.svelte";
   import TagChip from "./TagChip.svelte";
 
@@ -56,7 +57,6 @@
     });
   });
 
-  // autocorrect is valid on textarea in browsers but missing from Svelte HTML typings.
   $effect(() => {
     notesTextarea?.setAttribute("autocorrect", "off");
   });
@@ -165,108 +165,107 @@
 <div
   role="region"
   aria-label="Repository details"
-  class="flex h-full flex-col gap-4 overflow-y-auto p-2"
+  class="flex h-full flex-col overflow-y-auto bg-inverse-surface text-inverse-on-surface"
 >
-  <div class="flex items-center gap-2">
-    <button
-      type="button"
-      class="rounded px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
-      aria-label="Close detail pane"
-      onclick={onClose}
-    >
-      ◀
-    </button>
-    <h2 class="min-w-0 flex-1 truncate text-lg font-semibold">
-      {repo.alias ?? repo.name}
-    </h2>
-    <button
-      type="button"
-      class="shrink-0 text-lg leading-none"
-      aria-label={repo.pinned ? "Unpin" : "Pin"}
-      aria-pressed={repo.pinned}
-      onclick={() => void handlePinChange()}
-    >
-      {repo.pinned ? "📌" : "📍"}
-    </button>
-  </div>
+  <DetailPaneHeader
+    {repo}
+    {onClose}
+    onPinToggle={() => void handlePinChange()}
+  />
 
-  <hr class="border-neutral-200 dark:border-neutral-700 -my-2" />
+  <div class="flex flex-col gap-4 p-3">
+    <section>
+      <h3
+        class="mb-2 text-xs font-semibold uppercase tracking-widest text-inverse-on-surface-variant"
+      >
+        Branches
+      </h3>
+      <div
+        class="rounded-xl border border-card-border bg-card-surface p-2 space-y-1"
+      >
+        {#if branchError}
+          <p class="px-2 py-1 text-sm text-error">{branchError}</p>
+        {:else if branches.length === 0}
+          <p class="px-2 py-1 text-sm text-inverse-on-surface-variant">
+            No branches
+          </p>
+        {:else}
+          {#each branches as b (b.name)}
+            <BranchListRow branch={b} />
+          {/each}
+        {/if}
+      </div>
+    </section>
 
-  <section>
-    <h3 class="mb-1 text-sm font-medium text-neutral-600 dark:text-neutral-400">
-      Branches
-    </h3>
-    {#if branchError}
-      <p class="text-sm text-red-600 dark:text-red-400">{branchError}</p>
-    {:else if branches.length === 0}
-      <p class="text-sm text-neutral-500">No branches</p>
-    {:else}
-      <div class="flex flex-wrap gap-1">
-        {#each branches as b (b.name)}
-          <BranchBadge branch={b} />
+    <section>
+      <div class="mb-2 flex flex-wrap items-center gap-2">
+        <h3
+          class="text-xs font-semibold uppercase tracking-widest text-inverse-on-surface-variant"
+        >
+          Tags
+        </h3>
+        {#each repo.tags as tag (tag)}
+          <TagChip
+            {tag}
+            variant="detail"
+            onRemove={() => void handleRemoveTag(tag)}
+          />
         {/each}
       </div>
-    {/if}
-  </section>
+      <div
+        class="relative rounded-xl border border-card-border bg-card-surface p-2"
+      >
+        <input
+          type="text"
+          bind:this={tagInputEl}
+          bind:value={tagInput}
+          placeholder="Add tag…"
+          autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          class="w-full rounded-lg border border-card-border bg-black/20 px-3 py-2 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
+          onkeydown={onTagInputKeydown}
+          onblur={() => {
+            if (tagInput.trim()) {
+              void handleAddTag(tagInput);
+            }
+          }}
+        />
+        <TagAutocomplete
+          allTags={tagSuggestTags}
+          visible={tagInput.trim().length > 0 && tagSuggestTags.length > 0}
+          prefix={tagInput.trim()}
+          onSelect={(tag) => {
+            void handleAddTag(tag);
+          }}
+        />
+        {#if tagError}
+          <p class="mt-1 text-sm text-error">{tagError}</p>
+        {/if}
+      </div>
+    </section>
 
-  <hr class="border-neutral-200 dark:border-neutral-700 -my-2" />
-
-  <section>
-    <h3 class="mb-1 text-sm font-medium text-neutral-600 dark:text-neutral-400">
-      Tags
-    </h3>
-    <div class="flex flex-wrap gap-1">
-      {#each repo.tags as tag (tag)}
-        <TagChip {tag} onRemove={() => void handleRemoveTag(tag)} />
-      {/each}
-    </div>
-    <div class="relative mt-2">
-      <input
-        type="text"
-        bind:this={tagInputEl}
-        bind:value={tagInput}
-        placeholder="Add tag…"
-        autocomplete="off"
-        autocapitalize="off"
-        autocorrect="off"
-        spellcheck="false"
-        class="w-full rounded-md border border-neutral-200 bg-transparent px-2 py-1 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        onkeydown={onTagInputKeydown}
-        onblur={() => {
-          if (tagInput.trim()) {
-            void handleAddTag(tagInput);
-          }
-        }}
-      />
-      <TagAutocomplete
-        allTags={tagSuggestTags}
-        visible={tagInput.trim().length > 0 && tagSuggestTags.length > 0}
-        prefix={tagInput.trim()}
-        onSelect={(tag) => {
-          void handleAddTag(tag);
-        }}
-      />
-    </div>
-    {#if tagError}
-      <p class="mt-1 text-sm text-red-600 dark:text-red-400">{tagError}</p>
-    {/if}
-  </section>
-
-  <section>
-    <h3 class="mb-1 text-sm font-medium text-neutral-600 dark:text-neutral-400">
-      Notes
-    </h3>
-    <textarea
-      bind:this={notesTextarea}
-      rows="3"
-      maxlength="500"
-      bind:value={notesValue}
-      placeholder="Add notes..."
-      autocomplete="off"
-      autocapitalize="off"
-      spellcheck="false"
-      class="max-h-[calc(5*1.5rem)] w-full resize-none rounded-md border border-neutral-200 bg-transparent p-2 text-sm dark:border-neutral-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-      onblur={() => void handleNotesSave()}
-    ></textarea>
-  </section>
+    <section>
+      <h3
+        class="mb-2 text-xs font-semibold uppercase tracking-widest text-inverse-on-surface-variant"
+      >
+        Notes
+      </h3>
+      <div class="rounded-xl border border-card-border bg-card-surface p-2">
+        <textarea
+          bind:this={notesTextarea}
+          rows="3"
+          maxlength="500"
+          bind:value={notesValue}
+          placeholder="Add notes..."
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          class="max-h-[calc(5*1.5rem)] w-full resize-none rounded-lg border border-card-border bg-black/20 p-3 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
+          onblur={() => void handleNotesSave()}
+        ></textarea>
+      </div>
+    </section>
+  </div>
 </div>
