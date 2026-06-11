@@ -802,6 +802,35 @@ fn spawn_background_git_refresh_inner(
 }
 
 #[tauri::command]
+pub async fn checkout_repo_branch(
+    repo_path: String,
+    branch: String,
+    state: State<'_, Arc<Mutex<AppContext>>>,
+) -> Result<(), String> {
+    let state_clone = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let ctx = state_clone
+            .lock()
+            .map_err(|_| "AppContext lock poisoned".to_string())?;
+        ctx.indexed_launch_path(Path::new(&repo_path))
+            .map_err(|e| e.to_string())?;
+        ctx.checkout_repo_branch(Path::new(&repo_path), &branch)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn refresh_index(
+    app: AppHandle,
+    state: State<'_, Arc<Mutex<AppContext>>>,
+) -> Result<(), String> {
+    crate::tray::spawn_background_index(app, state.inner().clone());
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn refresh_all_git_state(
     app: AppHandle,
     state: State<'_, Arc<Mutex<AppContext>>>,
@@ -1162,6 +1191,42 @@ mod tests {
         assert!(validate_notes(&Some(long)).is_err());
         assert!(validate_notes(&Some("x".repeat(500))).is_ok());
         assert!(validate_notes(&None).is_ok());
+    }
+
+    #[test]
+    fn checkout_repo_branch_switches_local_branch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("config.toml");
+        let db_path = dir.path().join("workpot.db");
+        std::fs::write(&config_path, "watch_roots = []\nexcludes = []\n").expect("config");
+        let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+        let repo_path = dir.path().join("sample");
+        std::fs::create_dir_all(&repo_path).expect("mkdir");
+        let repo = git2::Repository::init(&repo_path).expect("git init");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        let tree_id = repo.index().expect("index").write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+        let tree_id2 = repo.index().expect("index").write_tree().expect("tree");
+        let tree2 = repo.find_tree(tree_id2).expect("tree");
+        repo.commit(
+            Some("refs/heads/feature"),
+            &sig,
+            &sig,
+            "feature",
+            &tree2,
+            &[],
+        )
+        .expect("feature");
+        ctx.register_manual(&repo_path).expect("register");
+
+        ctx.checkout_repo_branch(&repo_path, "feature")
+            .expect("checkout");
+
+        let opened = git2::Repository::open(&repo_path).expect("open");
+        let head = opened.head().expect("head");
+        assert_eq!(head.shorthand().ok(), Some("feature"));
     }
 
     #[test]

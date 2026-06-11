@@ -6,6 +6,14 @@ export interface TrayConfigDto {
   stale_dirty_days: number;
 }
 
+export interface IndexSummary {
+  added: number;
+  removed: number;
+  skipped: number;
+  git_refreshed: number;
+  git_errors: number;
+}
+
 export interface GitRefreshSummary {
   refreshed: number;
   errors: number;

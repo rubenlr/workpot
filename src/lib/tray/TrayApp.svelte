@@ -36,8 +36,8 @@
     panel.selectedIndex = idx;
     panel.openDetail(repo);
   }}
-  onRefresh={() => void panel.startBackgroundRefresh()}
-  refreshing={panel.refreshing}
+  onRefresh={() => void panel.startIndexRefresh()}
+  refreshing={panel.indexing}
   activeSync={panel.activeSync}
   onSync={panel.handleSync}
   branchRevision={panel.branchRevision}

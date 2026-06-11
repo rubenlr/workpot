@@ -1,4 +1,4 @@
-import { cleanup, render } from "@testing-library/svelte";
+import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import TrayRepoList from "./TrayRepoList.svelte";
 import type { SectionedRepos } from "$lib/tray/logic/list/sort";
@@ -122,4 +122,21 @@ describe("TrayRepoList", () => {
     const rows = container.querySelectorAll("[data-row-index]");
     expect(rows.length).toBe(2);
   });
+});
+
+it("suppresses keyboard selection highlight while pointer is over list", async () => {
+  const { container } = renderList(
+    {
+      ...empty,
+      rest: [repo("a"), repo("b")],
+    },
+    { selectedIndex: 0 },
+  );
+  const listRoot = container.querySelector(".bg-inverse-surface");
+  expect(listRoot).toBeTruthy();
+  await fireEvent.mouseEnter(listRoot!);
+  const selectedOpen = container.querySelector(
+    '[data-row-index="0"] button.bg-primary',
+  );
+  expect(selectedOpen).toBeNull();
 });

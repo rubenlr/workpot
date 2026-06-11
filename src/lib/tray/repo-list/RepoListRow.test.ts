@@ -124,6 +124,20 @@ describe("RepoListRow", () => {
     expect(openBtn.contains(pushBtn)).toBe(false);
   });
 
+  it("selected highlight suppressed when syncHovered", () => {
+    const { getByRole } = render(RepoListRow, {
+      props: {
+        repo: mockRepo,
+        selected: true,
+        syncHovered: true,
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+      },
+    });
+    const openBtn = getByRole("button", { name: "Open testrepo" });
+    expect(openBtn.className).not.toContain("bg-primary");
+  });
+
   it("push chip click does not call onOpen", async () => {
     const onOpen = vi.fn();
     const onSync = vi.fn();

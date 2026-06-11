@@ -13,6 +13,8 @@
     repoPath,
     activeSync = null,
     onSync,
+    onActivate,
+    onSyncHoverChange,
   }: {
     branch: BranchListItemDto;
     repoPath: string;
@@ -22,6 +24,8 @@
       branch: string,
       direction: SyncDirection,
     ) => void;
+    onActivate?: (branch: BranchListItemDto) => void;
+    onSyncHoverChange?: (hovered: boolean) => void;
   } = $props();
 
   const isCheckout = $derived(branch.presence === "checkout");
@@ -36,26 +40,38 @@
   );
 
   const syncDisabled = $derived(activeSync != null);
+
+  const nameButtonClass = $derived(
+    [
+      "flex min-w-0 flex-1 items-center gap-2 rounded-lg border-0 bg-transparent px-0 py-0 text-left shadow-none outline-none focus-visible:ring-1 focus-visible:ring-primary",
+      isCheckout
+        ? "font-medium text-inverse-on-surface"
+        : "text-inverse-on-surface-variant hover:bg-white/10",
+    ].join(" "),
+  );
 </script>
 
 <div
   class="flex items-center gap-2 rounded-lg px-3 py-2 {isCheckout
     ? 'bg-primary/15 ring-1 ring-primary/30'
-    : 'bg-card-surface'}"
+    : 'bg-card-surface hover:bg-white/5'}"
   title={branchPresenceLabel(branch.presence)}
 >
   {#if isCheckout}
-    <MaterialIcon name="check" size={18} class="text-primary" />
+    <MaterialIcon name="check" size={18} class="shrink-0 text-primary" />
   {:else}
     <span class="w-[18px] shrink-0" aria-hidden="true"></span>
   {/if}
-  <span
-    class="min-w-0 flex-1 truncate text-sm {isCheckout
-      ? 'font-medium text-inverse-on-surface'
-      : 'text-inverse-on-surface-variant'}"
+  <button
+    type="button"
+    class={nameButtonClass}
+    aria-label="Activate branch {branch.name}"
+    onclick={() => onActivate?.(branch)}
   >
-    {branch.name}
-  </span>
+    <span class="min-w-0 flex-1 truncate text-sm">
+      {branch.name}
+    </span>
+  </button>
   {#if isRemoteOnly}
     <span
       class="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-inverse-on-surface-variant"
@@ -69,6 +85,7 @@
     branch={branch.name}
     {syncingDirection}
     disabled={syncDisabled}
+    onHoverChange={onSyncHoverChange}
     onPush={onSync ? () => onSync(repoPath, branch.name, "push") : undefined}
     onPull={onSync ? () => onSync(repoPath, branch.name, "pull") : undefined}
   />

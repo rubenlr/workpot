@@ -57,3 +57,14 @@ export function branchBadgeTitle(branch: BranchListItemDto): string {
     ? `${branchPresenceLabel(branch.presence)} ${sync}`
     : branchPresenceLabel(branch.presence);
 }
+
+export function isCheckoutable(presence: BranchPresence): boolean {
+  switch (presence) {
+    case "local_only":
+    case "local_remote":
+    case "remote_only":
+      return true;
+    case "checkout":
+      return false;
+  }
+}

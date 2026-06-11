@@ -5,12 +5,14 @@
     shouldSaveNotes,
     tagAlreadyOnRepo,
   } from "$lib/orgClient";
+  import { isCheckoutable } from "$lib/branchStatus";
   import type {
     ActiveSync,
     BranchListItemDto,
     RepoDto,
     SyncDirection,
   } from "$lib/types";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import BranchListRow from "./BranchListRow.svelte";
   import DetailPaneHeader from "./DetailPaneHeader.svelte";
   import TagAutocomplete from "$lib/tray/commons/TagAutocomplete.svelte";
@@ -49,6 +51,7 @@
 
   let branches = $state<BranchListItemDto[]>([]);
   let branchError = $state<string | null>(null);
+  let checkoutError = $state<string | null>(null);
   let notesValue = $state("");
   let tagInput = $state("");
   let tagError = $state<string | null>(null);
@@ -100,6 +103,33 @@
       cancelled = true;
     };
   });
+
+  async function activateBranch(b: BranchListItemDto) {
+    checkoutError = null;
+    if (b.presence === "checkout") {
+      try {
+        await invoke("open_in_cursor", { path: repo.path, background: false });
+        await getCurrentWindow().hide();
+      } catch (e) {
+        checkoutError = String(e);
+      }
+      return;
+    }
+    if (!isCheckoutable(b.presence)) {
+      return;
+    }
+    try {
+      await invoke("checkout_repo_branch", {
+        repoPath: repo.path,
+        branch: b.name,
+      });
+      onMutated();
+      await invoke("open_in_cursor", { path: repo.path, background: false });
+      await getCurrentWindow().hide();
+    } catch (e) {
+      checkoutError = String(e);
+    }
+  }
 
   async function handlePinChange() {
     try {
@@ -199,6 +229,9 @@
       <div
         class="rounded-xl border border-card-border bg-card-surface p-2 space-y-1"
       >
+        {#if checkoutError}
+          <p class="px-2 py-1 text-sm text-error">{checkoutError}</p>
+        {/if}
         {#if branchError}
           <p class="px-2 py-1 text-sm text-error">{branchError}</p>
         {:else if branches.length === 0}
@@ -212,6 +245,7 @@
               repoPath={repo.path}
               {activeSync}
               {onSync}
+              onActivate={(branch) => void activateBranch(branch)}
             />
           {/each}
         {/if}

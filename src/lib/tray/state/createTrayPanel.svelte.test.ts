@@ -123,4 +123,45 @@ describe("createTrayPanel", () => {
     });
     expect(invoke).toHaveBeenCalledWith("list_repos");
   });
+
+  it("index events toggle indexing and reload list", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+
+    handlers.onIndexStarted();
+    expect(panel.indexing).toBe(true);
+
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "list_repos") return [repo("/tmp/a")];
+      if (cmd === "list_all_tags") return ["work"];
+      return undefined;
+    });
+
+    handlers.onIndexComplete({
+      added: 1,
+      removed: 0,
+      skipped: 0,
+      git_refreshed: 1,
+      git_errors: 0,
+    });
+    expect(panel.indexing).toBe(false);
+    await Promise.resolve();
+    expect(invoke).toHaveBeenCalledWith("list_repos");
+  });
+
+  it("panel-closed resets detail filter and selection", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    panel.openDetail(repo("/tmp/detail"));
+    panel.filterQuery = "foo";
+    panel.selectedIndex = 3;
+
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+    handlers.onPanelClosed();
+
+    expect(panel.detailRepo).toBeNull();
+    expect(panel.filterQuery).toBe("");
+    expect(panel.selectedIndex).toBe(0);
+  });
 });

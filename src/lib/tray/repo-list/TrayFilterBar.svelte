@@ -58,7 +58,7 @@
       <button
         type="button"
         class="flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-black/20 p-2 text-inverse-on-surface-variant outline-none hover:bg-white/10 hover:text-inverse-on-surface focus-visible:ring-1 focus-visible:ring-primary disabled:opacity-50"
-        aria-label="Sync git state"
+        aria-label="Refresh index"
         disabled={refreshing}
         onclick={onRefresh}
       >

@@ -87,16 +87,18 @@
     <LaunchErrorBanner message={launchError} onDismiss={onDismissLaunchError} />
   {/if}
 
-  <TrayFilterBar
-    {onRefresh}
-    {refreshing}
-    bind:filterQuery
-    {allTags}
-    tagAutocompletePrefix={tagAutocompletePrefix ?? ""}
-    {onFilterKeydown}
-    {onTagSelect}
-    bindFilterInput={bindFilterInput ?? noopBindFilter}
-  />
+  {#if !detailRepo}
+    <TrayFilterBar
+      {onRefresh}
+      {refreshing}
+      bind:filterQuery
+      {allTags}
+      tagAutocompletePrefix={tagAutocompletePrefix ?? ""}
+      {onFilterKeydown}
+      {onTagSelect}
+      bindFilterInput={bindFilterInput ?? noopBindFilter}
+    />
+  {/if}
 
   <div class="min-h-0 flex-1 overflow-y-auto">
     {#if detailRepo && onCloseDetail && onDetailMutated}

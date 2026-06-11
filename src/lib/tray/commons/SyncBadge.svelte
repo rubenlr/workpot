@@ -10,6 +10,7 @@
     disabled = false,
     onPush,
     onPull,
+    onHoverChange,
   }: {
     ahead?: number | null;
     behind?: number | null;
@@ -18,6 +19,7 @@
     disabled?: boolean;
     onPush?: () => void;
     onPull?: () => void;
+    onHoverChange?: (hovered: boolean) => void;
   } = $props();
 
   const showAhead = $derived(ahead != null && ahead > 0);
@@ -56,12 +58,22 @@
     }
     onPull?.();
   }
+
+  function handleMouseEnter() {
+    onHoverChange?.(true);
+  }
+
+  function handleMouseLeave() {
+    onHoverChange?.(false);
+  }
 </script>
 
 {#if showAhead || showBehind}
   <div
     class="flex shrink-0 items-center gap-1"
     aria-hidden={interactive ? undefined : "true"}
+    onmouseenter={onHoverChange ? handleMouseEnter : undefined}
+    onmouseleave={onHoverChange ? handleMouseLeave : undefined}
   >
     {#if showAhead}
       {#if pushInteractive}

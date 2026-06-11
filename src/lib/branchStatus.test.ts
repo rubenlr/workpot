@@ -3,6 +3,7 @@ import {
   branchBadgeAriaLabel,
   branchPresenceIcon,
   formatBranchAheadBehind,
+  isCheckoutable,
 } from "./branchStatus";
 import type { BranchListItemDto } from "./types";
 
@@ -50,5 +51,14 @@ describe("branchBadgeAriaLabel", () => {
     );
     expect(label).toContain("main");
     expect(label).toContain("Checked out");
+  });
+});
+
+describe("isCheckoutable", () => {
+  it("allows local and remote branches", () => {
+    expect(isCheckoutable("local_only")).toBe(true);
+    expect(isCheckoutable("local_remote")).toBe(true);
+    expect(isCheckoutable("remote_only")).toBe(true);
+    expect(isCheckoutable("checkout")).toBe(false);
   });
 });

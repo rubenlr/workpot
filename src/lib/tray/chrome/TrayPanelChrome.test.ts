@@ -90,18 +90,21 @@ describe("TrayPanelChrome", () => {
 
   it("shows_list_body_when_no_detail_repo", () => {
     const { queryByText } = renderChrome({ detailRepo: null });
-    // placeholder message visible when no repos
     expect(queryByText("No repos indexed yet.")).toBeTruthy();
   });
 
   it("shows_detail_pane_when_detailRepo_provided", () => {
     const { queryByRole } = renderChrome({ detailRepo: baseRepo });
-    // list body hidden, detail pane visible (has heading for repo name)
     expect(queryByRole("heading", { level: 2 })).toBeTruthy();
   });
 
   it("hides_list_body_when_detail_pane_active", () => {
     const { queryByText } = renderChrome({ detailRepo: baseRepo });
     expect(queryByText("No repos indexed yet.")).toBeNull();
+  });
+
+  it("hides_filter_bar_when_detail_pane_active", () => {
+    const { container } = renderChrome({ detailRepo: baseRepo });
+    expect(container.querySelector("#repo-filter")).toBeNull();
   });
 });

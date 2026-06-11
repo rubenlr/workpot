@@ -1,3 +1,4 @@
+pub mod branch_checkout;
 pub mod catalog;
 pub mod discovery;
 pub mod excludes;

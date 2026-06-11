@@ -7,6 +7,10 @@ import {
   onGitRefreshFailed,
   onPanelOpened,
 } from "$lib/tray/logic/handlers/trayGitRefreshHandlers";
+import {
+  onIndexComplete,
+  onIndexFailed,
+} from "$lib/tray/logic/handlers/trayIndexHandlers";
 import { createTrayLaunch } from "./trayLaunch.svelte";
 import { createTrayListSelection } from "./trayListSelection.svelte";
 import { createTrayPanelKeyboard } from "./trayPanelKeyboard.svelte";
@@ -50,12 +54,17 @@ export function createTrayPanel() {
       list.selectedIndex = index;
     },
   });
-  const keyboard = createTrayPanelKeyboard({ list, detail, launch, data });
 
   let unsubscribeEvents: (() => void) | null = null;
   let activeSync = $state<ActiveSync | null>(null);
-  let refreshing = $state(false);
+  let indexing = $state(false);
   let branchRevision = $state(0);
+
+  function resetPanelToInitialState() {
+    detail.closeDetail();
+    list.filterQuery = "";
+    list.selectedIndex = 0;
+  }
 
   const actionDeps: TrayRepoActionsDeps = {
     invoke,
@@ -74,6 +83,15 @@ export function createTrayPanel() {
     bumpBranchRevision: () => {
       branchRevision += 1;
     },
+  };
+
+  const indexDeps = {
+    setSelectedIndex: (index: number) => {
+      list.selectedIndex = index;
+    },
+    refresh: (clearError: boolean) => data.refresh(clearError),
+    resyncDetail: () => detail.resync(data.repos),
+    setError: (message: string | null) => data.setListError(message),
   };
 
   async function removeTagFromRepo(repoPath: string, tag: string) {
@@ -101,20 +119,45 @@ export function createTrayPanel() {
     focusFilter: () => keyboard.focusFilter(),
   };
 
+  async function startIndexRefresh(): Promise<void> {
+    trayTrace("invoke refresh_index");
+    try {
+      await invoke("refresh_index");
+    } catch (e) {
+      trayTrace("refresh_index failed", e);
+      data.setListError(String(e));
+    }
+  }
+
+  const keyboard = createTrayPanelKeyboard({
+    list,
+    detail,
+    launch,
+    startIndexRefresh,
+  });
+
   async function mount(): Promise<void> {
     trayTrace("mount start");
     unsubscribeEvents = await subscribeTrayPanelEvents({
       onPanelOpened: () => onPanelOpened(gitRefreshDeps),
-      onGitRefreshStarted: () => {
-        refreshing = true;
-      },
+      onPanelClosed: () => resetPanelToInitialState(),
+      onGitRefreshStarted: () => {},
       onGitRefreshComplete: (summary) => {
-        refreshing = false;
         onGitRefreshComplete(summary, gitRefreshDeps);
       },
       onGitRefreshFailed: (message) => {
-        refreshing = false;
         onGitRefreshFailed(message, gitRefreshDeps);
+      },
+      onIndexStarted: () => {
+        indexing = true;
+      },
+      onIndexComplete: (summary) => {
+        indexing = false;
+        onIndexComplete(summary, indexDeps);
+      },
+      onIndexFailed: (message) => {
+        indexing = false;
+        onIndexFailed(message, indexDeps);
       },
       onRepoSyncStarted: (payload) =>
         onRepoSyncStarted(payload, syncDeps.setActiveSync),
@@ -142,7 +185,7 @@ export function createTrayPanel() {
     unsubscribeEvents = null;
   }
 
-  return {
+  const panel = {
     get filterQuery() {
       return list.filterQuery;
     },
@@ -185,8 +228,8 @@ export function createTrayPanel() {
     get activeSync() {
       return activeSync;
     },
-    get refreshing() {
-      return refreshing;
+    get indexing() {
+      return indexing;
     },
     get branchRevision() {
       return branchRevision;
@@ -208,10 +251,12 @@ export function createTrayPanel() {
     dismissLaunchError: launch.dismissLaunchError,
     bindFilterInput: keyboard.bindFilterInput,
     refreshReposAndDetail: () => data.refresh(),
-    startBackgroundRefresh: () => data.startBackgroundRefresh(),
+    startIndexRefresh,
     mount,
     destroy,
   };
+
+  return panel;
 }
 
 export type TrayPanel = ReturnType<typeof createTrayPanel>;

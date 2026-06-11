@@ -3,13 +3,12 @@ import { applyTrayNavigationKey } from "$lib/tray/logic/list/trayKeyboard";
 import type { TrayDetail } from "./trayDetail.svelte";
 import type { TrayLaunch } from "./trayLaunch.svelte";
 import type { TrayListSelection } from "./trayListSelection.svelte";
-import type { TrayRepoData } from "./trayRepoData.svelte";
 
 export interface TrayPanelKeyboardDeps {
   list: TrayListSelection;
   detail: TrayDetail;
   launch: TrayLaunch;
-  data: TrayRepoData;
+  startIndexRefresh: () => void | Promise<void>;
 }
 
 export function createTrayPanelKeyboard(deps: TrayPanelKeyboardDeps) {
@@ -24,7 +23,7 @@ export function createTrayPanelKeyboard(deps: TrayPanelKeyboardDeps) {
   }
 
   function applyTrayNav(e: KeyboardEvent, mode: "filter" | "panel") {
-    const { list, detail, launch, data } = deps;
+    const { list, detail, launch } = deps;
     return applyTrayNavigationKey(
       e,
       {
@@ -32,7 +31,7 @@ export function createTrayPanelKeyboard(deps: TrayPanelKeyboardDeps) {
         getSelectedRepo: () => list.getSelectedRepo(),
       },
       {
-        onRefresh: () => void data.startBackgroundRefresh(),
+        onRefresh: () => void deps.startIndexRefresh(),
         onCloseDetail: () => detail.closeDetail(),
         onHidePanel: () => void launch.hidePanel(),
         onOpenDetailForSelection: () => {

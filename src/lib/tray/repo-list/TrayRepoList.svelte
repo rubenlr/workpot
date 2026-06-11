@@ -38,6 +38,14 @@
     ) => void;
   } = $props();
 
+  let pointerInsideList = $state(false);
+  let hoveredRowIndex = $state<number | null>(null);
+  let syncHoveredRowIndex = $state<number | null>(null);
+
+  const showKeyboardSelection = $derived(
+    !pointerInsideList && syncHoveredRowIndex === null,
+  );
+
   let dragSourceIdx = $state<number | null>(null);
 
   function rowFlatIndex(path: string): number {
@@ -84,7 +92,19 @@
   }
 </script>
 
-<div class="bg-inverse-surface px-1.5 py-1">
+<div
+  role="group"
+  aria-label="Repositories"
+  class="bg-inverse-surface px-1.5 py-1"
+  onmouseenter={() => {
+    pointerInsideList = true;
+  }}
+  onmouseleave={() => {
+    pointerInsideList = false;
+    hoveredRowIndex = null;
+    syncHoveredRowIndex = null;
+  }}
+>
   {#each SECTION_META as { key, label, draggable } (key)}
     {#if sectionedRepos[key].length > 0}
       <section aria-label="{label} repositories">
@@ -96,7 +116,20 @@
               {repo}
               rowIndex={idx}
               listRowDraggable={draggable}
-              selected={idx === selectedIndex}
+              selected={showKeyboardSelection && idx === selectedIndex}
+              hovered={hoveredRowIndex === idx}
+              syncHovered={syncHoveredRowIndex === idx}
+              onRowMouseEnter={() => {
+                hoveredRowIndex = idx;
+              }}
+              onRowMouseLeave={() => {
+                if (hoveredRowIndex === idx) {
+                  hoveredRowIndex = null;
+                }
+              }}
+              onSyncHoverChange={(hovered) => {
+                syncHoveredRowIndex = hovered ? idx : null;
+              }}
               onRowContextMenu={(e) => {
                 e.preventDefault();
                 void invoke("show_repo_context_menu", {

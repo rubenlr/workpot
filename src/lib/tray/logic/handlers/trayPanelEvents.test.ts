@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { subscribeTrayPanelEvents, type ListenFn } from "./trayPanelEvents";
-import type { GitRefreshSummary, RepoSyncEvent } from "$lib/types";
+import type {
+  GitRefreshSummary,
+  IndexSummary,
+  RepoSyncEvent,
+} from "$lib/types";
 
 function mockListen(): {
   listen: ListenFn;
@@ -21,12 +25,16 @@ function mockListen(): {
 }
 
 describe("subscribeTrayPanelEvents", () => {
-  it("registers eight listeners and unsubscribes all", async () => {
+  it("registers listeners and unsubscribes all", async () => {
     const { listen, unsubs, handlers } = mockListen();
     const onPanelOpened = vi.fn();
+    const onPanelClosed = vi.fn();
     const onGitRefreshStarted = vi.fn();
     const onGitRefreshComplete = vi.fn();
     const onGitRefreshFailed = vi.fn();
+    const onIndexStarted = vi.fn();
+    const onIndexComplete = vi.fn();
+    const onIndexFailed = vi.fn();
     const onRepoSyncStarted = vi.fn();
     const onRepoSyncComplete = vi.fn();
     const onRepoSyncFailed = vi.fn();
@@ -35,9 +43,13 @@ describe("subscribeTrayPanelEvents", () => {
     const unsubscribe = await subscribeTrayPanelEvents(
       {
         onPanelOpened,
+        onPanelClosed,
         onGitRefreshStarted,
         onGitRefreshComplete,
         onGitRefreshFailed,
+        onIndexStarted,
+        onIndexComplete,
+        onIndexFailed,
         onRepoSyncStarted,
         onRepoSyncComplete,
         onRepoSyncFailed,
@@ -46,10 +58,13 @@ describe("subscribeTrayPanelEvents", () => {
       listen,
     );
 
-    expect(listen).toHaveBeenCalledTimes(8);
+    expect(listen).toHaveBeenCalledTimes(12);
 
     handlers.get("panel-opened")!({ payload: undefined });
     expect(onPanelOpened).toHaveBeenCalledOnce();
+
+    handlers.get("panel-closed")!({ payload: undefined });
+    expect(onPanelClosed).toHaveBeenCalledOnce();
 
     handlers.get("git-refresh-started")!({ payload: undefined });
     expect(onGitRefreshStarted).toHaveBeenCalledOnce();
@@ -64,6 +79,22 @@ describe("subscribeTrayPanelEvents", () => {
 
     handlers.get("git-refresh-failed")!({ payload: "boom" });
     expect(onGitRefreshFailed).toHaveBeenCalledWith("boom");
+
+    handlers.get("index-started")!({ payload: undefined });
+    expect(onIndexStarted).toHaveBeenCalledOnce();
+
+    const indexSummary: IndexSummary = {
+      added: 1,
+      removed: 0,
+      skipped: 0,
+      git_refreshed: 2,
+      git_errors: 0,
+    };
+    handlers.get("index-complete")!({ payload: indexSummary });
+    expect(onIndexComplete).toHaveBeenCalledWith(indexSummary);
+
+    handlers.get("index-failed")!({ payload: "index boom" });
+    expect(onIndexFailed).toHaveBeenCalledWith("index boom");
 
     const syncEvent: RepoSyncEvent = {
       repo_path: "/tmp/x",

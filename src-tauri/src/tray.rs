@@ -59,6 +59,29 @@ pub(crate) fn configure_panel_window(window: &tauri::WebviewWindow) {
     );
 }
 
+pub(crate) fn emit_panel_closed(app: &tauri::AppHandle) {
+    log::debug!("emit panel-closed");
+    if let Err(e) = app.emit("panel-closed", ()) {
+        log::warn!("failed to emit panel-closed: {e}");
+    }
+}
+
+pub(crate) fn hide_panel_on_window(app: &tauri::AppHandle, window: &tauri::Window) {
+    if let Err(e) = window.hide() {
+        log::warn!("panel hide failed: {e}");
+    } else {
+        emit_panel_closed(app);
+    }
+}
+
+fn hide_panel(app: &tauri::AppHandle, panel: &tauri::WebviewWindow) {
+    if let Err(e) = panel.hide() {
+        log::warn!("panel hide failed: {e}");
+    } else {
+        emit_panel_closed(app);
+    }
+}
+
 fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
     let Some(panel) = app.get_webview_window("panel") else {
         return;
@@ -91,6 +114,9 @@ fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
 
 pub(crate) fn spawn_background_index(app: tauri::AppHandle, state: Arc<Mutex<AppContext>>) {
     log::info!("background index refresh: started");
+    if let Err(e) = app.emit("index-started", ()) {
+        log::warn!("failed to emit index-started: {e}");
+    }
     tauri::async_runtime::spawn(async move {
         let started = std::time::Instant::now();
         let state_for_blocking = Arc::clone(&state);
@@ -173,9 +199,7 @@ fn toggle_panel_on_tray_click(app: &tauri::AppHandle, rect: tauri::Rect) {
         return;
     };
     if panel.is_visible().unwrap_or(false) {
-        if let Err(e) = panel.hide() {
-            log::warn!("panel hide on tray click failed: {e}");
-        }
+        hide_panel(app, &panel);
     } else {
         show_panel(app, Some(rect));
     }

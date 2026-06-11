@@ -45,14 +45,12 @@ fn handle_panel_window_event(window: &tauri::Window, event: &WindowEvent) {
     match event {
         WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
-            if let Err(e) = window.hide() {
-                log::warn!("panel hide on close failed: {e}");
-            }
+            let app = window.app_handle();
+            tray::hide_panel_on_window(app, window);
         }
         WindowEvent::Focused(false) => {
-            if let Err(e) = window.hide() {
-                log::warn!("panel hide on blur failed: {e}");
-            }
+            let app = window.app_handle();
+            tray::hide_panel_on_window(app, window);
         }
         _ => {}
     }
@@ -89,6 +87,8 @@ pub fn run() {
             commands::list_repos,
             commands::get_tray_config,
             commands::refresh_all_git_state,
+            commands::refresh_index,
+            commands::checkout_repo_branch,
             commands::sync_repo_branch,
             commands::open_in_cursor,
             commands::set_tags,
