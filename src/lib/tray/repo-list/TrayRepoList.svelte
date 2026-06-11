@@ -38,13 +38,8 @@
     ) => void;
   } = $props();
 
-  let pointerInsideList = $state(false);
   let hoveredRowIndex = $state<number | null>(null);
   let syncHoveredRowIndex = $state<number | null>(null);
-
-  const showKeyboardSelection = $derived(
-    !pointerInsideList && syncHoveredRowIndex === null,
-  );
 
   let dragSourceIdx = $state<number | null>(null);
 
@@ -62,6 +57,13 @@
       const el = document.querySelector(`[data-row-index="${idx}"]`);
       el?.scrollIntoView?.({ block: "nearest" });
     });
+  });
+
+  $effect(() => {
+    const idx = selectedIndex;
+    if (hoveredRowIndex !== null && hoveredRowIndex !== idx) {
+      hoveredRowIndex = null;
+    }
   });
 
   function handleDragStart(e: DragEvent, idx: number) {
@@ -96,11 +98,7 @@
   role="group"
   aria-label="Repositories"
   class="bg-inverse-surface px-1.5 py-1"
-  onmouseenter={() => {
-    pointerInsideList = true;
-  }}
   onmouseleave={() => {
-    pointerInsideList = false;
     hoveredRowIndex = null;
     syncHoveredRowIndex = null;
   }}
@@ -116,11 +114,12 @@
               {repo}
               rowIndex={idx}
               listRowDraggable={draggable}
-              selected={showKeyboardSelection && idx === selectedIndex}
+              selected={idx === selectedIndex}
               hovered={hoveredRowIndex === idx}
               syncHovered={syncHoveredRowIndex === idx}
               onRowMouseEnter={() => {
                 hoveredRowIndex = idx;
+                selectedIndex = idx;
               }}
               onRowMouseLeave={() => {
                 if (hoveredRowIndex === idx) {

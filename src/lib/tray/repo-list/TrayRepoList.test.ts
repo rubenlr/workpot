@@ -122,21 +122,79 @@ describe("TrayRepoList", () => {
     const rows = container.querySelectorAll("[data-row-index]");
     expect(rows.length).toBe(2);
   });
-});
+  it("shows selection highlight while pointer is over list", async () => {
+    const { container } = renderList(
+      {
+        ...empty,
+        rest: [repo("a"), repo("b")],
+      },
+      { selectedIndex: 0 },
+    );
+    const listRoot = container.querySelector(".bg-inverse-surface");
+    expect(listRoot).toBeTruthy();
+    await fireEvent.mouseEnter(listRoot!);
+    const selectedOpen = container.querySelector(
+      '[data-row-index="0"] button.bg-primary',
+    );
+    expect(selectedOpen).toBeTruthy();
+  });
 
-it("suppresses keyboard selection highlight while pointer is over list", async () => {
-  const { container } = renderList(
-    {
-      ...empty,
-      rest: [repo("a"), repo("b")],
-    },
-    { selectedIndex: 0 },
-  );
-  const listRoot = container.querySelector(".bg-inverse-surface");
-  expect(listRoot).toBeTruthy();
-  await fireEvent.mouseEnter(listRoot!);
-  const selectedOpen = container.querySelector(
-    '[data-row-index="0"] button.bg-primary',
-  );
-  expect(selectedOpen).toBeNull();
+  it("mouseenter updates selected row", async () => {
+    let selectedIndex = 0;
+    const { container } = render(TrayRepoList, {
+      props: {
+        sectionedRepos: { ...empty, rest: [repo("a"), repo("b")] },
+        flatIndexByPath: new Map([
+          ["/tmp/a", 0],
+          ["/tmp/b", 1],
+        ]),
+        get selectedIndex() {
+          return selectedIndex;
+        },
+        set selectedIndex(v: number) {
+          selectedIndex = v;
+        },
+        onPinReorder: vi.fn(),
+        onSelectRow: vi.fn(),
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+      },
+    });
+    const row1 = container.querySelector('[data-row-index="1"]');
+    expect(row1).toBeTruthy();
+    await fireEvent.mouseEnter(row1!);
+    expect(selectedIndex).toBe(1);
+  });
+
+  it("keyboard selection clears stale hover", async () => {
+    const { container, rerender } = renderList(
+      {
+        ...empty,
+        rest: [repo("a"), repo("b")],
+      },
+      { selectedIndex: 0 },
+    );
+    const row0 = container.querySelector('[data-row-index="0"]');
+    expect(row0).toBeTruthy();
+    await fireEvent.mouseEnter(row0!);
+    const repos = [repo("a"), repo("b")];
+    const flatIndexByPath = new Map(repos.map((r, i) => [r.path, i]));
+    await rerender({
+      sectionedRepos: { ...empty, rest: repos },
+      flatIndexByPath,
+      selectedIndex: 1,
+      onPinReorder: vi.fn(),
+      onSelectRow: vi.fn(),
+      onOpen: vi.fn(),
+      onDetail: vi.fn(),
+    });
+    const row0Button = container.querySelector(
+      '[data-row-index="0"] button',
+    ) as HTMLButtonElement | null;
+    expect(row0Button?.classList.contains("bg-white/10")).toBe(false);
+    const row1Selected = container.querySelector(
+      '[data-row-index="1"] button.bg-primary',
+    );
+    expect(row1Selected).toBeTruthy();
+  });
 });

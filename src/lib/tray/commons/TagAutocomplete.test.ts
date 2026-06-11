@@ -123,6 +123,17 @@ describe("TagAutocomplete", () => {
     expect(onSelect).toHaveBeenCalledWith("newTag");
   });
 
+  it("mouseenter sets highlighted option", async () => {
+    const { getAllByRole } = renderAutocomplete({
+      allTags: ["rust", "frontend"],
+      visible: true,
+    });
+    const options = getAllByRole("option");
+    await fireEvent.mouseEnter(options[1]!);
+    expect(options[1]?.getAttribute("aria-selected")).toBe("true");
+    expect(options[0]?.getAttribute("aria-selected")).toBe("false");
+  });
+
   it("prefix_filters_to_tags_starting_with_prefix", () => {
     const { queryByText } = renderAutocomplete({
       allTags: ["rust", "frontend", "react"],
