@@ -45,13 +45,11 @@
   } = $props();
 </script>
 
-{#if listView.kind === "error"}
-  <TrayListPlaceholder message={listView.message} tone="error" />
-{:else if listView.kind === "empty-list"}
+{#if listView.kind === "empty-list"}
   <TrayListPlaceholder message={emptyListMessage} />
 {:else if listView.kind === "no-match"}
   <TrayListPlaceholder message={noMatchMessage} />
-{:else}
+{:else if listView.kind === "list"}
   <TrayRepoList
     {sectionedRepos}
     {flatIndexByPath}

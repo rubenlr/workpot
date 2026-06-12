@@ -107,4 +107,37 @@ describe("TrayPanelChrome", () => {
     const { container } = renderChrome({ detailRepo: baseRepo });
     expect(container.querySelector("#repo-filter")).toBeNull();
   });
+
+  it("list_error_renders_banner_without_dismiss", () => {
+    const { getByRole, getByText, queryByText } = render(TrayPanelChrome, {
+      props: {
+        listMaxHeightPx: 600,
+        launchError: null,
+        onDismissLaunchError: vi.fn(),
+        filterQuery: "",
+        allTags: [],
+        tagAutocompletePrefix: null,
+        onFilterKeydown: vi.fn(),
+        onTagSelect: vi.fn(),
+        bindFilterInput: vi.fn(),
+        listView: { kind: "error", message: "SQLite database is locked" },
+        sectionedRepos: emptySections,
+        flatIndexByPath: new Map<string, number>(),
+        selectedIndex: 0,
+        onPinReorder: vi.fn(),
+        onSelectRow: vi.fn(),
+        onOpen: vi.fn(),
+        onDetail: vi.fn() as (repo: RepoDto, index: number) => void,
+        detailRepo: null,
+        onCloseDetail: vi.fn(),
+        onDetailMutated: vi.fn(),
+      },
+    });
+    expect(getByRole("alert")).toBeTruthy();
+    expect(getByText("SQLite database is locked")).toBeTruthy();
+    expect(queryByText("DISMISS")).toBeNull();
+    expect(
+      queryByText("SQLite database is locked", { selector: "p" }),
+    ).toBeNull();
+  });
 });

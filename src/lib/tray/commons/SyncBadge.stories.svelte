@@ -13,6 +13,7 @@
 <Story name="AheadOnly" args={{ ahead: 2, behind: 0 }} />
 <Story name="BehindOnly" args={{ ahead: 0, behind: 3 }} />
 <Story name="Both" args={{ ahead: 2, behind: 1 }} />
+<Story name="BothDisplayOnly" args={{ ahead: 2, behind: 1, branch: "main" }} />
 <Story name="None" args={{ ahead: null, behind: null }} />
 <Story
   name="PushAvailable"

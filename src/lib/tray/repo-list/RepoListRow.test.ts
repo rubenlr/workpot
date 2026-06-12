@@ -124,18 +124,23 @@ describe("RepoListRow", () => {
     expect(openBtn.contains(pushBtn)).toBe(false);
   });
 
-  it("selected highlight suppressed when syncHovered", () => {
-    const { getByRole } = render(RepoListRow, {
+  it("selected row wrapper gets bg-primary and child buttons stay transparent", () => {
+    const { container, getByRole } = render(RepoListRow, {
       props: {
         repo: mockRepo,
         selected: true,
-        syncHovered: true,
         onOpen: vi.fn(),
         onDetail: vi.fn(),
       },
     });
+    const rowWrapper = container.querySelector("li > div");
+    expect(rowWrapper?.className).toContain("bg-primary");
     const openBtn = getByRole("button", { name: "Open testrepo" });
-    expect(openBtn.className).not.toContain("bg-primary");
+    const chevronBtn = getByRole("button", {
+      name: "Open detail for testrepo",
+    });
+    expect(openBtn.className).toContain("bg-transparent");
+    expect(chevronBtn.className).toContain("bg-transparent");
   });
 
   it("push chip click does not call onOpen", async () => {

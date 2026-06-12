@@ -64,9 +64,9 @@ describe("TrayListBody", () => {
     cleanup();
   });
 
-  it("error_view_shows_placeholder_with_error_message", () => {
-    const { getByText } = renderBody({ kind: "error", message: "Load failed" });
-    expect(getByText("Load failed")).toBeTruthy();
+  it("error_view_renders_nothing_in_body", () => {
+    const { container } = renderBody({ kind: "error", message: "Load failed" });
+    expect(container.textContent?.trim()).toBe("");
   });
 
   it("empty_list_view_shows_default_empty_message", () => {

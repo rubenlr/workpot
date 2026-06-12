@@ -31,6 +31,9 @@ export function createTrayConfig() {
     get sectionCfg() {
       return sectionCfg;
     },
+    get maxVisibleRows() {
+      return maxVisibleRows;
+    },
     get listMaxHeightPx() {
       return listMaxHeightPx;
     },

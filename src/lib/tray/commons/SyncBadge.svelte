@@ -33,6 +33,24 @@
   const pullSyncing = $derived(syncingDirection === "pull");
   const chipDisabled = $derived(disabled || pushSyncing || pullSyncing);
 
+  const pushChipClass =
+    "inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-70";
+
+  const pullChipClass =
+    "inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-70";
+
+  const pushSpanClass =
+    "inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface opacity-70 cursor-default";
+
+  const pullSpanClass =
+    "inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant opacity-70 cursor-default";
+
+  const pushSyncingSpanClass =
+    "inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface opacity-70 cursor-default animate-pulse";
+
+  const pullSyncingSpanClass =
+    "inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant opacity-70 cursor-default animate-pulse";
+
   function pushLabel(count: number): string {
     const branchLabel = branch ? ` on ${branch}` : "";
     return `Push ${count} commit${count === 1 ? "" : "s"}${branchLabel}`;
@@ -45,7 +63,7 @@
 
   function handlePushClick(e: MouseEvent) {
     e.stopPropagation();
-    if (!pushInteractive || chipDisabled || pushSyncing) {
+    if (!pushInteractive || chipDisabled) {
       return;
     }
     onPush?.();
@@ -53,7 +71,7 @@
 
   function handlePullClick(e: MouseEvent) {
     e.stopPropagation();
-    if (!pullInteractive || chipDisabled || pullSyncing) {
+    if (!pullInteractive || chipDisabled) {
       return;
     }
     onPull?.();
@@ -76,55 +94,47 @@
     onmouseleave={onHoverChange ? handleMouseLeave : undefined}
   >
     {#if showAhead}
-      {#if pushInteractive}
+      {#if pushInteractive && !pushSyncing}
         <button
           type="button"
-          class="inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-70 {pushSyncing
-            ? 'animate-pulse'
-            : 'cursor-pointer'}"
+          class={pushChipClass}
           aria-label={pushLabel(ahead!)}
-          disabled={chipDisabled && !pushSyncing}
+          disabled={chipDisabled}
           onclick={handlePushClick}
         >
+          <MaterialIcon name="north" size={12} />
+          {ahead}
+        </button>
+      {:else if showAhead}
+        <span class={pushSyncing ? pushSyncingSpanClass : pushSpanClass}>
           {#if pushSyncing}
             <MaterialIcon name="sync" size={12} class="animate-spin" />
           {:else}
             <MaterialIcon name="north" size={12} />
           {/if}
           {ahead}
-        </button>
-      {:else}
-        <span
-          class="inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface"
-        >
-          <MaterialIcon name="north" size={12} />
-          {ahead}
         </span>
       {/if}
     {/if}
     {#if showBehind}
-      {#if pullInteractive}
+      {#if pullInteractive && !pullSyncing}
         <button
           type="button"
-          class="inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-70 {pullSyncing
-            ? 'animate-pulse'
-            : 'cursor-pointer'}"
+          class={pullChipClass}
           aria-label={pullLabel(behind!)}
-          disabled={chipDisabled && !pullSyncing}
+          disabled={chipDisabled}
           onclick={handlePullClick}
         >
+          <MaterialIcon name="south" size={12} />
+          {behind}
+        </button>
+      {:else if showBehind}
+        <span class={pullSyncing ? pullSyncingSpanClass : pullSpanClass}>
           {#if pullSyncing}
             <MaterialIcon name="sync" size={12} class="animate-spin" />
           {:else}
             <MaterialIcon name="south" size={12} />
           {/if}
-          {behind}
-        </button>
-      {:else}
-        <span
-          class="inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant"
-        >
-          <MaterialIcon name="south" size={12} />
           {behind}
         </span>
       {/if}

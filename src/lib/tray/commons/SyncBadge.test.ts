@@ -62,4 +62,59 @@ describe("SyncBadge", () => {
     });
     expect(queryByRole("button")).toBeNull();
   });
+
+  it("display-only spans look disabled", () => {
+    const { container, queryByRole } = render(SyncBadge, {
+      props: { ahead: 2, behind: 1, branch: "main" },
+    });
+    expect(queryByRole("button")).toBeNull();
+    const chips = [...container.querySelectorAll("span")].filter((span) =>
+      span.className.includes("rounded-full"),
+    );
+    expect(chips).toHaveLength(2);
+    for (const chip of chips) {
+      expect(chip.className).toContain("opacity-70");
+      expect(chip.className).toContain("cursor-default");
+    }
+  });
+
+  it("push syncing renders non-interactive span", async () => {
+    const onPush = vi.fn();
+    const { container, queryByRole } = render(SyncBadge, {
+      props: {
+        ahead: 2,
+        behind: 0,
+        branch: "main",
+        syncingDirection: "push",
+        onPush,
+      },
+    });
+    expect(queryByRole("button", { name: /Push/ })).toBeNull();
+    const chip = container.querySelector("span.animate-pulse");
+    expect(chip).not.toBeNull();
+    expect(chip!.className).toContain("cursor-default");
+    expect(chip!.className).not.toMatch(/hover:/);
+    await fireEvent.click(chip!);
+    expect(onPush).not.toHaveBeenCalled();
+  });
+
+  it("pull syncing renders non-interactive span", async () => {
+    const onPull = vi.fn();
+    const { container, queryByRole } = render(SyncBadge, {
+      props: {
+        ahead: 0,
+        behind: 3,
+        branch: "main",
+        syncingDirection: "pull",
+        onPull,
+      },
+    });
+    expect(queryByRole("button", { name: /Pull/ })).toBeNull();
+    const chip = container.querySelector("span.animate-pulse");
+    expect(chip).not.toBeNull();
+    expect(chip!.className).toContain("cursor-default");
+    expect(chip!.className).not.toMatch(/hover:/);
+    await fireEvent.click(chip!);
+    expect(onPull).not.toHaveBeenCalled();
+  });
 });

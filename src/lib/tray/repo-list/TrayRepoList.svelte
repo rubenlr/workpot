@@ -39,7 +39,6 @@
   } = $props();
 
   let hoveredRowIndex = $state<number | null>(null);
-  let syncHoveredRowIndex = $state<number | null>(null);
 
   let dragSourceIdx = $state<number | null>(null);
 
@@ -100,7 +99,6 @@
   class="bg-inverse-surface px-1.5 py-1"
   onmouseleave={() => {
     hoveredRowIndex = null;
-    syncHoveredRowIndex = null;
   }}
 >
   {#each SECTION_META as { key, label, draggable } (key)}
@@ -116,7 +114,6 @@
               listRowDraggable={draggable}
               selected={idx === selectedIndex}
               hovered={hoveredRowIndex === idx}
-              syncHovered={syncHoveredRowIndex === idx}
               onRowMouseEnter={() => {
                 hoveredRowIndex = idx;
                 selectedIndex = idx;
@@ -125,9 +122,6 @@
                 if (hoveredRowIndex === idx) {
                   hoveredRowIndex = null;
                 }
-              }}
-              onSyncHoverChange={(hovered) => {
-                syncHoveredRowIndex = hovered ? idx : null;
               }}
               onRowContextMenu={(e) => {
                 e.preventDefault();

@@ -1,9 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { syncPanelWindowHeight } from "$lib/tray/logic/layout/panelWindow";
   import { createTrayPanel } from "$lib/tray/state/createTrayPanel.svelte";
   import TrayPanelChrome from "./chrome/TrayPanelChrome.svelte";
 
   const panel = createTrayPanel();
+
+  function onPanelHeightChange(heightPx: number) {
+    void syncPanelWindowHeight(heightPx);
+  }
 
   onMount(() => {
     void panel.mount();
@@ -15,6 +20,7 @@
 
 <TrayPanelChrome
   listMaxHeightPx={panel.listMaxHeightPx}
+  {onPanelHeightChange}
   launchError={panel.launchError}
   onDismissLaunchError={panel.dismissLaunchError}
   bind:filterQuery={panel.filterQuery}

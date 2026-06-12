@@ -4,7 +4,8 @@
   import type { SectionedRepos } from "$lib/tray/logic/list/sort";
   import type { ActiveSync, RepoDto, SyncDirection } from "$lib/types";
   import type { toPinOrderPayload } from "$lib/tray/logic/list/pinOrder";
-  import LaunchErrorBanner from "./LaunchErrorBanner.svelte";
+  import { observePanelHeight } from "$lib/tray/logic/layout/observePanelHeight";
+  import TrayErrorBanner from "./TrayErrorBanner.svelte";
   import TrayFilterBar from "$lib/tray/repo-list/TrayFilterBar.svelte";
   import TrayListBody from "$lib/tray/repo-list/TrayListBody.svelte";
 
@@ -12,6 +13,7 @@
 
   let {
     listMaxHeightPx,
+    onPanelHeightChange,
     launchError = null,
     onDismissLaunchError,
     filterQuery = $bindable(""),
@@ -42,6 +44,7 @@
     branchRevision = 0,
   }: {
     listMaxHeightPx: number;
+    onPanelHeightChange?: (heightPx: number) => void;
     launchError?: string | null;
     onDismissLaunchError?: () => void;
     filterQuery?: string;
@@ -80,11 +83,16 @@
 </script>
 
 <main
-  class="panel-shell flex h-screen flex-col overflow-hidden rounded-xl bg-inverse-surface text-inverse-on-surface shadow-2xl"
+  class="panel-shell flex h-auto flex-col overflow-hidden rounded-xl bg-inverse-surface text-inverse-on-surface shadow-2xl"
   style="max-height: {listMaxHeightPx}px"
+  use:observePanelHeight={onPanelHeightChange}
 >
   {#if launchError && onDismissLaunchError}
-    <LaunchErrorBanner message={launchError} onDismiss={onDismissLaunchError} />
+    <TrayErrorBanner message={launchError} onDismiss={onDismissLaunchError} />
+  {/if}
+
+  {#if listView.kind === "error"}
+    <TrayErrorBanner message={listView.message} />
   {/if}
 
   {#if !detailRepo}

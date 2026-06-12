@@ -8,7 +8,6 @@
     repo,
     selected = false,
     hovered = false,
-    syncHovered = false,
     rowIndex,
     listRowDraggable = false,
     activeSync = null,
@@ -22,12 +21,10 @@
     onRowDragEnd,
     onRowMouseEnter,
     onRowMouseLeave,
-    onSyncHoverChange,
   }: {
     repo: RepoDto;
     selected?: boolean;
     hovered?: boolean;
-    syncHovered?: boolean;
     rowIndex?: number;
     listRowDraggable?: boolean;
     activeSync?: ActiveSync | null;
@@ -45,7 +42,6 @@
     onRowDragEnd?: (e: DragEvent) => void;
     onRowMouseEnter?: () => void;
     onRowMouseLeave?: () => void;
-    onSyncHoverChange?: (hovered: boolean) => void;
   } = $props();
 
   const rowLabel = $derived(repo.alias ?? repo.name);
@@ -59,27 +55,22 @@
   );
 
   const syncDisabled = $derived(activeSync != null);
-  const showRowSelection = $derived(selected && !syncHovered);
 
-  const openButtonClass = $derived(
-    [
-      "flex min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-2.5 text-left text-inherit shadow-none outline-none focus-visible:ring-1 focus-visible:ring-primary",
-      showRowSelection
-        ? "bg-primary text-primary-foreground"
-        : hovered
-          ? "bg-white/10 text-inverse-on-surface"
-          : "text-inverse-on-surface",
-    ].join(" "),
+  const rowSurfaceClass = $derived(
+    selected
+      ? "bg-primary text-primary-foreground"
+      : hovered
+        ? "bg-white/10 text-inverse-on-surface"
+        : "text-inverse-on-surface",
   );
+
+  const openButtonClass =
+    "flex min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-2.5 text-left text-inherit shadow-none outline-none focus-visible:ring-1 focus-visible:ring-primary";
 
   const chevronClass = $derived(
     [
-      "flex shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent px-2 shadow-none outline-none focus-visible:ring-1 focus-visible:ring-primary",
-      showRowSelection
-        ? "bg-primary/80 text-primary-foreground"
-        : hovered
-          ? "bg-white/10 text-inverse-on-surface"
-          : "text-inverse-on-surface-variant",
+      "flex shrink-0 cursor-pointer items-center justify-center self-center rounded-lg border-0 bg-transparent px-2 py-2 text-inherit shadow-none outline-none focus-visible:ring-1 focus-visible:ring-primary",
+      selected ? "" : "opacity-80",
     ].join(" "),
   );
 
@@ -94,7 +85,7 @@
 
 <li
   role="listitem"
-  aria-current={showRowSelection ? "true" : undefined}
+  aria-current={selected ? "true" : undefined}
   data-row-index={rowIndex}
   draggable={listRowDraggable ? "true" : undefined}
   oncontextmenu={onRowContextMenu}
@@ -104,11 +95,11 @@
   ondragend={onRowDragEnd}
   onmouseenter={onRowMouseEnter}
   onmouseleave={onRowMouseLeave}
-  class="relative w-full overflow-hidden rounded-lg text-left transition-transform {showRowSelection
+  class="relative w-full overflow-hidden rounded-lg text-left transition-transform {selected
     ? 'scale-[1.01] shadow-[var(--shadow-row-selected)]'
     : ''}"
 >
-  <div class="flex w-full items-stretch">
+  <div class="flex w-full items-center rounded-lg {rowSurfaceClass}">
     <button
       type="button"
       class={openButtonClass}
@@ -125,7 +116,7 @@
         >
         {#if repo.branch}
           <span
-            class="block truncate text-xs leading-tight {showRowSelection
+            class="block truncate text-xs leading-tight {selected
               ? 'text-primary-foreground/80'
               : 'text-inverse-on-surface-variant'}"
           >
@@ -141,7 +132,6 @@
         branch={repo.branch}
         {syncingDirection}
         disabled={syncDisabled}
-        onHoverChange={onSyncHoverChange}
         onPush={repo.branch && onSync
           ? () => onSync(repo.path, repo.branch!, "push")
           : undefined}
@@ -153,9 +143,7 @@
     <div
       role="separator"
       aria-orientation="vertical"
-      class="w-px shrink-0 self-stretch {showRowSelection
-        ? 'bg-primary-foreground/20'
-        : 'bg-white/10'}"
+      class="h-6 w-px shrink-0 self-center bg-current opacity-20"
     ></div>
     <button
       type="button"
