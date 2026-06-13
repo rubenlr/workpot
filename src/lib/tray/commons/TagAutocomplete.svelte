@@ -1,6 +1,8 @@
 <script lang="ts">
   import { filterTagsForAutocomplete } from "$lib/tagAutocomplete";
 
+  const listboxId = "tag-autocomplete-listbox";
+
   let {
     allTags,
     visible,
@@ -64,39 +66,53 @@
       }
     }
   }
+
+  function onOptionKeydown(e: KeyboardEvent, tag: string) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      selectTag(tag);
+    }
+  }
 </script>
 
 {#if visible}
   <div
-    role="listbox"
-    tabindex="-1"
     class="absolute z-10 mt-1 w-48 rounded-lg border border-card-border bg-inverse-surface py-1 shadow-lg"
-    onkeydown={onKeydown}
   >
     <input
       type="text"
+      role="combobox"
+      aria-expanded="true"
+      aria-controls={listboxId}
+      aria-autocomplete="list"
+      aria-label="Filter tags"
       bind:value={inputValue}
+      onkeydown={onKeydown}
       class="w-full border-0 border-b border-card-border bg-transparent px-3 py-1.5 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant"
       placeholder="Filter tags…"
     />
-    <ul class="max-h-40 overflow-y-auto">
+    <ul
+      id={listboxId}
+      role="listbox"
+      aria-label="Tag suggestions"
+      class="max-h-40 overflow-y-auto"
+    >
       {#each filtered as tag, i (tag)}
-        <li>
-          <button
-            type="button"
-            role="option"
-            aria-selected={i === highlightedIndex}
-            class="w-full px-3 py-1 text-left text-sm text-inverse-on-surface {i ===
-            highlightedIndex
-              ? 'bg-hover-overlay'
-              : ''}"
-            onmouseenter={() => {
-              highlightedIndex = i;
-            }}
-            onclick={() => selectTag(tag)}
-          >
-            #{tag}
-          </button>
+        <li
+          role="option"
+          aria-selected={i === highlightedIndex}
+          tabindex="-1"
+          class="cursor-pointer px-3 py-1 text-left text-sm text-inverse-on-surface {i ===
+          highlightedIndex
+            ? 'bg-hover-overlay'
+            : ''}"
+          onmouseenter={() => {
+            highlightedIndex = i;
+          }}
+          onclick={() => selectTag(tag)}
+          onkeydown={(e) => onOptionKeydown(e, tag)}
+        >
+          #{tag}
         </li>
       {/each}
     </ul>

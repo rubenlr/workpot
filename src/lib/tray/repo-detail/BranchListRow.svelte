@@ -58,7 +58,7 @@
   title={branchPresenceLabel(branch.presence)}
 >
   {#if isCheckout}
-    <MaterialIcon name="check" size={18} class="shrink-0 text-primary" />
+    <MaterialIcon name="check" size={18} class="shrink-0 text-primary-accent" />
   {:else}
     <span class="w-[18px] shrink-0" aria-hidden="true"></span>
   {/if}

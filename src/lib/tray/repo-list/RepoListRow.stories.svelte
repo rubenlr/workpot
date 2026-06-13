@@ -1,5 +1,6 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
+  import { expect, fireEvent, fn } from "storybook/test";
   import RepoListRowStory from "./RepoListRowStory.svelte";
   import {
     storyRepo,
@@ -109,5 +110,50 @@
       pinned: false,
     }),
     selected: false,
+  }}
+/>
+
+<Story
+  name="OpensOnClick"
+  args={{
+    repo: storyRepo({
+      name: "testrepo",
+      alias: null,
+      branch: "main",
+      is_dirty: false,
+      pinned: false,
+    }),
+    selected: false,
+    onOpen: fn(),
+    onDetail: fn(),
+  }}
+  play={async ({ canvas, userEvent, args }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Open testrepo" }),
+    );
+    await expect(args.onOpen).toHaveBeenCalledOnce();
+    await expect(args.onDetail).not.toHaveBeenCalled();
+  }}
+/>
+
+<Story
+  name="OpensDetailOnMetaClick"
+  args={{
+    repo: storyRepo({
+      name: "testrepo",
+      alias: null,
+      branch: "main",
+      is_dirty: false,
+      pinned: false,
+    }),
+    selected: false,
+    onOpen: fn(),
+    onDetail: fn(),
+  }}
+  play={async ({ canvas, args }) => {
+    const button = canvas.getByRole("button", { name: "Open testrepo" });
+    await fireEvent.click(button, { metaKey: true });
+    await expect(args.onDetail).toHaveBeenCalledOnce();
+    await expect(args.onOpen).not.toHaveBeenCalled();
   }}
 />

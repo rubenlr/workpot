@@ -64,7 +64,7 @@ describe("DetailPane", () => {
     const pinned = renderPane({ ...baseRepo, pinned: true });
     const pinnedBtn = pinned.getByRole("button", { name: "Unpin" });
     expect(pinnedBtn.getAttribute("aria-pressed")).toBe("true");
-    expect(pinnedBtn.className).toContain("text-primary");
+    expect(pinnedBtn.className).toContain("text-primary-accent");
 
     cleanup();
 
@@ -108,11 +108,11 @@ describe("DetailPane", () => {
     expect(input).toBeTruthy();
     await fireEvent.input(input, { target: { value: "fr" } });
     await waitFor(() => {
-      expect(container.querySelector('button[role="option"]')).toBeTruthy();
+      expect(container.querySelector('[role="option"]')).toBeTruthy();
     });
-    const options = [
-      ...container.querySelectorAll('button[role="option"]'),
-    ].map((el) => el.textContent);
+    const options = [...container.querySelectorAll('[role="option"]')].map(
+      (el) => el.textContent,
+    );
     expect(options).toContain("#frontend");
     expect(options).not.toContain("#backend");
   });

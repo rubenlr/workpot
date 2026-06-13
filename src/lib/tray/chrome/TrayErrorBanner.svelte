@@ -16,7 +16,7 @@
   {#if onDismiss}
     <button
       type="button"
-      class="shrink-0 cursor-pointer rounded border-0 bg-transparent px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-error-foreground/90 shadow-none outline-none hover:bg-hover-overlay"
+      class="shrink-0 cursor-pointer rounded border-0 bg-transparent px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-error-foreground shadow-none outline-none hover:bg-hover-overlay"
       onclick={onDismiss}
     >
       DISMISS

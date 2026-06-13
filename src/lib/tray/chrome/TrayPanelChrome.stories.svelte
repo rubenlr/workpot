@@ -1,5 +1,6 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
+  import { expect, fn } from "storybook/test";
   import TrayPanelChrome from "./TrayPanelChrome.svelte";
   import {
     emptySectionedRepos,
@@ -110,5 +111,21 @@
     onCloseDetail: noop,
     onDetailMutated: noop,
     onTagFocusDone: noop,
+  }}
+/>
+
+<Story
+  name="DismissListError"
+  args={{
+    listError: "git push failed: rejected",
+    listView: storyListViews.list,
+    sectionedRepos: sectioned,
+    flatIndexByPath: flatIndex,
+    selectedIndex: 0,
+    onDismissListError: fn(),
+  }}
+  play={async ({ canvas, userEvent, args }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "DISMISS" }));
+    await expect(args.onDismissListError).toHaveBeenCalledOnce();
   }}
 />

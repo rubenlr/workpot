@@ -117,7 +117,7 @@
         {#if repo.branch}
           <span
             class="block truncate text-xs leading-tight {selected
-              ? 'text-primary-foreground/80'
+              ? 'text-primary-foreground'
               : 'text-inverse-on-surface-variant'}"
           >
             {repo.branch}
@@ -130,6 +130,7 @@
         ahead={repo.ahead}
         behind={repo.behind}
         branch={repo.branch}
+        tone={selected ? "on-primary" : "default"}
         {syncingDirection}
         disabled={syncDisabled}
         onPush={repo.branch && onSync

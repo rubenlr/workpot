@@ -9,16 +9,23 @@
       name: "inverse-on-surface-variant",
       class: "bg-inverse-surface text-inverse-on-surface-variant",
     },
-    { name: "dirty-amber", class: "bg-dirty-amber text-inverse-on-surface" },
+    {
+      name: "dirty-amber",
+      class: "bg-dirty-amber text-dirty-amber-foreground",
+    },
     {
       name: "clean-emerald",
-      class: "bg-clean-emerald text-inverse-on-surface",
+      class: "bg-clean-emerald text-clean-emerald-foreground",
     },
     {
       name: "git-error-neutral",
-      class: "bg-git-error-neutral text-inverse-on-surface",
+      class: "bg-git-error-neutral text-git-error-neutral-foreground",
     },
-    { name: "tag-blue-bg", class: "bg-tag-blue-bg text-tag-blue-text" },
+    {
+      name: "tag-blue",
+      class:
+        "bg-tag-blue-bg/15 text-tag-blue-text ring-1 ring-tag-blue-text/30",
+    },
     { name: "error", class: "bg-error text-error-foreground" },
     { name: "card-surface", class: "bg-card-surface text-inverse-on-surface" },
     {

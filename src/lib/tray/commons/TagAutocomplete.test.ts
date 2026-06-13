@@ -79,9 +79,9 @@ describe("TagAutocomplete", () => {
       visible: true,
       onSelect,
     });
-    const listbox = getByRole("listbox");
-    await fireEvent.keyDown(listbox, { key: "ArrowDown" });
-    await fireEvent.keyDown(listbox, { key: "Enter" });
+    const combobox = getByRole("combobox");
+    await fireEvent.keyDown(combobox, { key: "ArrowDown" });
+    await fireEvent.keyDown(combobox, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledWith("rust");
   });
 
@@ -90,9 +90,9 @@ describe("TagAutocomplete", () => {
       allTags: ["rust", "frontend"],
       visible: true,
     });
-    const listbox = getByRole("listbox");
-    await fireEvent.keyDown(listbox, { key: "ArrowDown" });
-    await fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    const combobox = getByRole("combobox");
+    await fireEvent.keyDown(combobox, { key: "ArrowDown" });
+    await fireEvent.keyDown(combobox, { key: "ArrowDown" });
     const options = getAllByRole("option");
     expect(options[1]?.getAttribute("aria-selected")).toBe("true");
   });
@@ -102,9 +102,9 @@ describe("TagAutocomplete", () => {
       allTags: ["rust", "frontend"],
       visible: true,
     });
-    const listbox = getByRole("listbox");
-    await fireEvent.keyDown(listbox, { key: "ArrowDown" });
-    await fireEvent.keyDown(listbox, { key: "ArrowUp" });
+    const combobox = getByRole("combobox");
+    await fireEvent.keyDown(combobox, { key: "ArrowDown" });
+    await fireEvent.keyDown(combobox, { key: "ArrowUp" });
     const options = getAllByRole("option");
     expect(options[0]?.getAttribute("aria-selected")).toBe("true");
   });
@@ -118,8 +118,8 @@ describe("TagAutocomplete", () => {
     });
     const input = container.querySelector("input") as HTMLInputElement;
     await fireEvent.input(input, { target: { value: "newTag" } });
-    const listbox = getByRole("listbox");
-    await fireEvent.keyDown(listbox, { key: "Enter" });
+    const combobox = getByRole("combobox");
+    await fireEvent.keyDown(combobox, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledWith("newTag");
   });
 

@@ -1,5 +1,6 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
+  import { expect, fn } from "storybook/test";
   import SyncBadge from "./SyncBadge.svelte";
 
   const { Story } = defineMeta({
@@ -46,5 +47,37 @@
     branch: "main",
     syncingDirection: "pull",
     onPull: noop,
+  }}
+/>
+
+<Story
+  name="PushClick"
+  args={{
+    ahead: 2,
+    behind: 0,
+    branch: "main",
+    onPush: fn(),
+  }}
+  play={async ({ canvas, userEvent, args }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: /Push 2 commits on main/ }),
+    );
+    await expect(args.onPush).toHaveBeenCalledOnce();
+  }}
+/>
+
+<Story
+  name="PullClick"
+  args={{
+    ahead: 0,
+    behind: 3,
+    branch: "feature/x",
+    onPull: fn(),
+  }}
+  play={async ({ canvas, userEvent, args }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: /Pull 3 commits on feature\/x/ }),
+    );
+    await expect(args.onPull).toHaveBeenCalledOnce();
   }}
 />

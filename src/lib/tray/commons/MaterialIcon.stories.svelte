@@ -17,4 +17,7 @@
 <Story name="Size16" args={{ name: "search", size: 16 }} />
 <Story name="Size20" args={{ name: "search", size: 20 }} />
 <Story name="Size24" args={{ name: "search", size: 24 }} />
-<Story name="CustomClass" args={{ name: "star", class: "text-dirty-amber" }} />
+<Story
+  name="CustomClass"
+  args={{ name: "star", class: "text-primary-accent" }}
+/>

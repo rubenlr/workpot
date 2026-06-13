@@ -8,6 +8,7 @@
     branch = null,
     syncingDirection = null,
     disabled = false,
+    tone = "default",
     onPush,
     onPull,
     onHoverChange,
@@ -17,6 +18,7 @@
     branch?: string | null;
     syncingDirection?: SyncDirection | null;
     disabled?: boolean;
+    tone?: "default" | "on-primary";
     onPush?: () => void;
     onPull?: () => void;
     onHoverChange?: (hovered: boolean) => void;
@@ -33,23 +35,31 @@
   const pullSyncing = $derived(syncingDirection === "pull");
   const chipDisabled = $derived(disabled || pushSyncing || pullSyncing);
 
-  const pushChipClass =
-    "inline-flex items-center gap-0.5 rounded-full bg-hover-overlay px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-70";
+  const chipSurfaceClass = $derived(
+    tone === "on-primary"
+      ? "bg-transparent text-primary-foreground"
+      : "bg-hover-overlay text-inherit",
+  );
 
-  const pullChipClass =
-    "inline-flex items-center gap-0.5 rounded-full bg-hover-overlay px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant transition-colors hover:bg-hover-overlay-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-70";
+  const pushChipClass = $derived(
+    `inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${chipSurfaceClass} transition-colors ${tone === "on-primary" ? "hover:bg-black/15" : "hover:bg-primary/20"} focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-70`,
+  );
 
-  const pushSpanClass =
-    "inline-flex items-center gap-0.5 rounded-full bg-hover-overlay px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface opacity-70 cursor-default";
+  const pullChipClass = $derived(
+    `inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${chipSurfaceClass} ${tone === "default" ? "opacity-80" : ""} transition-colors ${tone === "on-primary" ? "hover:bg-black/15" : "hover:bg-hover-overlay-strong"} focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-70`,
+  );
 
-  const pullSpanClass =
-    "inline-flex items-center gap-0.5 rounded-full bg-hover-overlay px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant opacity-70 cursor-default";
+  const pushSpanClass = $derived(
+    `inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${chipSurfaceClass} ${tone === "default" ? "opacity-70" : ""} cursor-default`,
+  );
 
-  const pushSyncingSpanClass =
-    "inline-flex items-center gap-0.5 rounded-full bg-hover-overlay px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface opacity-70 cursor-default animate-pulse";
+  const pullSpanClass = $derived(
+    `inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${chipSurfaceClass} ${tone === "default" ? "opacity-70" : ""} cursor-default`,
+  );
 
-  const pullSyncingSpanClass =
-    "inline-flex items-center gap-0.5 rounded-full bg-hover-overlay px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant opacity-70 cursor-default animate-pulse";
+  const pushSyncingSpanClass = $derived(`${pushSpanClass} animate-pulse`);
+
+  const pullSyncingSpanClass = $derived(`${pullSpanClass} animate-pulse`);
 
   function pushLabel(count: number): string {
     const branchLabel = branch ? ` on ${branch}` : "";
