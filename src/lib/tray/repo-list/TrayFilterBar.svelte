@@ -11,6 +11,7 @@
     bindFilterInput,
     onRefresh,
     refreshing = false,
+    refreshSuccess = false,
   }: {
     filterQuery?: string;
     allTags: string[];
@@ -20,6 +21,7 @@
     bindFilterInput: (el: HTMLInputElement | null) => void;
     onRefresh?: () => void;
     refreshing?: boolean;
+    refreshSuccess?: boolean;
   } = $props();
 
   let filterInput = $state<HTMLInputElement | null>(null);
@@ -29,7 +31,7 @@
   });
 </script>
 
-<div class="border-b border-white/10 bg-inverse-surface px-3 py-2">
+<div class="border-b border-border-subtle bg-inverse-surface px-3 py-2">
   <div class="relative flex items-center gap-2">
     <div class="relative min-w-0 flex-1">
       <MaterialIcon
@@ -43,7 +45,7 @@
         type="search"
         placeholder="Filter repos…"
         maxlength="256"
-        class="w-full rounded-lg border border-white/10 bg-black/20 py-2 pl-9 pr-3 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
+        class="w-full rounded-lg border border-border-subtle bg-input-surface py-2 pl-9 pr-3 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
         bind:value={filterQuery}
         onkeydown={onFilterKeydown}
       />
@@ -57,15 +59,15 @@
     {#if onRefresh}
       <button
         type="button"
-        class="flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-white/10 bg-black/20 p-2 text-inverse-on-surface-variant outline-none hover:bg-white/10 hover:text-inverse-on-surface focus-visible:ring-1 focus-visible:ring-primary disabled:opacity-50"
+        class="flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border-subtle bg-input-surface p-2 text-inverse-on-surface-variant outline-none hover:bg-hover-overlay hover:text-inverse-on-surface focus-visible:ring-1 focus-visible:ring-primary disabled:opacity-50"
         aria-label="Refresh index"
         disabled={refreshing}
         onclick={onRefresh}
       >
         <MaterialIcon
-          name="sync"
+          name={refreshSuccess ? "check" : "sync"}
           size={20}
-          class={refreshing ? "animate-spin" : ""}
+          class={refreshing && !refreshSuccess ? "animate-spin" : ""}
         />
       </button>
     {/if}

@@ -4,7 +4,7 @@ mod tray;
 
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, WindowEvent};
-use workpot_core::AppContext;
+use workpot_core::AppState;
 
 fn init_logging() {
     // Filter via RUST_LOG, e.g. workpot_tray_lib=debug,workpot_core=debug (see justfile `launch`).
@@ -64,8 +64,8 @@ pub fn run() {
         .manage(commands::GitRefreshGuard::new())
         .manage(commands::RepoSyncGuard::new())
         .setup(|app| {
-            let ctx = AppContext::open().map_err(|e| e.to_string())?;
-            app.manage(Arc::new(Mutex::new(ctx)));
+            let state = AppState::open().map_err(|e| e.to_string())?;
+            app.manage(Arc::new(state));
             #[cfg(target_os = "macos")]
             if let Some(panel) = app.get_webview_window("panel") {
                 tray::configure_panel_window(&panel);
@@ -89,6 +89,7 @@ pub fn run() {
             commands::refresh_all_git_state,
             commands::refresh_index,
             commands::checkout_repo_branch,
+            commands::get_repo_sync_status,
             commands::sync_repo_branch,
             commands::open_in_cursor,
             commands::set_tags,

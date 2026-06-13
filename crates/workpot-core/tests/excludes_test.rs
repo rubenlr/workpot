@@ -53,12 +53,15 @@ fn excludes_list_roundtrip() {
     let db_path = dir.path().join("workpot.db");
     fs::write(&config_path, empty_config_marker()).expect("write config");
 
-    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
     let glob = "/tmp/workpot-test-exclude/**".to_string();
-    ctx.config_mut().excludes.push(glob.clone());
-    save_config(&config_path, ctx.config()).expect("save");
+    ctx.config_mut()
+        .expect("config")
+        .excludes
+        .push(glob.clone());
+    save_config(&config_path, &ctx.config().expect("config")).expect("save");
 
-    let listed = excludes::list_excludes(ctx.config());
+    let listed = excludes::list_excludes(&ctx.config().expect("config"));
     assert!(listed.iter().any(|g| g == &glob));
 }
 
@@ -94,7 +97,7 @@ fn remove_appends_exclude() {
     let repo = git_worktree(dir.path(), "to-remove");
     let repo_canon = repo.canonicalize().expect("canonicalize");
 
-    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
     ctx.register_manual(&repo).expect("register");
     ctx.remove_repo(&repo).expect("remove");
 
@@ -128,7 +131,7 @@ fn remove_then_index_skips() {
     fs::create_dir_all(&watch_root).expect("watch root");
     let repo = git_worktree(&watch_root, "gone");
 
-    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
     ctx.roots_add(&watch_root).expect("roots add");
     let repo_canon = repo.canonicalize().expect("canonicalize");
     assert!(
@@ -157,7 +160,7 @@ fn excludes_remove_not_found() {
     let db_path = dir.path().join("workpot.db");
     fs::write(&config_path, empty_config_marker()).expect("write config");
 
-    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
     let err = ctx.excludes_remove("/no-such-glob/**").unwrap_err();
     assert!(matches!(err, workpot_core::WorkpotError::NotFound(_)));
 }
@@ -173,7 +176,7 @@ fn excludes_remove_persists() {
     )
     .expect("write config");
 
-    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
     ctx.excludes_remove("/gone/**").expect("remove exclude");
 
     let config: Config = toml::from_str(&fs::read_to_string(&config_path).expect("read config"))

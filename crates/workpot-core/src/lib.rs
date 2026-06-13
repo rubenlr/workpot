@@ -12,22 +12,23 @@ pub mod services;
 pub mod testing;
 
 use crate::domain::Config;
-use crate::error::Result;
+use crate::infra::db::DbPool;
 use crate::infra::paths;
 use crate::infra::store;
 use crate::services::{catalog, excludes, index, org, roots};
 use rusqlite::Connection;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub use crate::domain::GitState;
 pub use crate::domain::RepoRecord;
-pub use crate::error::WorkpotError;
+pub use crate::error::{Result, WorkpotError};
 pub use crate::services::git_state::GitRefreshSummary;
 pub use crate::services::repo_priority::{
     SectionedRepos, flat_tray_ordered, flat_tray_ordered_repos, section_sort,
 };
-pub use crate::services::repo_sync::{SyncDirection, run_repo_sync};
+pub use crate::services::repo_sync::{SyncDirection, SyncFailure, run_repo_sync};
 pub use crate::services::stale_dirty::has_stale_dirty;
 
 pub fn version() -> &'static str {
@@ -46,15 +47,22 @@ pub fn default_config(home: &Path) -> Config {
     config
 }
 
-/// Application context: config + SQLite connection. Open via [`AppContext::open`] in production.
-pub struct AppContext {
-    config_path: PathBuf,
-    db_path: PathBuf,
-    config: Config,
-    conn: Connection,
+fn lock_poison<T>(_: PoisonError<T>) -> WorkpotError {
+    WorkpotError::Config("application state lock poisoned".to_string())
 }
 
-impl AppContext {
+/// Application state: config + read/write SQLite pool. Open via [`AppState::open`] in production.
+pub struct AppState {
+    config_path: PathBuf,
+    db_path: PathBuf,
+    config: RwLock<Config>,
+    db: DbPool,
+}
+
+/// Back-compat alias; prefer [`AppState`].
+pub type AppContext = AppState;
+
+impl AppState {
     /// Lazy bootstrap using macOS default paths (D-01, D-02, D-04).
     pub fn open() -> Result<Self> {
         let config_path = paths::config_file()?;
@@ -67,12 +75,12 @@ impl AppContext {
         remove_stale_config_temp(&config_path);
         ensure_default_config(&config_path)?;
         let config = load_config(&config_path)?;
-        let conn = store::open_connection(&db_path)?;
+        let db = store::open_pool(&db_path)?;
         Ok(Self {
             config_path,
             db_path,
-            config,
-            conn,
+            config: RwLock::new(config),
+            db,
         })
     }
 
@@ -84,63 +92,83 @@ impl AppContext {
         &self.db_path
     }
 
-    pub fn config(&self) -> &Config {
-        &self.config
+    pub fn config(&self) -> Result<RwLockReadGuard<'_, Config>> {
+        self.config.read().map_err(lock_poison)
+    }
+
+    pub fn db(&self) -> &DbPool {
+        &self.db
     }
 
     pub fn register_manual(&self, path: &Path) -> Result<RepoRecord> {
-        catalog::register_manual(&self.conn, &self.config, path)
+        let config = self.config.read().map_err(lock_poison)?;
+        self.db
+            .with_write(|conn| catalog::register_manual(conn, &config, path))
     }
 
     pub fn list_repos(&self) -> Result<Vec<RepoRecord>> {
-        catalog::list_repos(&self.conn)
+        self.db.with_read(catalog::list_repos)
     }
 
     pub fn touch_last_opened_at(&self, path: &Path) -> Result<()> {
-        catalog::touch_last_opened_at(&self.conn, path)
+        self.db
+            .with_write(|conn| catalog::touch_last_opened_at(conn, path))
     }
 
     pub fn indexed_launch_path(&self, path: &Path) -> Result<PathBuf> {
-        catalog::indexed_launch_path(&self.conn, path)
+        self.db
+            .with_read(|conn| catalog::indexed_launch_path(conn, path))
     }
 
-    pub fn remove_repo(&mut self, path: &Path) -> Result<()> {
-        catalog::remove_repo_with_exclude(&self.conn, &self.config_path, &mut self.config, path)
+    pub fn remove_repo(&self, path: &Path) -> Result<()> {
+        let mut config = self.config.write().map_err(lock_poison)?;
+        self.db.with_write(|conn| {
+            catalog::remove_repo_with_exclude(conn, &self.config_path, &mut config, path)
+        })
     }
 
-    pub fn excludes_list(&self) -> Vec<String> {
-        excludes::list_excludes(&self.config)
+    pub fn excludes_list(&self) -> Result<Vec<String>> {
+        Ok(excludes::list_excludes(&*self.config()?))
     }
 
-    pub fn excludes_remove(&mut self, glob: &str) -> Result<()> {
-        excludes::remove_exclude(&self.config_path, &mut self.config, glob)
+    pub fn excludes_remove(&self, glob: &str) -> Result<()> {
+        let mut config = self.config.write().map_err(lock_poison)?;
+        excludes::remove_exclude(&self.config_path, &mut config, glob)
     }
 
     pub fn run_index(&self) -> Result<index::IndexSummary> {
-        index::run_full(&self.conn, &self.config)
+        let config = self.config.read().map_err(lock_poison)?;
+        index::run_phased(&self.db, &config)
     }
 
-    pub fn config_mut(&mut self) -> &mut Config {
-        &mut self.config
+    pub fn run_index_phased(&self) -> Result<index::IndexSummary> {
+        self.run_index()
     }
 
-    pub(crate) fn connection(&self) -> &Connection {
-        &self.conn
+    pub fn config_mut(&self) -> Result<RwLockWriteGuard<'_, Config>> {
+        self.config.write().map_err(lock_poison)
     }
 
-    pub fn reload_config(&mut self) -> Result<()> {
+    pub(crate) fn with_write_connection<F, T>(&self, f: F) -> Result<T>
+    where
+        F: FnOnce(&Connection) -> Result<T>,
+    {
+        self.db.with_write(f)
+    }
+
+    pub fn reload_config(&self) -> Result<()> {
         roots::reload_config(self)
     }
 
-    pub fn roots_add(&mut self, path: &Path) -> Result<()> {
+    pub fn roots_add(&self, path: &Path) -> Result<()> {
         roots::add_root(self, path)
     }
 
-    pub fn roots_list(&self) -> Vec<PathBuf> {
-        roots::list_roots(self)
+    pub fn roots_list(&self) -> Result<Vec<PathBuf>> {
+        Ok(roots::list_roots(self))
     }
 
-    pub fn roots_remove(&mut self, path: &Path, skip_prune: bool) -> Result<()> {
+    pub fn roots_remove(&self, path: &Path, skip_prune: bool) -> Result<()> {
         roots::remove_root(self, path, skip_prune)
     }
 
@@ -160,20 +188,21 @@ impl AppContext {
         &self,
         path: &std::path::Path,
     ) -> crate::error::Result<crate::domain::GitState> {
-        crate::services::git_state::refresh_and_persist(&self.conn, path)
+        self.db
+            .with_write(|conn| crate::services::git_state::refresh_and_persist(conn, path))
     }
 
-    /// Paths of non-excluded repos for batch git refresh (short lock in tray layer).
+    /// Paths of non-excluded repos for batch git refresh (read connection only).
     pub fn git_refresh_paths(&self) -> Result<Vec<PathBuf>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT path FROM repos WHERE excluded = 0")?;
-        let paths = stmt
-            .query_map([], |row| row.get::<_, String>(0))?
-            .filter_map(|r| r.ok())
-            .map(PathBuf::from)
-            .collect();
-        Ok(paths)
+        self.db.with_read(|conn| {
+            let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
+            let paths = stmt
+                .query_map([], |row| row.get::<_, String>(0))?
+                .filter_map(|r| r.ok())
+                .map(PathBuf::from)
+                .collect();
+            Ok(paths)
+        })
     }
 
     /// Persist batch git refresh results and return summary (`any_dirty` from DB).
@@ -184,34 +213,40 @@ impl AppContext {
         let mut refreshed = 0u32;
         let mut errors = 0u32;
 
-        let tx = self.conn.unchecked_transaction()?;
-        for r in &git_results {
-            let path_exists = Path::new(&r.path).exists();
-            if r.state.error.is_some() {
-                if path_exists {
-                    errors += 1;
+        self.db.with_write(|conn| {
+            let tx = conn.unchecked_transaction()?;
+            for r in &git_results {
+                let path_exists = Path::new(&r.path).exists();
+                if r.state.error.is_some() {
+                    if path_exists {
+                        errors += 1;
+                    }
+                } else {
+                    refreshed += 1;
                 }
-            } else {
-                refreshed += 1;
+                if !path_exists {
+                    continue;
+                }
+                if crate::services::git_state::is_hard_refresh_failure(&r.state) {
+                    let err = r.state.error.as_deref().unwrap_or("unknown");
+                    crate::services::git_state::persist_git_state_error_only(&tx, &r.path, err)?;
+                } else {
+                    crate::services::git_state::persist_git_state(&tx, &r.path, &r.state)?;
+                }
             }
-            if !path_exists {
-                continue;
-            }
-            if crate::services::git_state::is_hard_refresh_failure(&r.state) {
-                let err = r.state.error.as_deref().unwrap_or("unknown");
-                crate::services::git_state::persist_git_state_error_only(&tx, &r.path, err)?;
-            } else {
-                crate::services::git_state::persist_git_state(&tx, &r.path, &r.state)?;
-            }
-        }
-        catalog::prune_missing_repos(&tx)?;
-        tx.commit()?;
+            catalog::prune_missing_repos(&tx)?;
+            tx.commit()?;
+            Ok(())
+        })?;
 
-        let any_dirty: bool = self.conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM repos WHERE excluded = 0 AND is_dirty = 1)",
-            [],
-            |row| row.get(0),
-        )?;
+        let any_dirty: bool = self.db.with_read(|conn| {
+            conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM repos WHERE excluded = 0 AND is_dirty = 1)",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(WorkpotError::from)
+        })?;
 
         Ok(GitRefreshSummary {
             refreshed,
@@ -224,12 +259,14 @@ impl AppContext {
     pub fn checkout_repo_branch(&self, catalog_path: &Path, branch: &str) -> Result<()> {
         let launch_path = self.indexed_launch_path(catalog_path)?;
         crate::services::branch_checkout::checkout_repo_branch(&launch_path, branch)?;
-        crate::services::git_state::refresh_and_persist_catalog_entry(
-            &self.conn,
-            catalog_path,
-            &launch_path,
-        )?;
-        Ok(())
+        self.db.with_write(|conn| {
+            crate::services::git_state::refresh_and_persist_catalog_entry(
+                conn,
+                catalog_path,
+                &launch_path,
+            )
+            .map(|_| ())
+        })
     }
 
     /// Refresh git state for all non-excluded repos (rayon batch, then single tx persist).
@@ -240,39 +277,43 @@ impl AppContext {
     }
 
     pub fn set_tags(&self, path: &str, tags: &[&str]) -> Result<()> {
-        org::set_tags(&self.conn, path, tags)
+        self.db.with_write(|conn| org::set_tags(conn, path, tags))
     }
 
     pub fn add_tag(&self, path: &str, tag: &str) -> Result<()> {
-        org::add_tag(&self.conn, path, tag)
+        self.db.with_write(|conn| org::add_tag(conn, path, tag))
     }
 
     pub fn remove_tag(&self, path: &str, tag: &str) -> Result<()> {
-        org::remove_tag(&self.conn, path, tag)
+        self.db.with_write(|conn| org::remove_tag(conn, path, tag))
     }
 
     pub fn list_tags_for_repo(&self, path: &str) -> Result<Vec<String>> {
-        org::list_tags_for_repo(&self.conn, path)
+        self.db
+            .with_read(|conn| org::list_tags_for_repo(conn, path))
     }
 
     pub fn list_all_tags(&self) -> Result<Vec<String>> {
-        org::list_all_tags(&self.conn)
+        self.db.with_read(org::list_all_tags)
     }
 
     pub fn set_notes(&self, path: &str, notes: Option<&str>) -> Result<()> {
-        org::set_notes(&self.conn, path, notes)
+        self.db.with_write(|conn| org::set_notes(conn, path, notes))
     }
 
     pub fn set_alias(&self, repo_path: &str, alias: Option<&str>) -> Result<()> {
-        org::set_alias(&self.conn, repo_path, alias)
+        self.db
+            .with_write(|conn| org::set_alias(conn, repo_path, alias))
     }
 
     pub fn set_pin(&self, path: &str, pinned: bool) -> Result<()> {
-        org::set_pin(&self.conn, path, pinned, self.config.max_pinned)
+        let max_pinned = self.config.read().map_err(lock_poison)?.max_pinned;
+        self.db
+            .with_write(|conn| org::set_pin(conn, path, pinned, max_pinned))
     }
 
     pub fn set_pin_order(&self, items: &[(&str, i64)]) -> Result<()> {
-        org::set_pin_order(&self.conn, items)
+        self.db.with_write(|conn| org::set_pin_order(conn, items))
     }
 
     pub fn convert_repo(
@@ -281,7 +322,10 @@ impl AppContext {
         target: crate::services::repo_convert::ConvertTarget,
         dry_run: bool,
     ) -> Result<crate::services::repo_convert::ConvertResult> {
-        crate::services::repo_convert::convert_repo(&self.conn, &self.config, path, target, dry_run)
+        let config = self.config.read().map_err(lock_poison)?;
+        self.db.with_write(|conn| {
+            crate::services::repo_convert::convert_repo(conn, &config, path, target, dry_run)
+        })
     }
 }
 

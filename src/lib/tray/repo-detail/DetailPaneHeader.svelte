@@ -20,7 +20,7 @@
 >
   <button
     type="button"
-    class="flex shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-1 text-inverse-on-surface-variant shadow-none outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-primary"
+    class="flex shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-1 text-inverse-on-surface-variant shadow-none outline-none hover:bg-hover-overlay focus-visible:ring-1 focus-visible:ring-primary"
     aria-label="Close detail pane"
     onclick={onClose}
   >
@@ -33,7 +33,7 @@
   </h2>
   <button
     type="button"
-    class="flex shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-1 shadow-none outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-primary {repo.pinned
+    class="flex shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-1 shadow-none outline-none hover:bg-hover-overlay focus-visible:ring-1 focus-visible:ring-primary {repo.pinned
       ? 'text-primary'
       : 'text-inverse-on-surface-variant'}"
     aria-label={repo.pinned ? "Unpin" : "Pin"}

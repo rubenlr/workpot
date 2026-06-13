@@ -1,10 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tauri::{
     Emitter, Manager, PhysicalPosition,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
-use workpot_core::AppContext;
+use workpot_core::AppState;
 use workpot_core::services::index::IndexSummary;
 
 /// Tray status icons loaded at setup (default, stale-dirty, syncing animation frames).
@@ -107,12 +107,12 @@ fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
     if let Err(e) = app.emit("panel-opened", ()) {
         log::warn!("failed to emit panel-opened: {e}");
     }
-    if let Some(state) = app.try_state::<Arc<Mutex<AppContext>>>() {
+    if let Some(state) = app.try_state::<Arc<AppState>>() {
         crate::commands::spawn_background_git_refresh(app.clone(), state.inner().clone());
     }
 }
 
-pub(crate) fn spawn_background_index(app: tauri::AppHandle, state: Arc<Mutex<AppContext>>) {
+pub(crate) fn spawn_background_index(app: tauri::AppHandle, state: Arc<AppState>) {
     log::info!("background index refresh: started");
     if let Err(e) = app.emit("index-started", ()) {
         log::warn!("failed to emit index-started: {e}");
@@ -121,10 +121,9 @@ pub(crate) fn spawn_background_index(app: tauri::AppHandle, state: Arc<Mutex<App
         let started = std::time::Instant::now();
         let state_for_blocking = Arc::clone(&state);
         let blocking_result = tauri::async_runtime::spawn_blocking(move || {
-            let ctx = state_for_blocking
-                .lock()
-                .map_err(|_| "AppContext lock poisoned".to_string())?;
-            ctx.run_index().map_err(|e| e.to_string())
+            state_for_blocking
+                .run_index_phased()
+                .map_err(|e| e.to_string())
         })
         .await;
 
@@ -177,15 +176,13 @@ fn show_about_dialog(version: &str) {
 fn handle_tray_menu_event(app: &tauri::AppHandle, menu_id: &str) {
     match menu_id {
         "refresh_index" => {
-            if let Some(state) = app.try_state::<Arc<Mutex<AppContext>>>() {
+            if let Some(state) = app.try_state::<Arc<AppState>>() {
                 spawn_background_index(app.clone(), state.inner().clone());
             }
         }
         "preferences" => {
-            if let Some(state) = app.try_state::<Arc<Mutex<AppContext>>>()
-                && let Ok(ctx) = state.lock()
-            {
-                open_path_in_default_app(ctx.config_path());
+            if let Some(state) = app.try_state::<Arc<AppState>>() {
+                open_path_in_default_app(state.config_path());
             }
         }
         "about" => show_about_dialog(workpot_core::version()),

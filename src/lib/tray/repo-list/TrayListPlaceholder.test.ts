@@ -19,7 +19,7 @@ describe("TrayListPlaceholder", () => {
       props: { message: "Error loading repos.", tone: "error" },
     });
     const p = container.querySelector("p");
-    expect(p?.className).toContain("text-red");
+    expect(p?.className).toContain("text-error");
   });
 
   it("tone_muted_applies_neutral_class", () => {
@@ -27,7 +27,7 @@ describe("TrayListPlaceholder", () => {
       props: { message: "No match.", tone: "muted" },
     });
     const p = container.querySelector("p");
-    expect(p?.className).toContain("text-neutral");
+    expect(p?.className).toContain("text-inverse-on-surface-variant");
   });
 
   it("defaults_to_muted_tone", () => {
@@ -35,7 +35,7 @@ describe("TrayListPlaceholder", () => {
       props: { message: "Empty." },
     });
     const p = container.querySelector("p");
-    expect(p?.className).toContain("text-neutral");
-    expect(p?.className).not.toContain("text-red");
+    expect(p?.className).toContain("text-inverse-on-surface-variant");
+    expect(p?.className).not.toContain("text-error");
   });
 });

@@ -1,4 +1,5 @@
 import type { ActiveSync, RepoSyncEvent, SyncDirection } from "$lib/types";
+import { trayTrace } from "./trayTrace";
 
 export type TrayInvokeFn = (
   cmd: string,
@@ -13,16 +14,47 @@ export interface TrayRepoSyncDeps {
   bumpBranchRevision?: () => void;
 }
 
+const PRE_START_SYNC_ERRORS = [
+  "a repo sync is already in progress",
+  "branch must not be empty",
+  "invalid sync direction",
+] as const;
+
+function isPreStartSyncError(message: string): boolean {
+  return PRE_START_SYNC_ERRORS.some((fragment) => message.includes(fragment));
+}
+
+export async function restoreRepoSyncStatus(
+  invoke: TrayInvokeFn,
+  setActiveSync: (sync: ActiveSync | null) => void,
+): Promise<void> {
+  const status = (await invoke("get_repo_sync_status")) as RepoSyncEvent | null;
+  if (!status?.repo_path || !status.branch) {
+    return;
+  }
+  setActiveSync({
+    repoPath: status.repo_path,
+    branch: status.branch,
+    direction: status.direction,
+  });
+}
+
 export async function syncRepoBranch(
   repoPath: string,
   branch: string,
   direction: SyncDirection,
   deps: TrayRepoSyncDeps,
 ): Promise<void> {
+  trayTrace("invoke sync_repo_branch", { repoPath, branch, direction });
   try {
     await deps.invoke("sync_repo_branch", { repoPath, branch, direction });
+    trayTrace("sync_repo_branch ok", { repoPath, branch, direction });
   } catch (e) {
-    deps.onError(e);
+    trayTrace("sync_repo_branch failed", e);
+    const message = String(e);
+    if (isPreStartSyncError(message)) {
+      deps.onError(e);
+    }
   }
 }
 

@@ -2,10 +2,17 @@ import { describe, expect, it } from "vitest";
 import { trayListView } from "./listState";
 
 describe("trayListView", () => {
-  it("shows error when list load failed", () => {
-    expect(trayListView("db locked", 5, "", 5)).toEqual({
+  it("shows error when list load failed with no cached repos", () => {
+    expect(trayListView("db locked", 0, "", 0)).toEqual({
       kind: "error",
       message: "db locked",
+    });
+  });
+
+  it("shows list when error is set but repos are cached", () => {
+    expect(trayListView("git push failed", 5, "", 5)).toEqual({ kind: "list" });
+    expect(trayListView("refresh_index not allowed", 3, "wp", 1)).toEqual({
+      kind: "list",
     });
   });
 

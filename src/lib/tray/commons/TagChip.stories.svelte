@@ -5,8 +5,9 @@
   const noop = () => {};
 
   const { Story } = defineMeta({
-    title: "Components/TagChip",
+    title: "Primitives/TagChip",
     component: TagChip,
+    tags: ["autodocs"],
   });
 </script>
 

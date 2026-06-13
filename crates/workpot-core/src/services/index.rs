@@ -15,13 +15,285 @@ pub struct IndexSummary {
     pub git_errors: u32,
 }
 
+#[derive(Debug)]
 struct ChangeEntry {
     path: String,
     action: &'static str,
 }
 
+/// Discovery output for phased indexing (filesystem scan + read-only catalog queries).
+#[derive(Debug)]
+pub struct DiscoveryPlan {
+    pub started_at: i64,
+    pub upserts: Vec<(PathBuf, String)>,
+    pub removes: Vec<String>,
+    pub pre_skipped: u32,
+    changelog: Vec<ChangeEntry>,
+    pub scan_candidate_count: usize,
+}
+
+/// Phase 1: scan watch roots and plan catalog changes (read connection only).
+pub fn discover_phase(conn: &Connection, config: &Config) -> Result<DiscoveryPlan> {
+    let started_at = crate::services::git_state::unix_now_secs();
+    let exclude_set = discovery::build_exclude_set(config)?;
+    let watch_roots = canonical_watch_roots(config);
+    let configured_roots = &config.watch_roots;
+    let mut changelog: Vec<ChangeEntry> = Vec::new();
+    let mut pre_skipped = 0u32;
+
+    let mut seen_paths: HashSet<String> = HashSet::new();
+    let mut scan_candidates: Vec<PathBuf> = Vec::new();
+
+    for root in &watch_roots {
+        let candidates = discovery::scan_root(root, &exclude_set)?;
+        for path in candidates {
+            let path_key = path.display().to_string();
+            if seen_paths.insert(path_key) {
+                scan_candidates.push(path);
+            }
+        }
+    }
+
+    let scan_candidate_count = scan_candidates.len();
+    let mut upserts: Vec<(PathBuf, String)> = Vec::new();
+    for path in scan_candidates {
+        let path_key = path.display().to_string();
+        match resolve_git_common_dir(&path) {
+            Ok(common) => {
+                upserts.push((path, common.display().to_string()));
+            }
+            Err(_) => {
+                log::warn!("skip {}: git unavailable", path_key);
+                pre_skipped += 1;
+                changelog.push(ChangeEntry {
+                    path: path_key,
+                    action: "skipped",
+                });
+            }
+        }
+    }
+
+    let mut removes = collect_stale_scan_paths(conn, configured_roots, &watch_roots, &seen_paths)?;
+    removes.extend(collect_orphan_scan_paths(conn, configured_roots)?);
+    removes.extend(catalog::missing_repo_paths(conn)?);
+    validate_manual_outside_roots(conn, configured_roots, &mut removes)?;
+    removes.sort();
+    removes.dedup();
+
+    log::debug!(
+        "index discovery: scan_candidates={} upserts={} removes={}",
+        scan_candidate_count,
+        upserts.len(),
+        removes.len()
+    );
+
+    Ok(DiscoveryPlan {
+        started_at,
+        upserts,
+        removes,
+        pre_skipped,
+        changelog,
+        scan_candidate_count,
+    })
+}
+
+/// Phase 2: merge discovery plan into the catalog (write connection, one transaction).
+pub fn merge_catalog_phase(
+    conn: &Connection,
+    config: &Config,
+    plan: DiscoveryPlan,
+) -> Result<IndexSummary> {
+    let max_repos = config.limits.max_repos;
+    let projected = projected_repo_count(conn, &plan.removes, &plan.upserts)?;
+    if projected > i64::from(max_repos) {
+        let projected_u32 = u32::try_from(projected).unwrap_or(u32::MAX);
+        if let Err(e) = record_cap_exceeded_run(conn, plan.started_at, projected, max_repos) {
+            log::warn!("failed to record cap-exceeded audit row: {e}");
+        }
+        return Err(WorkpotError::IndexCapExceeded {
+            projected: projected_u32,
+            max: max_repos,
+        });
+    }
+
+    let mut summary = IndexSummary {
+        skipped: plan.pre_skipped,
+        ..IndexSummary::default()
+    };
+
+    let mut changelog = plan.changelog;
+
+    let tx = conn.unchecked_transaction()?;
+    let run_id = insert_index_run(&tx, plan.started_at)?;
+
+    let backfill_skipped_tx = backfill_empty_git_common_dir(&tx, &mut changelog)?;
+    summary.skipped += backfill_skipped_tx;
+
+    for (path, git_common_dir) in &plan.upserts {
+        let path_key = path.display().to_string();
+        if catalog::upsert_scan(&tx, path, git_common_dir)? {
+            summary.added += 1;
+            changelog.push(ChangeEntry {
+                path: path_key,
+                action: "added",
+            });
+        }
+    }
+
+    for path_key in &plan.removes {
+        let deleted = tx.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
+        if deleted > 0 {
+            summary.removed += 1;
+            changelog.push(ChangeEntry {
+                path: path_key.clone(),
+                action: "removed",
+            });
+        }
+    }
+
+    for entry in &changelog {
+        tx.execute(
+            "INSERT INTO index_changes (run_id, path, action) VALUES (?1, ?2, ?3)",
+            params![run_id, entry.path, entry.action],
+        )?;
+    }
+
+    finish_index_run(&tx, run_id, "ok", &summary, None)?;
+    tx.commit()?;
+    Ok(summary)
+}
+
+/// Phase 3 prep: paths for git refresh (read connection).
+pub fn index_git_paths(conn: &Connection) -> Result<Vec<PathBuf>> {
+    let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
+    Ok(stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .map(PathBuf::from)
+        .collect())
+}
+
+/// Phase 4: persist rayon git refresh results (write connection, one transaction).
+pub fn persist_index_git_phase(
+    conn: &Connection,
+    summary: &mut IndexSummary,
+    git_results: Vec<crate::services::git_state::GitRefreshResult>,
+) -> Result<()> {
+    for r in &git_results {
+        if r.state.error.is_some() {
+            summary.git_errors += 1;
+        } else {
+            summary.git_refreshed += 1;
+        }
+    }
+
+    let git_tx = conn.unchecked_transaction()?;
+    let refresh_time = crate::services::git_state::unix_now_secs();
+    for r in &git_results {
+        let updated = git_tx.execute(
+            "UPDATE repos SET branch=?1, is_dirty=?2, ahead=?3, behind=?4,
+                              git_refreshed_at=?5, git_state_error=?6
+             WHERE path=?7",
+            rusqlite::params![
+                r.state.branch,
+                r.state.is_dirty.map(|b| b as i64),
+                r.state.ahead,
+                r.state.behind,
+                refresh_time,
+                r.state.error,
+                r.path,
+            ],
+        )?;
+        if updated == 0 {
+            log::warn!("git refresh: no repo row matched path {}", r.path);
+            if r.state.error.is_none() {
+                summary.git_refreshed = summary.git_refreshed.saturating_sub(1);
+                summary.git_errors += 1;
+            }
+        }
+    }
+    if let Err(e) = git_tx.commit() {
+        log::warn!("git refresh commit failed after successful index merge: {e}");
+        summary.git_errors = summary.git_errors.saturating_add(summary.git_refreshed);
+        summary.git_refreshed = 0;
+    }
+    Ok(())
+}
+
+/// Phased index: release locks between discovery, merge, git refresh, and persist.
+pub fn run_phased(pool: &crate::infra::db::DbPool, config: &Config) -> Result<IndexSummary> {
+    let started_at = crate::services::git_state::unix_now_secs();
+    log::debug!("index run_phased: start");
+    match run_phased_inner(pool, config, started_at) {
+        Ok(summary) => {
+            log::debug!(
+                "index run_phased: complete added={} removed={} skipped={} git_refreshed={} git_errors={}",
+                summary.added,
+                summary.removed,
+                summary.skipped,
+                summary.git_refreshed,
+                summary.git_errors
+            );
+            Ok(summary)
+        }
+        Err(WorkpotError::IndexCapExceeded { projected, max }) => {
+            if let Err(e) = pool.with_write(|conn| {
+                record_cap_exceeded_run(conn, started_at, i64::from(projected), max)
+            }) {
+                log::warn!("failed to record cap-exceeded audit row: {e}");
+            }
+            Err(WorkpotError::IndexCapExceeded { projected, max })
+        }
+        Err(e) => {
+            if let Err(audit_err) = pool.with_write(|conn| record_error_run(conn, started_at, &e)) {
+                log::warn!("failed to record error audit row: {audit_err}");
+            }
+            Err(e)
+        }
+    }
+}
+
+fn run_phased_inner(
+    pool: &crate::infra::db::DbPool,
+    config: &Config,
+    started_at: i64,
+) -> Result<IndexSummary> {
+    test_index_delay();
+
+    let plan = pool.with_read(|conn| discover_phase(conn, config))?;
+    let mut summary = pool.with_write(|conn| merge_catalog_phase(conn, config, plan))?;
+
+    let all_paths = pool.with_read(index_git_paths)?;
+    log::debug!("index git second pass: start repos={}", all_paths.len());
+    let git_pass_started = std::time::Instant::now();
+    let git_results = git_state::refresh_all(all_paths);
+    log::debug!(
+        "index git second pass: refresh_all elapsed_ms={}",
+        git_pass_started.elapsed().as_millis()
+    );
+
+    test_index_delay();
+
+    pool.with_write(|conn| persist_index_git_phase(conn, &mut summary, git_results))?;
+    let _ = started_at;
+    Ok(summary)
+}
+
+fn test_index_delay() {
+    if let Ok(ms) = std::env::var("WORKPOT_TEST_INDEX_DELAY_MS")
+        && let Ok(ms) = ms.parse::<u64>()
+    {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+}
+
 /// Full watch-root rescan with transactional merge, caps, and audit history (D-07, D-14–D-18).
-pub fn run_full(conn: &Connection, config: &Config) -> Result<IndexSummary> {
+pub fn run_full(pool: &crate::infra::db::DbPool, config: &Config) -> Result<IndexSummary> {
+    run_phased(pool, config)
+}
+
+/// Single-connection variant for unit tests.
+pub fn run_full_connection(conn: &Connection, config: &Config) -> Result<IndexSummary> {
     let started_at = crate::services::git_state::unix_now_secs();
     log::debug!("index run_full: start");
     match run_full_inner(conn, config, started_at) {

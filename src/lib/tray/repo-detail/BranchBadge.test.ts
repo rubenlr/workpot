@@ -79,7 +79,7 @@ describe("BranchBadge", () => {
       props: { branch: branch({ name: "main", presence: "checkout" }) },
     });
     const span = container.querySelector("span[aria-label]");
-    expect(span?.className).toContain("bg-blue");
+    expect(span?.className).toContain("bg-tag-blue-bg");
   });
 
   it("non_checkout_presence_applies_neutral_styling", () => {
@@ -87,6 +87,6 @@ describe("BranchBadge", () => {
       props: { branch: branch({ name: "feat", presence: "remote_only" }) },
     });
     const span = container.querySelector("span[aria-label]");
-    expect(span?.className).toContain("bg-neutral");
+    expect(span?.className).toContain("bg-card-surface");
   });
 });

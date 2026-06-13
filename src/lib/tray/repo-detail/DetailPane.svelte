@@ -279,7 +279,7 @@
           autocapitalize="off"
           autocorrect="off"
           spellcheck="false"
-          class="w-full rounded-lg border border-card-border bg-black/20 px-3 py-2 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
+          class="w-full rounded-lg border border-card-border bg-input-surface px-3 py-2 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
           onkeydown={onTagInputKeydown}
           onblur={() => {
             if (tagInput.trim()) {
@@ -317,7 +317,7 @@
           autocomplete="off"
           autocapitalize="off"
           spellcheck="false"
-          class="max-h-[calc(5*1.5rem)] w-full resize-none rounded-lg border border-card-border bg-black/20 p-3 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
+          class="max-h-[calc(5*1.5rem)] w-full resize-none rounded-lg border border-card-border bg-input-surface p-3 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
           onblur={() => void handleNotesSave()}
         ></textarea>
       </div>

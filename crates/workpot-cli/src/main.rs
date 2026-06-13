@@ -177,7 +177,7 @@ fn unix_now_secs() -> i64 {
 
 fn print_ordered_repos(ctx: &AppContext, repos: Vec<RepoRecord>) -> anyhow::Result<()> {
     let now_secs = unix_now_secs();
-    let ordered = list_display::flat_tray_ordered_with_icons(repos, ctx.config(), now_secs);
+    let ordered = list_display::flat_tray_ordered_with_icons(repos, &*ctx.config()?, now_secs);
     for (repo, icon) in &ordered {
         println!("{}", list_display::format_list_row(repo, icon));
     }
@@ -203,7 +203,7 @@ fn run_paths() -> anyhow::Result<()> {
     let ctx = AppContext::open().context("failed to open workpot")?;
     println!("config: {}", ctx.config_path().display());
     println!("database: {}", ctx.database_path().display());
-    let roots = ctx.roots_list();
+    let roots = ctx.roots_list()?;
     if roots.is_empty() {
         println!("watch_roots: (none)");
     } else {
@@ -265,7 +265,7 @@ fn run_repo(sub: RepoCommands) -> anyhow::Result<()> {
             }
         }
         RepoCommands::Remove { path } => {
-            let mut ctx = AppContext::open().context("failed to open workpot")?;
+            let ctx = AppContext::open().context("failed to open workpot")?;
             ctx.remove_repo(&path).context("repo remove failed")?;
             println!("removed: {}", path.display());
         }
@@ -298,10 +298,10 @@ fn run_repo(sub: RepoCommands) -> anyhow::Result<()> {
 }
 
 fn run_excludes(sub: ExcludesCommands) -> anyhow::Result<()> {
-    let mut ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = AppContext::open().context("failed to open workpot")?;
     match sub {
         ExcludesCommands::List => {
-            for glob in ctx.excludes_list() {
+            for glob in ctx.excludes_list()? {
                 println!("{glob}");
             }
         }
@@ -315,14 +315,14 @@ fn run_excludes(sub: ExcludesCommands) -> anyhow::Result<()> {
 }
 
 fn run_roots(sub: RootsCommands) -> anyhow::Result<()> {
-    let mut ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = AppContext::open().context("failed to open workpot")?;
     match sub {
         RootsCommands::Add { path } => {
             ctx.roots_add(&path).map_err(map_roots_error)?;
             println!("watch root added: {}", path.display());
         }
         RootsCommands::List => {
-            for root in ctx.roots_list() {
+            for root in ctx.roots_list()? {
                 println!("{}", root.display());
             }
         }

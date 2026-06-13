@@ -16,6 +16,8 @@
     onPanelHeightChange,
     launchError = null,
     onDismissLaunchError,
+    listError = null,
+    onDismissListError,
     filterQuery = $bindable(""),
     allTags,
     tagAutocompletePrefix,
@@ -34,6 +36,7 @@
     onDetail,
     onRefresh,
     refreshing = false,
+    refreshSuccess = false,
     detailRepo = null,
     focusTagOnDetailOpen = false,
     onTagFocusDone,
@@ -47,6 +50,8 @@
     onPanelHeightChange?: (heightPx: number) => void;
     launchError?: string | null;
     onDismissLaunchError?: () => void;
+    listError?: string | null;
+    onDismissListError?: () => void;
     filterQuery?: string;
     allTags: string[];
     tagAutocompletePrefix?: string | null;
@@ -67,6 +72,7 @@
     onDetail: (repo: RepoDto, index: number) => void;
     onRefresh?: () => void;
     refreshing?: boolean;
+    refreshSuccess?: boolean;
     detailRepo?: RepoDto | null;
     focusTagOnDetailOpen?: boolean;
     onTagFocusDone?: () => void;
@@ -91,14 +97,17 @@
     <TrayErrorBanner message={launchError} onDismiss={onDismissLaunchError} />
   {/if}
 
-  {#if listView.kind === "error"}
-    <TrayErrorBanner message={listView.message} />
+  {#if listError && onDismissListError}
+    <TrayErrorBanner message={listError} onDismiss={onDismissListError} />
+  {:else if listError}
+    <TrayErrorBanner message={listError} />
   {/if}
 
   {#if !detailRepo}
     <TrayFilterBar
       {onRefresh}
       {refreshing}
+      {refreshSuccess}
       bind:filterQuery
       {allTags}
       tagAutocompletePrefix={tagAutocompletePrefix ?? ""}

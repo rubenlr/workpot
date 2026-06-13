@@ -1,8 +1,9 @@
 use crate::error::Result;
-use crate::infra::migrations;
+use crate::infra::db::DbPool;
 use rusqlite::Connection;
 use std::path::Path;
 
+/// Open a single read-write connection (unit tests in index/catalog).
 pub fn open_connection(path: &Path) -> Result<Connection> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -11,6 +12,11 @@ pub fn open_connection(path: &Path) -> Result<Connection> {
     conn.busy_timeout(std::time::Duration::from_secs(5))?;
     conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))?;
     conn.pragma_update(None, "foreign_keys", true)?;
-    migrations::apply_migrations(&mut conn)?;
+    crate::infra::migrations::apply_migrations(&mut conn)?;
     Ok(conn)
+}
+
+/// Open read + write WAL connections for production [`crate::AppState`].
+pub fn open_pool(path: &Path) -> Result<DbPool> {
+    DbPool::open(path)
 }

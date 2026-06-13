@@ -9,8 +9,9 @@
   const noop = () => {};
 
   const { Story } = defineMeta({
-    title: "Tray/RepoListRow",
+    title: "Components/RepoListRow",
     component: RepoListRowStory,
+    tags: ["autodocs"],
     args: {
       onOpen: noop,
       onDetail: noop,

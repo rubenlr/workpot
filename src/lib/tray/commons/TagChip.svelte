@@ -18,7 +18,7 @@
   const chipClass = $derived(
     variant === "detail"
       ? "bg-tag-blue-bg/10 border border-tag-blue-text/30 text-tag-blue-text"
-      : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+      : "bg-tag-blue-bg/10 text-tag-blue-text",
   );
 
   function onLabelClick(e: MouseEvent) {

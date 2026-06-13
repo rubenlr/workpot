@@ -23,6 +23,8 @@
   {onPanelHeightChange}
   launchError={panel.launchError}
   onDismissLaunchError={panel.dismissLaunchError}
+  listError={panel.listError}
+  onDismissListError={panel.dismissListError}
   bind:filterQuery={panel.filterQuery}
   allTags={panel.allTags}
   tagAutocompletePrefix={panel.tagAutocompletePrefix}
@@ -44,6 +46,7 @@
   }}
   onRefresh={() => void panel.startIndexRefresh()}
   refreshing={panel.indexing}
+  refreshSuccess={panel.indexRefreshSuccess}
   activeSync={panel.activeSync}
   onSync={panel.handleSync}
   branchRevision={panel.branchRevision}

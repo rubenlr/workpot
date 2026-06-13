@@ -151,7 +151,7 @@ describe("TrayRepoList", () => {
     expect(row1).toBeTruthy();
     await fireEvent.mouseEnter(row1!);
     expect(
-      container.querySelector('[data-row-index="1"] button.bg-primary'),
+      container.querySelector('[data-row-index="1"] .bg-primary'),
     ).toBeTruthy();
   });
 
@@ -163,9 +163,9 @@ describe("TrayRepoList", () => {
     await fireEvent.mouseEnter(row0!);
     await rerenderWithSelection(1);
     const row0Button = container.querySelector('[data-row-index="0"] button');
-    expect(row0Button?.classList.contains("bg-white/10")).toBe(false);
+    expect(row0Button?.classList.contains("bg-hover-overlay")).toBe(false);
     const row1Selected = container.querySelector(
-      '[data-row-index="1"] button.bg-primary',
+      '[data-row-index="1"] .bg-primary',
     );
     expect(row1Selected).toBeTruthy();
   });

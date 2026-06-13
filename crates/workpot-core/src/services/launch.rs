@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::AppContext;
+use crate::AppState;
 
 /// macOS Cursor.app bundled CLI locations (bare `cursor` is often missing from GUI PATH).
 #[cfg(target_os = "macos")]
@@ -60,12 +60,12 @@ pub fn build_command(template: &str, repo_path: &Path) -> Result<(String, Vec<St
 }
 
 /// Launch an indexed repo via configured `launch_cmd` and record `last_opened_at` on success.
-pub fn launch_repo(ctx: &AppContext, path: &str) -> Result<(), String> {
+pub fn launch_repo(ctx: &AppState, path: &str) -> Result<(), String> {
     let catalog_path = Path::new(path);
     let launch_path = ctx
         .indexed_launch_path(catalog_path)
         .map_err(|e| e.to_string())?;
-    let template = ctx.config().launch_cmd.clone();
+    let template = ctx.config().map_err(|e| e.to_string())?.launch_cmd.clone();
     let (program, args) = build_command(&template, &launch_path)?;
     let program = resolve_launch_program(&program);
     let mut child = Command::new(&program)
@@ -83,7 +83,7 @@ pub fn launch_repo(ctx: &AppContext, path: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::AppContext;
+    use crate::AppState;
     use std::fs;
 
     #[test]
@@ -154,7 +154,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let config_path = dir.path().join("config.toml");
         let db_path = dir.path().join("workpot.db");
-        let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+        let ctx = AppState::open_with_paths(config_path, db_path).expect("open");
         let err = launch_repo(&ctx, "/tmp/not-in-index").expect_err("not indexed");
         assert!(
             err.to_lowercase().contains("not found"),
@@ -176,7 +176,7 @@ launch_cmd = "/usr/bin/true {path}"
 "#,
         )
         .expect("write config");
-        let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+        let ctx = AppState::open_with_paths(config_path, db_path).expect("open");
         let repo_path = dir.path().join("sample");
         fs::create_dir_all(&repo_path).expect("mkdir");
         crate::testing::git_cmd()

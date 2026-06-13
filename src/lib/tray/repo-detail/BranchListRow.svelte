@@ -46,7 +46,7 @@
       "flex min-w-0 flex-1 items-center gap-2 rounded-lg border-0 bg-transparent px-0 py-0 text-left shadow-none outline-none focus-visible:ring-1 focus-visible:ring-primary",
       isCheckout
         ? "font-medium text-inverse-on-surface"
-        : "text-inverse-on-surface-variant hover:bg-white/10",
+        : "text-inverse-on-surface-variant hover:bg-hover-overlay",
     ].join(" "),
   );
 </script>
@@ -54,7 +54,7 @@
 <div
   class="flex items-center gap-2 rounded-lg px-3 py-2 {isCheckout
     ? 'bg-primary/15 ring-1 ring-primary/30'
-    : 'bg-card-surface hover:bg-white/5'}"
+    : 'bg-card-surface hover:bg-hover-overlay-subtle'}"
   title={branchPresenceLabel(branch.presence)}
 >
   {#if isCheckout}
@@ -74,7 +74,7 @@
   </button>
   {#if isRemoteOnly}
     <span
-      class="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-inverse-on-surface-variant"
+      class="shrink-0 rounded-full bg-hover-overlay px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-inverse-on-surface-variant"
     >
       remote
     </span>

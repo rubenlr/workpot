@@ -14,6 +14,16 @@ description = "Allows refresh_all_git_state IPC."
 commands.allow = ["refresh_all_git_state"]
 
 [[permission]]
+identifier = "allow-refresh-index"
+description = "Allows refresh_index IPC."
+commands.allow = ["refresh_index"]
+
+[[permission]]
+identifier = "allow-checkout-repo-branch"
+description = "Allows checkout_repo_branch IPC."
+commands.allow = ["checkout_repo_branch"]
+
+[[permission]]
 identifier = "allow-open-in-cursor"
 description = "Allows open_in_cursor IPC."
 commands.allow = ["open_in_cursor"]
@@ -27,11 +37,17 @@ commands.allow = [
   "remove_tag",
   "list_all_tags",
   "set_notes",
+  "set_alias",
   "set_pin",
   "set_pin_order",
   "list_branches",
   "show_repo_context_menu",
 ]
+
+[[permission]]
+identifier = "allow-get-repo-sync-status"
+description = "Allows get_repo_sync_status IPC."
+commands.allow = ["get_repo_sync_status"]
 
 [[permission]]
 identifier = "allow-sync-repo-branch"

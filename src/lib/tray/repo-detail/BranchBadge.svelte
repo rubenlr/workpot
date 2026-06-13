@@ -18,8 +18,8 @@
 <span
   class="inline-flex max-w-full items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium
     {isCheckout
-    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200'
-    : 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300'}"
+    ? 'bg-tag-blue-bg/15 text-tag-blue-text'
+    : 'bg-card-surface text-inverse-on-surface-variant'}"
   title={branchBadgeTitle(branch)}
   aria-label={branchBadgeAriaLabel(branch)}
 >

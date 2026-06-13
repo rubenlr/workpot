@@ -11,7 +11,7 @@ export function trayListView(
   filterQuery: string,
   displayLength: number,
 ): TrayListView {
-  if (error) {
+  if (error && reposLength === 0) {
     return { kind: "error", message: error };
   }
   if (reposLength === 0) {

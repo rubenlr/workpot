@@ -34,22 +34,22 @@
   const chipDisabled = $derived(disabled || pushSyncing || pullSyncing);
 
   const pushChipClass =
-    "inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-70";
+    "inline-flex items-center gap-0.5 rounded-full bg-hover-overlay px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-70";
 
   const pullChipClass =
-    "inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-70";
+    "inline-flex items-center gap-0.5 rounded-full bg-hover-overlay px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant transition-colors hover:bg-hover-overlay-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-70";
 
   const pushSpanClass =
-    "inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface opacity-70 cursor-default";
+    "inline-flex items-center gap-0.5 rounded-full bg-hover-overlay px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface opacity-70 cursor-default";
 
   const pullSpanClass =
-    "inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant opacity-70 cursor-default";
+    "inline-flex items-center gap-0.5 rounded-full bg-hover-overlay px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant opacity-70 cursor-default";
 
   const pushSyncingSpanClass =
-    "inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface opacity-70 cursor-default animate-pulse";
+    "inline-flex items-center gap-0.5 rounded-full bg-hover-overlay px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface opacity-70 cursor-default animate-pulse";
 
   const pullSyncingSpanClass =
-    "inline-flex items-center gap-0.5 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant opacity-70 cursor-default animate-pulse";
+    "inline-flex items-center gap-0.5 rounded-full bg-hover-overlay px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-inverse-on-surface-variant opacity-70 cursor-default animate-pulse";
 
   function pushLabel(count: number): string {
     const branchLabel = branch ? ` on ${branch}` : "";

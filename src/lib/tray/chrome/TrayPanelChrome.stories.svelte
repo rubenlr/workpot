@@ -17,8 +17,9 @@
   const flatIndex = storyFlatIndexByPath(sectioned);
 
   const { Story } = defineMeta({
-    title: "Tray/Panel",
+    title: "Composites/Panel",
     component: TrayPanelChrome,
+    tags: ["autodocs"],
     parameters: { layout: "fullscreen" },
     args: {
       listMaxHeightPx: 480,
@@ -73,11 +74,23 @@
 <Story
   name="ListError"
   args={{
+    listError: "SQLite database is locked",
     listView: storyListViews.error,
     sectionedRepos: emptySectionedRepos(),
     flatIndexByPath: new Map(),
     selectedIndex: 0,
     allTags: [],
+  }}
+/>
+
+<Story
+  name="ListErrorWithCachedRepos"
+  args={{
+    listError: "git push failed: rejected",
+    listView: storyListViews.list,
+    sectionedRepos: sectioned,
+    flatIndexByPath: flatIndex,
+    selectedIndex: 0,
   }}
 />
 

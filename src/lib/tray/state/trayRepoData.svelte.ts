@@ -15,6 +15,10 @@ export function createTrayRepoData(options: TrayRepoDataOptions = {}) {
     error = message;
   }
 
+  function dismissListError() {
+    error = null;
+  }
+
   async function loadRepos(clearError = true): Promise<void> {
     trayTrace("invoke list_repos");
     try {
@@ -68,6 +72,7 @@ export function createTrayRepoData(options: TrayRepoDataOptions = {}) {
     refresh,
     startBackgroundRefresh,
     setListError,
+    dismissListError,
   };
 }
 

@@ -1,19 +1,25 @@
-/* Stitch HUD semantic tokens — dark tray surfaces with Material accent palette. */
-@theme {
-  --color-primary: #3b82f6;
-  --color-primary-foreground: #ffffff;
-  --color-inverse-surface: #1c1c1e;
-  --color-inverse-on-surface: #f5f5f7;
-  --color-inverse-on-surface-variant: #a1a1aa;
-  --color-dirty-amber: #f59e0b;
-  --color-clean-emerald: #10b981;
-  --color-git-error-neutral: #71717a;
-  --color-tag-blue-bg: #3b82f6;
-  --color-tag-blue-text: #93c5fd;
-  --color-error: #ef4444;
-  --color-error-foreground: #ffffff;
-  --color-card-surface: rgba(255, 255, 255, 0.06);
-  --color-card-border: rgba(255, 255, 255, 0.1);
+/* Stitch HUD semantic tokens — light default with dark tray overrides. */
+@theme inline {
+  --color-primary: var(--stitch-primary);
+  --color-primary-foreground: var(--stitch-primary-foreground);
+  --color-inverse-surface: var(--stitch-inverse-surface);
+  --color-inverse-on-surface: var(--stitch-inverse-on-surface);
+  --color-inverse-on-surface-variant: var(--stitch-inverse-on-surface-variant);
+  --color-dirty-amber: var(--stitch-dirty-amber);
+  --color-clean-emerald: var(--stitch-clean-emerald);
+  --color-git-error-neutral: var(--stitch-git-error-neutral);
+  --color-tag-blue-bg: var(--stitch-tag-blue-bg);
+  --color-tag-blue-text: var(--stitch-tag-blue-text);
+  --color-error: var(--stitch-error);
+  --color-error-foreground: var(--stitch-error-foreground);
+  --color-card-surface: var(--stitch-card-surface);
+  --color-card-border: var(--stitch-card-border);
+  --color-hover-overlay: var(--stitch-hover-overlay);
+  --color-hover-overlay-subtle: var(--stitch-hover-overlay-subtle);
+  --color-hover-overlay-strong: var(--stitch-hover-overlay-strong);
+  --color-input-surface: var(--stitch-input-surface);
+  --color-section-header: var(--stitch-section-header);
+  --color-border-subtle: var(--stitch-border-subtle);
   --font-sans:
     system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --shadow-dot-dirty: 0 0 6px 1px
@@ -24,4 +30,71 @@
     color-mix(in srgb, var(--color-git-error-neutral) 50%, transparent);
   --shadow-row-selected: 0 4px 12px
     color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+
+:root {
+  --stitch-primary: #3b82f6;
+  --stitch-primary-foreground: #ffffff;
+  --stitch-dirty-amber: #f59e0b;
+  --stitch-clean-emerald: #10b981;
+  --stitch-git-error-neutral: #71717a;
+  --stitch-tag-blue-bg: #3b82f6;
+  --stitch-tag-blue-text: #93c5fd;
+  --stitch-error: #ef4444;
+  --stitch-error-foreground: #ffffff;
+  --stitch-inverse-surface: #f5f5f7;
+  --stitch-inverse-on-surface: #1c1c1e;
+  --stitch-inverse-on-surface-variant: #71717a;
+  --stitch-card-surface: rgba(0, 0, 0, 0.04);
+  --stitch-card-border: rgba(0, 0, 0, 0.08);
+  --stitch-hover-overlay: rgba(0, 0, 0, 0.05);
+  --stitch-hover-overlay-subtle: rgba(0, 0, 0, 0.03);
+  --stitch-hover-overlay-strong: rgba(0, 0, 0, 0.08);
+  --stitch-input-surface: rgba(0, 0, 0, 0.04);
+  --stitch-section-header: rgba(0, 0, 0, 0.05);
+  --stitch-border-subtle: rgba(0, 0, 0, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    --stitch-inverse-surface: #1c1c1e;
+    --stitch-inverse-on-surface: #f5f5f7;
+    --stitch-inverse-on-surface-variant: #a1a1aa;
+    --stitch-card-surface: rgba(255, 255, 255, 0.06);
+    --stitch-card-border: rgba(255, 255, 255, 0.1);
+    --stitch-hover-overlay: rgba(255, 255, 255, 0.1);
+    --stitch-hover-overlay-subtle: rgba(255, 255, 255, 0.05);
+    --stitch-hover-overlay-strong: rgba(255, 255, 255, 0.2);
+    --stitch-input-surface: rgba(0, 0, 0, 0.2);
+    --stitch-section-header: rgba(0, 0, 0, 0.2);
+    --stitch-border-subtle: rgba(255, 255, 255, 0.1);
+  }
+}
+
+html[data-theme="dark"] {
+  --stitch-inverse-surface: #1c1c1e;
+  --stitch-inverse-on-surface: #f5f5f7;
+  --stitch-inverse-on-surface-variant: #a1a1aa;
+  --stitch-card-surface: rgba(255, 255, 255, 0.06);
+  --stitch-card-border: rgba(255, 255, 255, 0.1);
+  --stitch-hover-overlay: rgba(255, 255, 255, 0.1);
+  --stitch-hover-overlay-subtle: rgba(255, 255, 255, 0.05);
+  --stitch-hover-overlay-strong: rgba(255, 255, 255, 0.2);
+  --stitch-input-surface: rgba(0, 0, 0, 0.2);
+  --stitch-section-header: rgba(0, 0, 0, 0.2);
+  --stitch-border-subtle: rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme="light"] {
+  --stitch-inverse-surface: #f5f5f7;
+  --stitch-inverse-on-surface: #1c1c1e;
+  --stitch-inverse-on-surface-variant: #71717a;
+  --stitch-card-surface: rgba(0, 0, 0, 0.04);
+  --stitch-card-border: rgba(0, 0, 0, 0.08);
+  --stitch-hover-overlay: rgba(0, 0, 0, 0.05);
+  --stitch-hover-overlay-subtle: rgba(0, 0, 0, 0.03);
+  --stitch-hover-overlay-strong: rgba(0, 0, 0, 0.08);
+  --stitch-input-surface: rgba(0, 0, 0, 0.04);
+  --stitch-section-header: rgba(0, 0, 0, 0.05);
+  --stitch-border-subtle: rgba(0, 0, 0, 0.1);
 }

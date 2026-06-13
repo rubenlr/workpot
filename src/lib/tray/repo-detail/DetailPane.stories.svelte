@@ -6,8 +6,9 @@
   const noop = () => {};
 
   const { Story } = defineMeta({
-    title: "Tray/DetailPane",
+    title: "Composites/DetailPane",
     component: DetailPane,
+    tags: ["autodocs"],
     parameters: { layout: "fullscreen" },
     args: {
       allTags: ["rust", "frontend", "backend"],

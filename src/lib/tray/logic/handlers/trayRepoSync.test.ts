@@ -3,6 +3,7 @@ import {
   onRepoSyncComplete,
   onRepoSyncFailed,
   onRepoSyncStarted,
+  restoreRepoSyncStatus,
   syncRepoBranch,
 } from "./trayRepoSync";
 
@@ -23,9 +24,25 @@ describe("trayRepoSync", () => {
     });
   });
 
-  it("syncRepoBranch surfaces invoke errors", async () => {
+  it("syncRepoBranch does not double-surface git sync failures", async () => {
     const onError = vi.fn();
-    const invoke = vi.fn().mockRejectedValue(new Error("push failed"));
+    const invoke = vi
+      .fn()
+      .mockRejectedValue(new Error("pre-push hook failed: cargo-fmt-check"));
+    await syncRepoBranch("/tmp/repo", "main", "push", {
+      invoke,
+      refresh: vi.fn(),
+      onError,
+      setActiveSync: vi.fn(),
+    });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("syncRepoBranch surfaces pre-start invoke errors", async () => {
+    const onError = vi.fn();
+    const invoke = vi
+      .fn()
+      .mockRejectedValue(new Error("a repo sync is already in progress"));
     await syncRepoBranch("/tmp/repo", "main", "push", {
       invoke,
       refresh: vi.fn(),
@@ -33,6 +50,28 @@ describe("trayRepoSync", () => {
       setActiveSync: vi.fn(),
     });
     expect(onError).toHaveBeenCalled();
+  });
+
+  it("restoreRepoSyncStatus hydrates activeSync from backend", async () => {
+    const setActiveSync = vi.fn();
+    const invoke = vi.fn().mockResolvedValue({
+      repo_path: "/tmp/r",
+      branch: "main",
+      direction: "push",
+    });
+    await restoreRepoSyncStatus(invoke, setActiveSync);
+    expect(invoke).toHaveBeenCalledWith("get_repo_sync_status");
+    expect(setActiveSync).toHaveBeenCalledWith({
+      repoPath: "/tmp/r",
+      branch: "main",
+      direction: "push",
+    });
+  });
+
+  it("restoreRepoSyncStatus ignores empty status", async () => {
+    const setActiveSync = vi.fn();
+    await restoreRepoSyncStatus(vi.fn().mockResolvedValue(null), setActiveSync);
+    expect(setActiveSync).not.toHaveBeenCalled();
   });
 
   it("onRepoSyncStarted sets activeSync", () => {

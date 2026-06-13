@@ -58,6 +58,7 @@ describe("createTrayPanel", () => {
           stale_dirty_days: 30,
         };
       }
+      if (cmd === "get_repo_sync_status") return null;
       return undefined;
     });
   });
@@ -78,9 +79,43 @@ describe("createTrayPanel", () => {
     expect(invoke).toHaveBeenCalledWith("list_repos");
     expect(invoke).toHaveBeenCalledWith("list_all_tags");
     expect(invoke).toHaveBeenCalledWith("get_tray_config");
+    expect(invoke).toHaveBeenCalledWith("get_repo_sync_status");
     expect(panel.allTags).toEqual(["work"]);
     expect(panel.listMaxHeightPx).toBe(10 * 44 + 52);
     expect(focus).toHaveBeenCalled();
+  });
+
+  it("mount restores activeSync when backend reports in-flight sync", async () => {
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "list_repos") return [repo("/tmp/a")];
+      if (cmd === "list_all_tags") return [];
+      if (cmd === "get_tray_config") {
+        return {
+          max_visible_rows: 10,
+          max_recent_days: 14,
+          min_recent_count: 3,
+          max_pinned: 5,
+          stale_dirty_days: 30,
+        };
+      }
+      if (cmd === "get_repo_sync_status") {
+        return {
+          repo_path: "/tmp/a",
+          branch: "main",
+          direction: "push",
+        };
+      }
+      return undefined;
+    });
+
+    const panel = createTrayPanel();
+    await panel.mount();
+
+    expect(panel.activeSync).toEqual({
+      repoPath: "/tmp/a",
+      branch: "main",
+      direction: "push",
+    });
   });
 
   it("destroy unsubscribes panel events", async () => {
@@ -112,6 +147,7 @@ describe("createTrayPanel", () => {
     invoke.mockClear();
     invoke.mockImplementation(async (cmd: string) => {
       if (cmd === "list_repos") return [repo("/tmp/a")];
+      if (cmd === "get_repo_sync_status") return null;
       return undefined;
     });
 
@@ -125,6 +161,7 @@ describe("createTrayPanel", () => {
   });
 
   it("index events toggle indexing and reload list", async () => {
+    vi.useFakeTimers();
     const panel = createTrayPanel();
     await panel.mount();
     const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
@@ -135,6 +172,7 @@ describe("createTrayPanel", () => {
     invoke.mockImplementation(async (cmd: string) => {
       if (cmd === "list_repos") return [repo("/tmp/a")];
       if (cmd === "list_all_tags") return ["work"];
+      if (cmd === "get_repo_sync_status") return null;
       return undefined;
     });
 
@@ -145,9 +183,10 @@ describe("createTrayPanel", () => {
       git_refreshed: 1,
       git_errors: 0,
     });
+    await vi.runAllTimersAsync();
     expect(panel.indexing).toBe(false);
-    await Promise.resolve();
     expect(invoke).toHaveBeenCalledWith("list_repos");
+    vi.useRealTimers();
   });
 
   it("panel-closed resets detail filter and selection", async () => {
@@ -163,5 +202,141 @@ describe("createTrayPanel", () => {
     expect(panel.detailRepo).toBeNull();
     expect(panel.filterQuery).toBe("");
     expect(panel.selectedIndex).toBe(0);
+  });
+
+  it("repo-sync-started sets activeSync", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+
+    handlers.onRepoSyncStarted({
+      repo_path: "/tmp/a",
+      branch: "main",
+      direction: "push",
+      error: null,
+    });
+
+    expect(panel.activeSync).toEqual({
+      repoPath: "/tmp/a",
+      branch: "main",
+      direction: "push",
+    });
+  });
+
+  it("repo-sync-failed clears activeSync, sets error, keeps list visible", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+
+    handlers.onRepoSyncStarted({
+      repo_path: "/tmp/a",
+      branch: "main",
+      direction: "push",
+      error: null,
+    });
+    handlers.onRepoSyncFailed({
+      repo_path: "/tmp/a",
+      branch: "main",
+      direction: "push",
+      error: "git push rejected",
+    });
+
+    expect(panel.activeSync).toBeNull();
+    expect(panel.listError).toBe("git push rejected");
+    expect(panel.listView).toEqual({ kind: "list" });
+  });
+
+  it("repo-sync-complete clears activeSync and refreshes repos", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+    invoke.mockClear();
+
+    handlers.onRepoSyncStarted({
+      repo_path: "/tmp/a",
+      branch: "main",
+      direction: "push",
+      error: null,
+    });
+    await handlers.onRepoSyncComplete({
+      repo_path: "/tmp/a",
+      branch: "main",
+      direction: "push",
+      error: null,
+    });
+
+    expect(panel.activeSync).toBeNull();
+    expect(invoke).toHaveBeenCalledWith("list_repos");
+  });
+
+  it("startIndexRefresh invokes refresh_index and surfaces permission errors", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "refresh_index") {
+        throw new Error("command refresh_index not allowed");
+      }
+      if (cmd === "list_repos") return [repo("/tmp/a")];
+      if (cmd === "list_all_tags") return [];
+      if (cmd === "get_tray_config") {
+        return {
+          max_visible_rows: 10,
+          max_recent_days: 14,
+          min_recent_count: 3,
+          max_pinned: 5,
+          stale_dirty_days: 30,
+        };
+      }
+      if (cmd === "get_repo_sync_status") return null;
+      return undefined;
+    });
+
+    await panel.startIndexRefresh();
+
+    expect(invoke).toHaveBeenCalledWith("refresh_index");
+    expect(panel.listError).toBe("Error: command refresh_index not allowed");
+    expect(panel.listView).toEqual({ kind: "list" });
+  });
+
+  it("handleSync invoke rejection surfaces error via repo-sync-failed event", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "sync_repo_branch") {
+        throw new Error("network unreachable");
+      }
+      if (cmd === "list_repos") return [repo("/tmp/a")];
+      if (cmd === "list_all_tags") return [];
+      if (cmd === "get_tray_config") {
+        return {
+          max_visible_rows: 10,
+          max_recent_days: 14,
+          min_recent_count: 3,
+          max_pinned: 5,
+          stale_dirty_days: 30,
+        };
+      }
+      if (cmd === "get_repo_sync_status") return null;
+      return undefined;
+    });
+
+    await panel.handleSync("/tmp/a", "main", "push");
+
+    expect(invoke).toHaveBeenCalledWith("sync_repo_branch", {
+      repoPath: "/tmp/a",
+      branch: "main",
+      direction: "push",
+    });
+    expect(panel.listError).toBeNull();
+
+    handlers.onRepoSyncFailed({
+      repo_path: "/tmp/a",
+      branch: "main",
+      direction: "push",
+      error: "network unreachable",
+    });
+    expect(panel.listError).toBe("network unreachable");
+    expect(panel.listView).toEqual({ kind: "list" });
   });
 });

@@ -6,8 +6,9 @@
   const branches = storyBranches();
 
   const { Story } = defineMeta({
-    title: "Tray/BranchListRow",
+    title: "Components/BranchListRow",
     component: BranchListRow,
+    tags: ["autodocs"],
   });
 </script>
 

@@ -88,7 +88,7 @@
             aria-selected={i === highlightedIndex}
             class="w-full px-3 py-1 text-left text-sm text-inverse-on-surface {i ===
             highlightedIndex
-              ? 'bg-white/10'
+              ? 'bg-hover-overlay'
               : ''}"
             onmouseenter={() => {
               highlightedIndex = i;

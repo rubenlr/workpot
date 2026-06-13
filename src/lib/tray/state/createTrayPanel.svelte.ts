@@ -28,10 +28,14 @@ import {
   onRepoSyncComplete,
   onRepoSyncFailed,
   onRepoSyncStarted,
+  restoreRepoSyncStatus,
   syncRepoBranch,
   type TrayRepoSyncDeps,
 } from "$lib/tray/logic/handlers/trayRepoSync";
 import type { ActiveSync, SyncDirection } from "$lib/types";
+
+const MIN_INDEX_REFRESH_MS = 1000;
+const INDEX_SUCCESS_FLASH_MS = 400;
 
 export function createTrayPanel() {
   const config = createTrayConfig();
@@ -58,6 +62,8 @@ export function createTrayPanel() {
   let unsubscribeEvents: (() => void) | null = null;
   let activeSync = $state<ActiveSync | null>(null);
   let indexing = $state(false);
+  let indexRefreshSuccess = $state(false);
+  let indexingStartedAt = $state<number | null>(null);
   let branchRevision = $state(0);
 
   function resetPanelToInitialState() {
@@ -119,21 +125,47 @@ export function createTrayPanel() {
     focusFilter: () => keyboard.focusFilter(),
   };
 
+  async function finishIndexing(success: boolean): Promise<void> {
+    const started = indexingStartedAt ?? Date.now();
+    const remaining = MIN_INDEX_REFRESH_MS - (Date.now() - started);
+    if (remaining > 0) {
+      await new Promise((resolve) => setTimeout(resolve, remaining));
+    }
+    indexing = false;
+    indexingStartedAt = null;
+    if (success) {
+      indexRefreshSuccess = true;
+      await new Promise((resolve) =>
+        setTimeout(resolve, INDEX_SUCCESS_FLASH_MS),
+      );
+      indexRefreshSuccess = false;
+    }
+  }
+
   async function startIndexRefresh(): Promise<void> {
     trayTrace("invoke refresh_index");
     try {
       await invoke("refresh_index");
+      trayTrace("refresh_index ok");
     } catch (e) {
       trayTrace("refresh_index failed", e);
       data.setListError(String(e));
+      await finishIndexing(false);
     }
+  }
+
+  function beginIndexRefresh(): void {
+    indexing = true;
+    indexingStartedAt = Date.now();
+    trayTrace("refresh_index requested");
+    void startIndexRefresh();
   }
 
   const keyboard = createTrayPanelKeyboard({
     list,
     detail,
     launch,
-    startIndexRefresh,
+    startIndexRefresh: beginIndexRefresh,
   });
 
   async function mount(): Promise<void> {
@@ -149,15 +181,23 @@ export function createTrayPanel() {
         onGitRefreshFailed(message, gitRefreshDeps);
       },
       onIndexStarted: () => {
-        indexing = true;
+        trayTrace("index-started");
+        if (!indexing) {
+          indexing = true;
+          indexingStartedAt = Date.now();
+        }
       },
       onIndexComplete: (summary) => {
-        indexing = false;
-        onIndexComplete(summary, indexDeps);
+        void (async () => {
+          await finishIndexing(true);
+          onIndexComplete(summary, indexDeps);
+        })();
       },
       onIndexFailed: (message) => {
-        indexing = false;
-        onIndexFailed(message, indexDeps);
+        void (async () => {
+          await finishIndexing(false);
+          onIndexFailed(message, indexDeps);
+        })();
       },
       onRepoSyncStarted: (payload) =>
         onRepoSyncStarted(payload, syncDeps.setActiveSync),
@@ -174,6 +214,7 @@ export function createTrayPanel() {
       data.loadRepos(),
       data.loadAllTags(),
       config.loadConfig(),
+      restoreRepoSyncStatus(invoke, syncDeps.setActiveSync),
     ]);
     trayTrace("mount ready", { repos: data.repos.length });
     keyboard.focusFilter();
@@ -216,6 +257,9 @@ export function createTrayPanel() {
     get launchError() {
       return launch.launchError;
     },
+    get listError() {
+      return data.error;
+    },
     get listMaxHeightPx() {
       return config.listMaxHeightPx;
     },
@@ -230,6 +274,9 @@ export function createTrayPanel() {
     },
     get indexing() {
       return indexing;
+    },
+    get indexRefreshSuccess() {
+      return indexRefreshSuccess;
     },
     get branchRevision() {
       return branchRevision;
@@ -249,9 +296,10 @@ export function createTrayPanel() {
     onFilterKeydown: keyboard.onFilterKeydown,
     onPanelKeydown: keyboard.onPanelKeydown,
     dismissLaunchError: launch.dismissLaunchError,
+    dismissListError: data.dismissListError,
     bindFilterInput: keyboard.bindFilterInput,
     refreshReposAndDetail: () => data.refresh(),
-    startIndexRefresh,
+    startIndexRefresh: beginIndexRefresh,
     mount,
     destroy,
   };

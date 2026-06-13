@@ -67,7 +67,7 @@ fn index_purges_orphan_scan_repos() {
     )
     .expect("insert orphan scan row");
 
-    let summary = index::run_full(&conn, &config).expect("run_full");
+    let summary = index::run_full_connection(&conn, &config).expect("run_full");
     assert_eq!(
         summary.removed, 1,
         "scan repo outside configured watch roots must be purged"
@@ -88,7 +88,7 @@ fn index_full_rescan() {
     git_worktree(&watch_root, "repo-a");
     git_worktree(&watch_root, "repo-b");
 
-    index::run_full(&conn, &config).expect("first run_full");
+    index::run_full_connection(&conn, &config).expect("first run_full");
     let count_after_first: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
             row.get(0)
@@ -96,7 +96,7 @@ fn index_full_rescan() {
         .expect("count repos");
     assert_eq!(count_after_first, 2);
 
-    index::run_full(&conn, &config).expect("second run_full");
+    index::run_full_connection(&conn, &config).expect("second run_full");
     let count_after_second: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
             row.get(0)
@@ -112,7 +112,7 @@ fn index_skips_on_git_failure() {
     git_worktree(&watch_root, "good-repo");
     fake_git_dir(&watch_root, "fake-repo");
 
-    let summary = index::run_full(&conn, &config).expect("run_full");
+    let summary = index::run_full_connection(&conn, &config).expect("run_full");
     assert_eq!(summary.skipped, 1, "fake repo should be skipped");
 
     let count: i64 = conn
@@ -137,7 +137,7 @@ fn index_backfills_git_common_dir() {
     )
     .expect("seed row");
 
-    index::run_full(&conn, &config).expect("run_full");
+    index::run_full_connection(&conn, &config).expect("run_full");
 
     let gcd: String = conn
         .query_row(
@@ -156,7 +156,7 @@ fn index_preserves_manual_source() {
     let repo = git_worktree(&watch_root, "manual-repo");
     catalog::register_manual(&conn, &config, &repo).expect("manual register");
 
-    index::run_full(&conn, &config).expect("run_full");
+    index::run_full_connection(&conn, &config).expect("run_full");
 
     let source: String = conn
         .query_row(
@@ -173,11 +173,11 @@ fn index_removes_stale_path() {
     let (dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     let repo = git_worktree(&watch_root, "gone-repo");
-    index::run_full(&conn, &config).expect("first index");
+    index::run_full_connection(&conn, &config).expect("first index");
 
     fs::remove_dir_all(&repo).expect("remove repo dir");
 
-    let summary = index::run_full(&conn, &config).expect("second index");
+    let summary = index::run_full_connection(&conn, &config).expect("second index");
     assert_eq!(summary.removed, 1);
 
     let removed_changes: i64 = conn
@@ -215,7 +215,7 @@ fn index_validates_manual_outside_roots() {
     let conn = store::open_connection(&db_path).expect("open");
 
     catalog::register_manual(&conn, &config, &repo).expect("manual outside roots");
-    index::run_full(&conn, &config).expect("index keeps valid manual");
+    index::run_full_connection(&conn, &config).expect("index keeps valid manual");
 
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
@@ -232,7 +232,7 @@ fn index_cap_abort() {
     git_worktree(&watch_root, "one");
     git_worktree(&watch_root, "two");
 
-    let err = index::run_full(&conn, &config).unwrap_err();
+    let err = index::run_full_connection(&conn, &config).unwrap_err();
     assert!(matches!(err, WorkpotError::IndexCapExceeded { .. }));
 
     let count: i64 = conn
@@ -258,7 +258,7 @@ fn index_writes_history() {
     let watch_root = config.watch_roots[0].clone();
     git_worktree(&watch_root, "hist-repo");
 
-    let summary = index::run_full(&conn, &config).expect("run_full");
+    let summary = index::run_full_connection(&conn, &config).expect("run_full");
     assert_eq!(summary.added, 1);
 
     let runs: i64 = conn
@@ -283,7 +283,7 @@ fn index_git_summary_accounts_for_all_non_excluded_repos() {
     git_worktree(&watch_root, "repo-a");
     git_worktree(&watch_root, "repo-b");
 
-    let summary = index::run_full(&conn, &config).expect("run_full");
+    let summary = index::run_full_connection(&conn, &config).expect("run_full");
 
     let non_excluded: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
@@ -315,7 +315,7 @@ fn index_second_pass_persists_git_state() {
         .display()
         .to_string();
 
-    let summary = index::run_full(&conn, &config).expect("run_full");
+    let summary = index::run_full_connection(&conn, &config).expect("run_full");
     assert!(
         summary.git_refreshed >= 1,
         "expected at least one successful git refresh, got {:?}",
@@ -343,7 +343,7 @@ fn index_git_pass_counts_refresh_errors() {
     let plain = watch_root.join("not-git");
     fs::create_dir_all(&plain).expect("plain dir");
 
-    index::run_full(&conn, &config).expect("first index");
+    index::run_full_connection(&conn, &config).expect("first index");
 
     let plain_key = plain
         .canonicalize()
@@ -357,7 +357,7 @@ fn index_git_pass_counts_refresh_errors() {
     )
     .expect("seed non-git row for git pass");
 
-    let summary = index::run_full(&conn, &config).expect("second index");
+    let summary = index::run_full_connection(&conn, &config).expect("second index");
     assert!(
         summary.git_refreshed >= 1,
         "healthy repo should refresh: {summary:?}"
@@ -387,7 +387,7 @@ fn index_git_failure_writes_skipped() {
     git_worktree(&watch_root, "good");
     fake_git_dir(&watch_root, "bad");
 
-    index::run_full(&conn, &config).expect("run_full");
+    index::run_full_connection(&conn, &config).expect("run_full");
 
     let skipped: i64 = conn
         .query_row(

@@ -9,9 +9,9 @@
 </script>
 
 <p
-  class="px-3 py-2 text-sm {tone === 'error'
-    ? 'text-red-600 dark:text-red-400'
-    : 'text-neutral-500 dark:text-neutral-400'}"
+  class="px-3 py-2.5 text-center text-sm {tone === 'error'
+    ? 'text-error'
+    : 'text-inverse-on-surface-variant'}"
 >
   {message}
 </p>

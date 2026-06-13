@@ -3,8 +3,9 @@
   import SyncBadge from "./SyncBadge.svelte";
 
   const { Story } = defineMeta({
-    title: "Components/SyncBadge",
+    title: "Primitives/SyncBadge",
     component: SyncBadge,
+    tags: ["autodocs"],
   });
 
   const noop = () => {};

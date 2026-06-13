@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::menu::{ContextMenu, Menu, MenuItem};
 use tauri::{AppHandle, Emitter, Manager, State, Window};
-use workpot_core::{AppContext, GitRefreshSummary, RepoRecord, SyncDirection, run_repo_sync};
+use workpot_core::{AppState, GitRefreshSummary, RepoRecord, SyncDirection, run_repo_sync};
 
 /// Prevents overlapping background git refresh jobs (panel open + Cmd+R).
 #[derive(Clone)]
@@ -29,23 +29,52 @@ impl GitRefreshGuard {
     }
 }
 
-/// Prevents overlapping per-branch push/pull sync jobs.
+/// Prevents overlapping per-branch push/pull sync jobs and tracks the active payload.
 #[derive(Clone)]
-pub struct RepoSyncGuard(pub Arc<AtomicBool>);
+pub struct RepoSyncGuard {
+    busy: Arc<AtomicBool>,
+    active: Arc<Mutex<Option<RepoSyncEventDto>>>,
+}
 
 impl RepoSyncGuard {
     pub fn new() -> Self {
-        Self(Arc::new(AtomicBool::new(false)))
+        Self {
+            busy: Arc::new(AtomicBool::new(false)),
+            active: Arc::new(Mutex::new(None)),
+        }
     }
 
-    pub fn try_start(&self) -> bool {
-        self.0
+    pub fn try_start(&self, payload: RepoSyncEventDto) -> bool {
+        if self
+            .busy
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+            .is_err()
+        {
+            return false;
+        }
+        if let Ok(mut active) = self.active.lock() {
+            *active = Some(payload);
+        }
+        true
     }
 
     pub fn finish(&self) {
-        self.0.store(false, Ordering::Release);
+        if let Ok(mut active) = self.active.lock() {
+            *active = None;
+        }
+        self.busy.store(false, Ordering::Release);
+    }
+
+    pub fn status(&self) -> Option<RepoSyncEventDto> {
+        self.active.lock().ok().and_then(|active| active.clone())
+    }
+}
+
+struct RepoSyncGuardLease(RepoSyncGuard);
+
+impl Drop for RepoSyncGuardLease {
+    fn drop(&mut self) {
+        self.0.finish();
     }
 }
 
@@ -186,32 +215,25 @@ pub struct TrayConfigDto {
     pub stale_dirty_days: u32,
 }
 
-pub fn tray_config_from(ctx: &AppContext) -> TrayConfigDto {
-    let config = ctx.config();
-    TrayConfigDto {
+pub fn tray_config_from(state: &AppState) -> Result<TrayConfigDto, String> {
+    let config = state.config().map_err(|e| e.to_string())?;
+    Ok(TrayConfigDto {
         max_visible_rows: config.max_visible_rows,
         max_recent_days: config.max_recent_days,
         min_recent_count: config.min_recent_count,
         max_pinned: config.max_pinned,
         stale_dirty_days: config.stale_dirty_days,
-    }
+    })
 }
 
 #[tauri::command]
-pub async fn get_tray_config(
-    state: State<'_, Arc<Mutex<AppContext>>>,
-) -> Result<TrayConfigDto, String> {
+pub async fn get_tray_config(state: State<'_, Arc<AppState>>) -> Result<TrayConfigDto, String> {
     let started = Instant::now();
     log::debug!("get_tray_config: start");
     let state = state.inner().clone();
-    let cfg = tauri::async_runtime::spawn_blocking(move || {
-        let ctx = state
-            .lock()
-            .map_err(|_| "AppContext lock poisoned".to_string())?;
-        Ok::<TrayConfigDto, String>(tray_config_from(&ctx))
-    })
-    .await
-    .map_err(|e| e.to_string())??;
+    let cfg = tauri::async_runtime::spawn_blocking(move || tray_config_from(&state))
+        .await
+        .map_err(|e| e.to_string())??;
     log::debug!(
         "get_tray_config: complete elapsed_ms={}",
         started.elapsed().as_millis()
@@ -220,15 +242,12 @@ pub async fn get_tray_config(
 }
 
 #[tauri::command]
-pub async fn list_repos(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<Vec<RepoDto>, String> {
+pub async fn list_repos(state: State<'_, Arc<AppState>>) -> Result<Vec<RepoDto>, String> {
     let started = Instant::now();
     log::debug!("list_repos: start");
     let state = state.inner().clone();
     let repos = tauri::async_runtime::spawn_blocking(move || {
-        let ctx = state
-            .lock()
-            .map_err(|_| "AppContext lock poisoned".to_string())?;
-        let records = ctx.list_repos().map_err(|e| e.to_string())?;
+        let records = state.list_repos().map_err(|e| e.to_string())?;
         Ok::<Vec<RepoDto>, String>(repo_records_to_dtos(records))
     })
     .await
@@ -245,14 +264,13 @@ pub async fn list_repos(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<Vec<
 pub fn set_tags(
     repo_path: String,
     tags: Vec<String>,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     validate_tags(&tags)?;
     let tag_refs: Vec<&str> = tags.iter().map(|t| t.trim()).collect();
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.set_tags(&repo_path, &tag_refs)
+    state
+        .inner()
+        .set_tags(&repo_path, &tag_refs)
         .map_err(|e| e.to_string())
 }
 
@@ -260,13 +278,12 @@ pub fn set_tags(
 pub fn add_tag(
     repo_path: String,
     tag: String,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     validate_tag(&tag)?;
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.add_tag(&repo_path, tag.trim())
+    state
+        .inner()
+        .add_tag(&repo_path, tag.trim())
         .map_err(|e| e.to_string())
 }
 
@@ -274,26 +291,21 @@ pub fn add_tag(
 pub fn remove_tag(
     repo_path: String,
     tag: String,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.remove_tag(&repo_path, &tag).map_err(|e| e.to_string())
+    state
+        .inner()
+        .remove_tag(&repo_path, &tag)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn list_all_tags(
-    state: State<'_, Arc<Mutex<AppContext>>>,
-) -> Result<Vec<String>, String> {
+pub async fn list_all_tags(state: State<'_, Arc<AppState>>) -> Result<Vec<String>, String> {
     let started = Instant::now();
     log::debug!("list_all_tags: start");
     let state = state.inner().clone();
     let tags = tauri::async_runtime::spawn_blocking(move || {
-        let ctx = state
-            .lock()
-            .map_err(|_| "AppContext lock poisoned".to_string())?;
-        ctx.list_all_tags().map_err(|e| e.to_string())
+        state.list_all_tags().map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -329,15 +341,14 @@ fn validate_notes(notes: &Option<String>) -> Result<(), String> {
 pub fn set_alias(
     repo_path: String,
     alias: Option<String>,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     if let Some(ref value) = alias {
         validate_alias(value)?;
     }
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.set_alias(&repo_path, alias.as_deref().map(str::trim))
+    state
+        .inner()
+        .set_alias(&repo_path, alias.as_deref().map(str::trim))
         .map_err(|e| e.to_string())
 }
 
@@ -345,14 +356,13 @@ pub fn set_alias(
 pub fn set_notes(
     repo_path: String,
     notes: Option<String>,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     validate_notes(&notes)?;
     let notes = normalize_notes(notes);
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.set_notes(&repo_path, notes.as_deref())
+    state
+        .inner()
+        .set_notes(&repo_path, notes.as_deref())
         .map_err(|e| e.to_string())
 }
 
@@ -360,36 +370,35 @@ pub fn set_notes(
 pub fn set_pin(
     repo_path: String,
     pinned: bool,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.set_pin(&repo_path, pinned).map_err(|e| e.to_string())
+    state
+        .inner()
+        .set_pin(&repo_path, pinned)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn set_pin_order(
     items: Vec<(String, i64)>,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let refs: Vec<(&str, i64)> = items.iter().map(|(p, o)| (p.as_str(), *o)).collect();
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.set_pin_order(&refs).map_err(|e| e.to_string())
+    state
+        .inner()
+        .set_pin_order(&refs)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn list_branches(
     repo_path: String,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<BranchListItemDto>, String> {
     {
-        let ctx = state
-            .lock()
-            .map_err(|_| "AppContext lock poisoned".to_string())?;
-        ctx.indexed_launch_path(Path::new(&repo_path))
+        state
+            .inner()
+            .indexed_launch_path(Path::new(&repo_path))
             .map_err(|e| e.to_string())?;
     }
     tauri::async_runtime::spawn_blocking(move || list_branches_sync(&repo_path))
@@ -674,15 +683,16 @@ pub(crate) fn update_tray_icon_state(
 
 fn reset_tray_icon_after_git_refresh(
     app: &AppHandle,
-    state: &Arc<Mutex<AppContext>>,
+    state: &Arc<AppState>,
     stale_dirty_days: u32,
 ) {
-    if let Ok(ctx) = state.lock()
-        && let Ok(records) = ctx.list_repos()
-    {
-        let config = ctx.config();
+    if let Ok(records) = state.list_repos() {
+        let stale_days = state
+            .config()
+            .map(|c| c.stale_dirty_days)
+            .unwrap_or(stale_dirty_days);
         let dtos = repo_records_to_dtos(records);
-        update_tray_icon_state(app, &dtos, config.stale_dirty_days, false);
+        update_tray_icon_state(app, &dtos, stale_days, false);
         return;
     }
     update_tray_icon_state(app, &[], stale_dirty_days, false);
@@ -690,7 +700,7 @@ fn reset_tray_icon_after_git_refresh(
 
 /// Git refresh on a blocking pool so libgit2 cannot stall the async runtime.
 /// Always resets tray icon and emits completion/failure events.
-pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<Mutex<AppContext>>) {
+pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<AppState>) {
     let guard = app
         .try_state::<GitRefreshGuard>()
         .map(|g| g.inner().clone());
@@ -707,13 +717,10 @@ pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<Mutex<AppC
 
 fn spawn_background_git_refresh_inner(
     app: AppHandle,
-    state: Arc<Mutex<AppContext>>,
+    state: Arc<AppState>,
     guard: Option<GitRefreshGuard>,
 ) {
-    let stale_dirty_days = state
-        .lock()
-        .map(|ctx| ctx.config().stale_dirty_days)
-        .unwrap_or(7);
+    let stale_dirty_days = state.config().map(|c| c.stale_dirty_days).unwrap_or(7);
     update_tray_icon_state(&app, &[], stale_dirty_days, true);
     let animation_cancel = start_tray_sync_animation(&app);
     log::info!("background git refresh: started");
@@ -726,10 +733,9 @@ fn spawn_background_git_refresh_inner(
         let state_for_blocking = Arc::clone(&state);
 
         let blocking_result = tauri::async_runtime::spawn_blocking(move || {
-            let paths = match state_for_blocking.lock() {
-                Ok(ctx) => ctx.git_refresh_paths().map_err(|e| e.to_string()),
-                Err(_) => Err("AppContext lock poisoned".to_string()),
-            }?;
+            let paths = state_for_blocking
+                .git_refresh_paths()
+                .map_err(|e| e.to_string())?;
             let repo_count = paths.len();
             log::info!("background git refresh: refreshing {repo_count} repos");
             let paths_acquire_ms = started.elapsed().as_millis();
@@ -739,8 +745,6 @@ fn spawn_background_git_refresh_inner(
             let git_results = workpot_core::services::git_state::refresh_all(paths);
             log::debug!("background git refresh: persist lock acquire");
             let summary = state_for_blocking
-                .lock()
-                .map_err(|_| "AppContext lock poisoned".to_string())?
                 .persist_git_refresh_results(git_results)
                 .map_err(|e| e.to_string())?;
             log::debug!("background git refresh: persist complete");
@@ -805,16 +809,15 @@ fn spawn_background_git_refresh_inner(
 pub async fn checkout_repo_branch(
     repo_path: String,
     branch: String,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let state_clone = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let ctx = state_clone
-            .lock()
-            .map_err(|_| "AppContext lock poisoned".to_string())?;
-        ctx.indexed_launch_path(Path::new(&repo_path))
+        state_clone
+            .indexed_launch_path(Path::new(&repo_path))
             .map_err(|e| e.to_string())?;
-        ctx.checkout_repo_branch(Path::new(&repo_path), &branch)
+        state_clone
+            .checkout_repo_branch(Path::new(&repo_path), &branch)
             .map_err(|e| e.to_string())
     })
     .await
@@ -822,10 +825,7 @@ pub async fn checkout_repo_branch(
 }
 
 #[tauri::command]
-pub async fn refresh_index(
-    app: AppHandle,
-    state: State<'_, Arc<Mutex<AppContext>>>,
-) -> Result<(), String> {
+pub async fn refresh_index(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::tray::spawn_background_index(app, state.inner().clone());
     Ok(())
 }
@@ -833,16 +833,21 @@ pub async fn refresh_index(
 #[tauri::command]
 pub async fn refresh_all_git_state(
     app: AppHandle,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     spawn_background_git_refresh(app, state.inner().clone());
     Ok(())
 }
 
 #[tauri::command]
+pub fn get_repo_sync_status(guard: State<'_, RepoSyncGuard>) -> Option<RepoSyncEventDto> {
+    guard.status()
+}
+
+#[tauri::command]
 pub async fn sync_repo_branch(
     app: AppHandle,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
     guard: State<'_, RepoSyncGuard>,
     repo_path: String,
     branch: String,
@@ -852,9 +857,6 @@ pub async fn sync_repo_branch(
     if branch.trim().is_empty() {
         return Err("branch must not be empty".to_string());
     }
-    if !guard.try_start() {
-        return Err("a repo sync is already in progress".to_string());
-    }
 
     let started_payload = RepoSyncEventDto {
         repo_path: repo_path.clone(),
@@ -862,76 +864,89 @@ pub async fn sync_repo_branch(
         direction: direction.clone(),
         error: None,
     };
+    if !guard.try_start(started_payload.clone()) {
+        return Err("a repo sync is already in progress".to_string());
+    }
+
+    log::info!("repo sync: started repo={repo_path} branch={branch} direction={direction}");
+
     if let Err(e) = app.emit("repo-sync-started", &started_payload) {
         log_emit_err("repo-sync-started", e);
     }
 
     let state_clone = state.inner().clone();
-    let repo_path_blocking = repo_path.clone();
-    let branch_blocking = branch.clone();
+    let guard_clone = guard.inner().clone();
+    let repo_path_task = repo_path.clone();
+    let branch_task = branch.clone();
     let direction_str = direction.clone();
 
-    let blocking_result = tauri::async_runtime::spawn_blocking(move || {
-        let ctx = state_clone
-            .lock()
-            .map_err(|_| "AppContext lock poisoned".to_string())?;
-        run_repo_sync(&ctx, &repo_path_blocking, &branch_blocking, sync_direction)
-    })
-    .await;
+    tauri::async_runtime::spawn(async move {
+        let _lease = RepoSyncGuardLease(guard_clone);
 
-    guard.finish();
+        let blocking_result = tauri::async_runtime::spawn_blocking(move || {
+            run_repo_sync(&state_clone, &repo_path_task, &branch_task, sync_direction)
+        })
+        .await;
 
-    match blocking_result {
-        Ok(Ok(())) => {
-            let complete_payload = RepoSyncEventDto {
-                repo_path,
-                branch,
-                direction: direction_str,
-                error: None,
-            };
-            if let Err(e) = app.emit("repo-sync-complete", &complete_payload) {
-                log_emit_err("repo-sync-complete", e);
+        match blocking_result {
+            Ok(Ok(())) => {
+                log::info!(
+                    "repo sync: complete repo={repo_path} branch={branch} direction={direction_str}"
+                );
+                let complete_payload = RepoSyncEventDto {
+                    repo_path,
+                    branch,
+                    direction: direction_str,
+                    error: None,
+                };
+                if let Err(e) = app.emit("repo-sync-complete", &complete_payload) {
+                    log_emit_err("repo-sync-complete", e);
+                }
             }
-            Ok(())
-        }
-        Ok(Err(e)) => {
-            let failed_payload = RepoSyncEventDto {
-                repo_path: repo_path.clone(),
-                branch: branch.clone(),
-                direction: direction_str.clone(),
-                error: Some(e.clone()),
-            };
-            if let Err(err) = app.emit("repo-sync-failed", &failed_payload) {
-                log_emit_err("repo-sync-failed", err);
+            Ok(Err(e)) => {
+                log::warn!(
+                    "repo sync: failed repo={repo_path} branch={branch} direction={direction_str}: {}",
+                    e.summary
+                );
+                if !e.full_detail.is_empty() {
+                    log::warn!("repo sync: stderr/stdout:\n{}", e.full_detail);
+                }
+                let summary = e.summary.clone();
+                let failed_payload = RepoSyncEventDto {
+                    repo_path: repo_path.clone(),
+                    branch: branch.clone(),
+                    direction: direction_str.clone(),
+                    error: Some(summary),
+                };
+                if let Err(err) = app.emit("repo-sync-failed", &failed_payload) {
+                    log_emit_err("repo-sync-failed", err);
+                }
             }
-            Err(e)
-        }
-        Err(join_err) => {
-            let msg = format!("repo sync task panicked or was cancelled: {join_err}");
-            let failed_payload = RepoSyncEventDto {
-                repo_path,
-                branch,
-                direction: direction_str,
-                error: Some(msg.clone()),
-            };
-            if let Err(err) = app.emit("repo-sync-failed", &failed_payload) {
-                log_emit_err("repo-sync-failed", err);
+            Err(join_err) => {
+                let msg = format!("repo sync task panicked or was cancelled: {join_err}");
+                let failed_payload = RepoSyncEventDto {
+                    repo_path,
+                    branch,
+                    direction: direction_str,
+                    error: Some(msg),
+                };
+                if let Err(err) = app.emit("repo-sync-failed", &failed_payload) {
+                    log_emit_err("repo-sync-failed", err);
+                }
             }
-            Err(msg)
         }
-    }
+    });
+
+    Ok(())
 }
 
 #[tauri::command]
 pub fn open_in_cursor(
     path: String,
     _background: bool,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    crate::launch::launch_repo(&ctx, &path)
+    crate::launch::launch_repo(state.inner(), &path)
 }
 
 #[cfg(test)]
@@ -980,8 +995,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let config_path = dir.path().join("config.toml");
         let db_path = dir.path().join("workpot.db");
-        let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
-        let cfg = tray_config_from(&ctx);
+        let ctx = AppState::open_with_paths(config_path, db_path).expect("open");
+        let cfg = tray_config_from(&ctx).expect("tray config");
         assert_eq!(cfg.max_visible_rows, 15);
         assert_eq!(cfg.max_recent_days, 14);
         assert_eq!(cfg.min_recent_count, 3);
@@ -1176,6 +1191,29 @@ mod tests {
     }
 
     #[test]
+    fn repo_sync_guard_tracks_active_payload() {
+        let guard = RepoSyncGuard::new();
+        let payload = RepoSyncEventDto {
+            repo_path: "/tmp/r".to_string(),
+            branch: "main".to_string(),
+            direction: "push".to_string(),
+            error: None,
+        };
+        assert!(guard.try_start(payload.clone()));
+        assert_eq!(guard.status(), Some(payload.clone()));
+        assert!(!guard.try_start(payload));
+        guard.finish();
+        assert_eq!(guard.status(), None);
+        assert!(guard.try_start(RepoSyncEventDto {
+            repo_path: "/tmp/r".to_string(),
+            branch: "main".to_string(),
+            direction: "pull".to_string(),
+            error: None,
+        }));
+        guard.finish();
+    }
+
+    #[test]
     fn git_refresh_guard_skips_second_concurrent_start() {
         let guard = GitRefreshGuard::new();
         assert!(guard.try_start());
@@ -1199,7 +1237,7 @@ mod tests {
         let config_path = dir.path().join("config.toml");
         let db_path = dir.path().join("workpot.db");
         std::fs::write(&config_path, "watch_roots = []\nexcludes = []\n").expect("config");
-        let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+        let ctx = AppState::open_with_paths(config_path, db_path).expect("open");
         let repo_path = dir.path().join("sample");
         std::fs::create_dir_all(&repo_path).expect("mkdir");
         let repo = git2::Repository::init(&repo_path).expect("git init");
@@ -1252,7 +1290,7 @@ mod tests {
         let config_path = dir.path().join("config.toml");
         let db_path = dir.path().join("workpot.db");
         std::fs::write(&config_path, "watch_roots = []\nexcludes = []\n").expect("config");
-        let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+        let ctx = AppState::open_with_paths(config_path, db_path).expect("open");
         let repo_path = dir.path().join("sample");
         std::fs::create_dir_all(&repo_path).expect("mkdir");
         git2::Repository::init(&repo_path).expect("git init");

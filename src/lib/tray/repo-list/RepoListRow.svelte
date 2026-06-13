@@ -60,7 +60,7 @@
     selected
       ? "bg-primary text-primary-foreground"
       : hovered
-        ? "bg-white/10 text-inverse-on-surface"
+        ? "bg-hover-overlay text-inverse-on-surface"
         : "text-inverse-on-surface",
   );
 

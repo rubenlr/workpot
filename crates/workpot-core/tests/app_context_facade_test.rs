@@ -40,6 +40,7 @@ fn database_path_and_excludes_list_accessors() {
     assert_eq!(ctx.database_path(), db_path.as_path());
     assert!(
         ctx.excludes_list()
+            .expect("excludes")
             .iter()
             .any(|e| e.contains("workpot-exclude"))
     );

@@ -6,8 +6,9 @@
   const noopBind = (() => {}) as (el: HTMLInputElement | null) => void;
 
   const { Story } = defineMeta({
-    title: "Tray/FilterBar",
+    title: "Composites/FilterBar",
     component: TrayFilterBar,
+    tags: ["autodocs"],
     args: {
       filterQuery: "",
       allTags: ["rust", "frontend"],

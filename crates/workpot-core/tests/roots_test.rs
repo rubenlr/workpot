@@ -31,8 +31,8 @@ fn default_limits_deserialize() {
     fs::write(&config_path, empty_config_marker()).expect("write config");
 
     let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
-    assert_eq!(ctx.config().limits.max_watch_roots, 100);
-    assert_eq!(ctx.config().limits.max_repos, 1000);
+    assert_eq!(ctx.config().expect("config").limits.max_watch_roots, 100);
+    assert_eq!(ctx.config().expect("config").limits.max_repos, 1000);
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn roots_add_persists_watch_root_on_disk() {
     fs::create_dir_all(&watch_parent).expect("watch parent");
     git_worktree(&watch_parent, "nested-repo");
 
-    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
     ctx.roots_add(&watch_parent).expect("roots_add");
 
     let on_disk = fs::read_to_string(&config_path).expect("read config");
@@ -99,7 +99,7 @@ fn roots_add_rolls_back_on_index_cap() {
     git_worktree(&watch_parent, "repo-one");
     git_worktree(&watch_parent, "repo-two");
 
-    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
     let err = ctx.roots_add(&watch_parent).expect_err("cap should fail");
     assert!(
         matches!(err, WorkpotError::IndexCapExceeded { .. }),
@@ -132,7 +132,7 @@ fn roots_add_triggers_scan() {
     fs::create_dir_all(&watch_parent).expect("watch parent");
     let nested = git_worktree(&watch_parent, "nested-repo");
 
-    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
     ctx.roots_add(&watch_parent).expect("roots_add");
 
     let repos = ctx.list_repos().expect("list");
@@ -167,7 +167,7 @@ fn roots_remove_skip_prune_keeps_repos() {
     fs::create_dir_all(&watch_root).expect("watch root");
     let under = git_worktree(&watch_root, "repo-under");
 
-    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
     ctx.roots_add(&watch_root).expect("add watch");
     let under_canon = under.canonicalize().expect("canonicalize under");
 
@@ -180,7 +180,7 @@ fn roots_remove_skip_prune_keeps_repos() {
         "skip-prune must keep indexed repos under removed root"
     );
     assert!(
-        ctx.roots_list().is_empty(),
+        ctx.roots_list().expect("roots").is_empty(),
         "watch root should be removed from config"
     );
 }
@@ -200,7 +200,7 @@ fn roots_remove_prunes() {
     fs::create_dir_all(&sibling_root).expect("sibling root");
     let sibling_repo = git_worktree(&sibling_root, "repo-sibling");
 
-    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
     ctx.roots_add(&watch_root).expect("add watch");
     ctx.register_manual(&sibling_repo).expect("manual sibling");
 
@@ -232,7 +232,7 @@ fn roots_add_rejects_duplicate_watch_root() {
     fs::create_dir_all(&watch_parent).expect("watch parent");
     git_worktree(&watch_parent, "nested-repo");
 
-    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
     ctx.roots_add(&watch_parent).expect("first add");
     assert!(matches!(
         ctx.roots_add(&watch_parent),
@@ -250,7 +250,7 @@ fn roots_remove_not_found() {
     let missing = dir.path().join("no-such-watch-root");
     fs::create_dir_all(&missing).expect("dir for canonicalize");
 
-    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
     assert!(matches!(
         ctx.roots_remove(&missing, false),
         Err(WorkpotError::WatchRootNotFound(_))
@@ -264,8 +264,8 @@ fn reload_config_picks_up_disk_edits() {
     let db_path = dir.path().join("workpot.db");
     fs::write(&config_path, empty_config_marker()).expect("write config");
 
-    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
-    assert!(ctx.config().watch_roots.is_empty());
+    let ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+    assert!(ctx.config().expect("config").watch_roots.is_empty());
 
     let new_root = dir.path().join("from-disk");
     fs::create_dir_all(&new_root).expect("new root dir");
@@ -279,15 +279,16 @@ fn reload_config_picks_up_disk_edits() {
     .expect("rewrite config");
 
     ctx.reload_config().expect("reload");
-    assert_eq!(ctx.config().watch_roots.len(), 1);
+    assert_eq!(ctx.config().expect("config").watch_roots.len(), 1);
     assert_eq!(
-        ctx.config().watch_roots[0]
+        ctx.config().expect("config").watch_roots[0]
             .canonicalize()
             .expect("canonicalize"),
         new_root.canonicalize().expect("canonicalize new root")
     );
     assert!(
         ctx.config()
+            .expect("config")
             .excludes
             .iter()
             .any(|e| e.contains("workpot-reload-exclude")),
@@ -303,7 +304,7 @@ fn roots_add_rejects_nonexistent_path() {
     fs::write(&config_path, empty_config_marker()).expect("write config");
 
     let missing = dir.path().join("no-such-watch-root");
-    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
     assert!(matches!(
         ctx.roots_add(&missing),
         Err(WorkpotError::InvalidPath(msg)) if msg.contains("does not exist")
@@ -320,7 +321,7 @@ fn roots_add_rejects_file_not_directory() {
     let file_path = dir.path().join("not-a-dir");
     fs::write(&file_path, "file").expect("write file");
 
-    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
     assert!(matches!(
         ctx.roots_add(&file_path),
         Err(WorkpotError::InvalidPath(msg)) if msg.contains("not a directory")
@@ -343,7 +344,7 @@ fn roots_add_rejects_when_at_max_watch_roots() {
     fs::create_dir_all(&root_a).expect("root a");
     fs::create_dir_all(&root_b).expect("root b");
 
-    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
     ctx.roots_add(&root_a).expect("first root");
     assert!(matches!(
         ctx.roots_add(&root_b),
@@ -372,7 +373,7 @@ mod readonly_config {
         let watch_parent = dir.path().join("roots");
         fs::create_dir_all(&watch_parent).expect("watch parent");
 
-        let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+        let ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
         set_dir_readonly(dir.path(), true);
 
         let result = ctx.roots_add(&watch_parent);
@@ -380,7 +381,7 @@ mod readonly_config {
 
         assert!(result.is_err(), "save_config should fail on read-only dir");
         assert!(
-            ctx.roots_list().is_empty(),
+            ctx.roots_list().expect("roots").is_empty(),
             "in-memory watch_roots must roll back after save failure"
         );
         let watch_canon = watch_parent.canonicalize().expect("canonicalize");
@@ -401,7 +402,7 @@ mod readonly_config {
         let watch_root = dir.path().join("watch");
         fs::create_dir_all(&watch_root).expect("watch root");
 
-        let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+        let ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
         ctx.roots_add(&watch_root).expect("add watch root");
         let watch_canon = watch_root.canonicalize().expect("canonicalize");
 
@@ -410,9 +411,9 @@ mod readonly_config {
         set_dir_readonly(dir.path(), false);
 
         assert!(result.is_err(), "save_config should fail on read-only dir");
-        assert_eq!(ctx.roots_list().len(), 1);
+        assert_eq!(ctx.roots_list().expect("roots").len(), 1);
         assert_eq!(
-            ctx.roots_list()[0]
+            ctx.roots_list().expect("roots")[0]
                 .canonicalize()
                 .expect("canonicalize stored root"),
             watch_canon
@@ -436,7 +437,7 @@ fn roots_remove_rolls_back_when_prune_fails() {
     fs::create_dir_all(&watch_root).expect("watch root");
     git_worktree(&watch_root, "repo-under");
 
-    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("open");
+    let ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("open");
     ctx.roots_add(&watch_root).expect("add watch");
     let watch_canon = watch_root.canonicalize().expect("canonicalize");
 
@@ -451,9 +452,9 @@ fn roots_remove_rolls_back_when_prune_fails() {
         "prune should fail when repos table is gone"
     );
 
-    assert_eq!(ctx.roots_list().len(), 1);
+    assert_eq!(ctx.roots_list().expect("roots").len(), 1);
     assert_eq!(
-        ctx.roots_list()[0]
+        ctx.roots_list().expect("roots")[0]
             .canonicalize()
             .expect("canonicalize stored root"),
         watch_canon

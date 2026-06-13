@@ -6,8 +6,9 @@
   const noop = () => {};
 
   const { Story } = defineMeta({
-    title: "Tray/DetailPaneHeader",
+    title: "Components/DetailPaneHeader",
     component: DetailPaneHeader,
+    tags: ["autodocs"],
     args: {
       onClose: noop,
       onPinToggle: noop,
