@@ -189,6 +189,68 @@ describe("createTrayPanel", () => {
     vi.useRealTimers();
   });
 
+  it("index_complete_sets_indexRefreshSuccess_then_clears", async () => {
+    vi.useFakeTimers();
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+
+    handlers.onIndexStarted();
+    handlers.onIndexComplete({
+      added: 0,
+      removed: 0,
+      skipped: 0,
+      git_refreshed: 0,
+      git_errors: 0,
+    });
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(panel.indexing).toBe(false);
+    expect(panel.indexRefreshSuccess).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(400);
+    expect(panel.indexRefreshSuccess).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("git_refresh_complete_clears_error_and_reloads", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+    panel.selectedIndex = 2;
+
+    invoke.mockClear();
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "list_repos") return [repo("/tmp/a"), repo("/tmp/b")];
+      if (cmd === "get_repo_sync_status") return null;
+      return undefined;
+    });
+
+    handlers.onGitRefreshComplete({
+      refreshed: 2,
+      errors: 0,
+      any_dirty: false,
+    });
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("list_repos");
+    });
+
+    expect(panel.selectedIndex).toBe(0);
+    expect(panel.listError).toBeNull();
+    expect(panel.listView).toEqual({ kind: "list" });
+  });
+
+  it("git_refresh_failed_sets_list_error", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+
+    handlers.onGitRefreshFailed("git fetch failed");
+
+    expect(panel.listError).toBe("git fetch failed");
+    expect(panel.listView).toEqual({ kind: "list" });
+  });
+
   it("panel-closed resets detail filter and selection", async () => {
     const panel = createTrayPanel();
     await panel.mount();

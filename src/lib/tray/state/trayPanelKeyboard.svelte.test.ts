@@ -95,6 +95,88 @@ describe("createTrayPanelKeyboard", () => {
     expect(prevented.preventDefault).toHaveBeenCalled();
   });
 
+  it("filter_arrow_down_mid_input_does_not_move_selection", () => {
+    const list = createTrayListSelection({
+      getRepos: () => [repo("a"), repo("b")],
+      getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+      getError: () => null,
+    });
+    list.filterQuery = "tag:work";
+    const kb = createTrayPanelKeyboard({
+      list,
+      detail: createTrayDetail(),
+      launch: createTrayLaunch({
+        getSelectedRepo: () => list.getSelectedRepo(),
+        getFilterQuery: () => list.filterQuery,
+        getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+        getRepos: () => [repo("a"), repo("b")],
+        refresh: vi.fn(),
+        setSelectedIndex: (i) => {
+          list.selectedIndex = i;
+        },
+      }),
+      startIndexRefresh: vi.fn(),
+    });
+
+    const input = document.createElement("input");
+    input.value = "tag:work";
+    input.selectionStart = 4;
+    input.selectionEnd = 4;
+    const e = new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      bubbles: true,
+    });
+    Object.defineProperty(e, "currentTarget", { value: input });
+    const prevented = Object.assign(e, {
+      preventDefault: vi.fn(),
+    }) as KeyboardEvent;
+
+    kb.onFilterKeydown(prevented);
+    expect(list.selectedIndex).toBe(0);
+    expect(prevented.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("filter_arrow_up_mid_input_does_not_move_selection", () => {
+    const list = createTrayListSelection({
+      getRepos: () => [repo("a"), repo("b")],
+      getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+      getError: () => null,
+    });
+    list.filterQuery = "tag:work";
+    const kb = createTrayPanelKeyboard({
+      list,
+      detail: createTrayDetail(),
+      launch: createTrayLaunch({
+        getSelectedRepo: () => list.getSelectedRepo(),
+        getFilterQuery: () => list.filterQuery,
+        getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
+        getRepos: () => [repo("a"), repo("b")],
+        refresh: vi.fn(),
+        setSelectedIndex: (i) => {
+          list.selectedIndex = i;
+        },
+      }),
+      startIndexRefresh: vi.fn(),
+    });
+
+    const input = document.createElement("input");
+    input.value = "tag:work";
+    input.selectionStart = 4;
+    input.selectionEnd = 4;
+    const e = new KeyboardEvent("keydown", {
+      key: "ArrowUp",
+      bubbles: true,
+    });
+    Object.defineProperty(e, "currentTarget", { value: input });
+    const prevented = Object.assign(e, {
+      preventDefault: vi.fn(),
+    }) as KeyboardEvent;
+
+    kb.onFilterKeydown(prevented);
+    expect(list.selectedIndex).toBe(0);
+    expect(prevented.preventDefault).not.toHaveBeenCalled();
+  });
+
   it("onFilterKeydown ArrowDown at end of input moves selection", () => {
     const list = createTrayListSelection({
       getRepos: () => [repo("a"), repo("b")],

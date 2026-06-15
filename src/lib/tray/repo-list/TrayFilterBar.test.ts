@@ -10,6 +10,9 @@ function renderBar(
     onFilterKeydown?: (e: KeyboardEvent) => void;
     onTagSelect?: (tag: string) => void;
     bindFilterInput?: (el: HTMLInputElement | null) => void;
+    onRefresh?: () => void;
+    refreshing?: boolean;
+    refreshSuccess?: boolean;
   } = {},
 ) {
   return render(TrayFilterBar, {
@@ -20,8 +23,15 @@ function renderBar(
       onFilterKeydown: opts.onFilterKeydown ?? vi.fn(),
       onTagSelect: opts.onTagSelect ?? vi.fn(),
       bindFilterInput: opts.bindFilterInput ?? vi.fn(),
+      onRefresh: opts.onRefresh,
+      refreshing: opts.refreshing ?? false,
+      refreshSuccess: opts.refreshSuccess ?? false,
     },
   });
+}
+
+function refreshIcon(container: HTMLElement): HTMLElement | null {
+  return container.querySelector('button[aria-label="Refresh index"] span');
 }
 
 describe("TrayFilterBar", () => {
@@ -65,5 +75,37 @@ describe("TrayFilterBar", () => {
     const bindFilterInput = vi.fn();
     renderBar({ bindFilterInput });
     expect(bindFilterInput).toHaveBeenCalled();
+  });
+
+  it("refresh_button_shows_spin_while_refreshing", () => {
+    const { container } = renderBar({
+      onRefresh: vi.fn(),
+      refreshing: true,
+      refreshSuccess: false,
+    });
+    const icon = refreshIcon(container);
+    expect(icon?.textContent).toBe("sync");
+    expect(icon?.className).toContain("animate-spin");
+  });
+
+  it("refresh_button_shows_check_on_success", () => {
+    const { container } = renderBar({
+      onRefresh: vi.fn(),
+      refreshing: false,
+      refreshSuccess: true,
+    });
+    const icon = refreshIcon(container);
+    expect(icon?.textContent).toBe("check");
+    expect(icon?.className).not.toContain("animate-spin");
+  });
+
+  it("refresh_button_disabled_while_refreshing", () => {
+    const { getByRole } = renderBar({
+      onRefresh: vi.fn(),
+      refreshing: true,
+    });
+    expect(
+      getByRole("button", { name: "Refresh index" }).hasAttribute("disabled"),
+    ).toBe(true);
   });
 });

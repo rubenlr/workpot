@@ -169,4 +169,20 @@ describe("TrayRepoList", () => {
     );
     expect(row1Selected).toBeTruthy();
   });
+
+  it("scrollIntoView_called_when_selectedIndex_changes", async () => {
+    const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView");
+    const { rerenderWithSelection } = renderList({
+      ...empty,
+      rest: [repo("a"), repo("b")],
+    });
+    scrollSpy.mockClear();
+
+    await rerenderWithSelection(1);
+
+    await vi.waitFor(() => {
+      expect(scrollSpy).toHaveBeenCalledWith({ block: "nearest" });
+    });
+    scrollSpy.mockRestore();
+  });
 });

@@ -28,6 +28,10 @@ launch:
     cargo build -p workpot-tray
     RUST_LOG=workpot_tray_lib=debug,workpot_core=debug pnpm run tauri dev
 
+sbook:
+    pnpm run build:storybook
+    pnpm run storybook
+
 # Rewrite formatting (run before clippy / tests)
 fmt-fix:
     {{cargo}} fmt --all
