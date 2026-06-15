@@ -27,19 +27,24 @@ fn sync_failure(summary: impl Into<String>) -> SyncFailure {
 }
 
 /// Strip ANSI escape sequences from terminal output.
+fn skip_ansi_sequence(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+    if chars.next() == Some('[') {
+        while let Some(&next) = chars.peek() {
+            chars.next();
+            if next.is_ascii_alphabetic() || next == '@' || next == '`' {
+                break;
+            }
+        }
+    }
+}
+
+/// Strip ANSI escape sequences from terminal output.
 pub fn strip_ansi(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\x1b' {
-            if chars.next() == Some('[') {
-                while let Some(&next) = chars.peek() {
-                    chars.next();
-                    if next.is_ascii_alphabetic() || next == '@' || next == '`' {
-                        break;
-                    }
-                }
-            }
+            skip_ansi_sequence(&mut chars);
             continue;
         }
         result.push(c);

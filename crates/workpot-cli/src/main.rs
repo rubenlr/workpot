@@ -7,10 +7,13 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use workpot_core::infra::paths;
 use workpot_core::services::launch::launch_repo;
 use workpot_core::services::repo_convert::{ConvertResult, ConvertTarget};
 use workpot_core::services::repo_fuzzy::fuzzy_match;
-use workpot_core::{AppContext, RepoRecord, WorkpotError};
+use workpot_core::{
+    AppContext, RepoRecord, WorkpotError, annotate_config_comments, init_config_file,
+};
 
 use git_display::format_git_state;
 
@@ -55,6 +58,30 @@ enum Commands {
     Open {
         /// Repository name, path key, or canonical path.
         repo: String,
+    },
+    /// Initialize or annotate the configuration file.
+    Settings {
+        #[command(flatten)]
+        args: SettingsArgs,
+    },
+}
+
+#[derive(Parser)]
+struct SettingsArgs {
+    #[command(subcommand)]
+    command: Option<SettingsCommands>,
+    /// Add missing documentation comments to each setting in config.toml.
+    #[arg(long)]
+    add_comments: bool,
+}
+
+#[derive(Subcommand)]
+enum SettingsCommands {
+    /// Write a documented default config.toml.
+    Init {
+        /// Overwrite existing config.toml.
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -196,7 +223,50 @@ fn run() -> anyhow::Result<()> {
         Commands::Tag(action) => run_tag(action),
         Commands::Search { query } => run_search(&query),
         Commands::Open { repo } => run_open(&repo),
+        Commands::Settings { args } => run_settings(args),
     }
+}
+
+fn run_settings(args: SettingsArgs) -> anyhow::Result<()> {
+    if args.add_comments && args.command.is_some() {
+        return Err(anyhow::anyhow!(
+            "settings: use either a subcommand or --add-comments, not both"
+        ));
+    }
+    match args.command {
+        Some(SettingsCommands::Init { force }) => run_settings_init(force),
+        None if args.add_comments => run_settings_add_comments(),
+        None => Err(anyhow::anyhow!(
+            "settings requires a subcommand or --add-comments (try `workpot settings init` or `workpot settings --help`)"
+        )),
+    }
+}
+
+fn run_settings_init(force: bool) -> anyhow::Result<()> {
+    let config_path = paths::config_file().context("failed to resolve config path")?;
+    let home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .ok_or_else(|| anyhow::anyhow!("could not resolve home directory"))?;
+    init_config_file(&config_path, &home, force).map_err(|e| match e {
+        WorkpotError::Config(msg) => anyhow::anyhow!(msg),
+        other => other.into(),
+    })?;
+    println!("wrote {}", config_path.display());
+    Ok(())
+}
+
+fn run_settings_add_comments() -> anyhow::Result<()> {
+    let config_path = paths::config_file().context("failed to resolve config path")?;
+    let added = annotate_config_comments(&config_path)?;
+    if added == 0 {
+        println!("no missing comments");
+    } else {
+        println!(
+            "added {added} comment block(s) to {}",
+            config_path.display()
+        );
+    }
+    Ok(())
 }
 
 fn run_paths() -> anyhow::Result<()> {
@@ -564,6 +634,51 @@ mod cli_parse_tests {
             .unwrap()
             .command,
             Commands::Repo(RepoCommands::Convert { dry_run: true, .. })
+        ));
+    }
+
+    #[test]
+    fn parses_settings_init() {
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "settings", "init"])
+                .unwrap()
+                .command,
+            Commands::Settings {
+                args: SettingsArgs {
+                    command: Some(SettingsCommands::Init { force: false }),
+                    add_comments: false,
+                },
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_settings_init_force() {
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "settings", "init", "--force"])
+                .unwrap()
+                .command,
+            Commands::Settings {
+                args: SettingsArgs {
+                    command: Some(SettingsCommands::Init { force: true }),
+                    add_comments: false,
+                },
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_settings_add_comments() {
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "settings", "--add-comments"])
+                .unwrap()
+                .command,
+            Commands::Settings {
+                args: SettingsArgs {
+                    command: None,
+                    add_comments: true,
+                },
+            }
         ));
     }
 }

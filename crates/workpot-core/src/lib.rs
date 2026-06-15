@@ -12,6 +12,7 @@ pub mod services;
 pub mod testing;
 
 use crate::domain::Config;
+use crate::infra::config_doc;
 use crate::infra::db::DbPool;
 use crate::infra::paths;
 use crate::infra::store;
@@ -348,10 +349,35 @@ fn ensure_default_config(path: &Path) -> Result<()> {
         .map(|b| b.home_dir().to_path_buf())
         .ok_or(WorkpotError::PathsUnavailable)?;
     let default = default_config(&home);
-    let contents = toml::to_string_pretty(&default)
-        .map_err(|e| crate::error::WorkpotError::Config(e.to_string()))?;
+    let contents = config_doc::render_init_config(&default);
     write_atomic(path, &contents)?;
     Ok(())
+}
+
+/// Write a documented default `config.toml` (explicit bootstrap / `workpot settings init`).
+pub fn init_config_file(path: &Path, home: &Path, force: bool) -> Result<()> {
+    if path.exists() && !force {
+        return Err(WorkpotError::Config(
+            "config already exists; pass --force to overwrite".to_string(),
+        ));
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let contents = config_doc::render_init_config(&default_config(home));
+    write_atomic(path, &contents)?;
+    Ok(())
+}
+
+/// Backfill missing documentation comments in an existing config file.
+pub fn annotate_config_comments(path: &Path) -> Result<usize> {
+    let config = load_config(path)?;
+    config.validate().map_err(WorkpotError::Config)?;
+    let mut doc = config_doc::load_document(path)?;
+    let added = config_doc::add_missing_comments(&mut doc);
+    config_doc::write_document(path, &doc)?;
+    let _ = config;
+    Ok(added)
 }
 
 pub(crate) fn load_config(path: &Path) -> Result<Config> {
@@ -365,17 +391,17 @@ pub(crate) fn load_config(path: &Path) -> Result<Config> {
     Ok(config)
 }
 
-/// Persist config to disk (D-19).
+/// Persist config to disk (D-19), preserving inline documentation comments.
 pub fn save_config(config_path: &Path, config: &Config) -> Result<()> {
     config.validate().map_err(WorkpotError::Config)?;
-    let contents =
-        toml::to_string_pretty(config).map_err(|e| WorkpotError::Config(e.to_string()))?;
-    write_atomic(config_path, &contents)?;
+    let mut doc = config_doc::load_document(config_path)?;
+    config_doc::apply_config_to_document(&mut doc, config);
+    config_doc::write_document(config_path, &doc)?;
     Ok(())
 }
 
 /// Write `contents` to `path` atomically via temp file + fsync + rename.
-fn write_atomic(path: &Path, contents: &str) -> Result<()> {
+pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }

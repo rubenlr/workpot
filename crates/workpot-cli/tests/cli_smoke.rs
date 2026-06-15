@@ -1224,3 +1224,85 @@ fn convert_dry_run_rejects_existing_temp() {
 
     assert!(repo_path.exists(), "dry-run must not rename source");
 }
+
+#[test]
+fn settings_init_creates_commented_config() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config_path = home
+        .path()
+        .join(".config")
+        .join("workpot")
+        .join("config.toml");
+
+    workpot_cmd(home.path())
+        .args(["settings", "init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("wrote"));
+
+    let contents = fs::read_to_string(&config_path).expect("config exists");
+    assert!(
+        contents.contains('#'),
+        "settings init should write commented config:\n{contents}"
+    );
+    assert!(contents.contains("launch_cmd"));
+}
+
+#[test]
+fn settings_init_fails_when_config_exists() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config_dir = home.path().join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    fs::write(config_dir.join("config.toml"), "watch_roots = []\n").expect("seed config");
+
+    workpot_cmd(home.path())
+        .args(["settings", "init"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("config already exists"));
+}
+
+#[test]
+fn settings_init_force_overwrites_existing_config() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config_dir = home.path().join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    let config_path = config_dir.join("config.toml");
+    fs::write(&config_path, "watch_roots = []\nexcludes = [\"/old\"]\n").expect("seed config");
+
+    workpot_cmd(home.path())
+        .args(["settings", "init", "--force"])
+        .assert()
+        .success();
+
+    let contents = fs::read_to_string(&config_path).expect("read config");
+    assert!(
+        !contents.contains("excludes = [\"/old\"]"),
+        "force init should replace prior exclude values"
+    );
+    assert!(contents.contains('#'), "forced init should write comments");
+}
+
+#[test]
+fn settings_add_comments_backfills_minimal_config() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config_dir = home.path().join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    fs::write(
+        config_dir.join("config.toml"),
+        "watch_roots = []\nexcludes = []\n",
+    )
+    .expect("minimal config");
+
+    workpot_cmd(home.path())
+        .args(["settings", "--add-comments"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added").or(predicate::str::contains("comment")));
+
+    let contents = fs::read_to_string(config_dir.join("config.toml")).expect("read config");
+    assert!(
+        contents.contains('#'),
+        "add-comments should inject documentation:\n{contents}"
+    );
+}

@@ -18,5 +18,5 @@ export function selectionIndexAfterBackgroundOpen(
     filterAndSectionRepos(repos, query, sectionConfig),
   );
   const idx = flat.findIndex((r) => r.path === openedPath);
-  return idx >= 0 ? idx : 0;
+  return Math.max(idx, 0);
 }

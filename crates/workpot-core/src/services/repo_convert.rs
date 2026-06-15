@@ -99,14 +99,8 @@ pub fn run_preflight(path: &Path) -> Result<PreflightResult> {
         vec![canonical.clone()]
     };
 
-    for wt_path in &worktree_paths {
-        let repo =
-            Repository::open(wt_path).map_err(|_| WorkpotError::GitUnavailable(wt_path.clone()))?;
-        if git::detect_dirty(&repo).map_err(|_| WorkpotError::GitUnavailable(wt_path.clone()))? {
-            return Ok(PreflightResult::DirtyWorktree {
-                path: wt_path.clone(),
-            });
-        }
+    if let Some(result) = dirty_worktree_in(&worktree_paths)? {
+        return Ok(result);
     }
 
     let sync_roots = if is_bare_repo(&canonical) {
@@ -114,9 +108,34 @@ pub fn run_preflight(path: &Path) -> Result<PreflightResult> {
     } else {
         vec![canonical.clone()]
     };
-    for sync_path in &sync_roots {
+    if let Some(result) = sync_blocker_in(&sync_roots)? {
+        return Ok(result);
+    }
+
+    if git::has_stash(&canonical)? {
+        return Ok(PreflightResult::HasStash);
+    }
+
+    Ok(PreflightResult::Ready)
+}
+
+fn dirty_worktree_in(paths: &[PathBuf]) -> Result<Option<PreflightResult>> {
+    for wt_path in paths {
+        let repo =
+            Repository::open(wt_path).map_err(|_| WorkpotError::GitUnavailable(wt_path.clone()))?;
+        if git::detect_dirty(&repo).map_err(|_| WorkpotError::GitUnavailable(wt_path.clone()))? {
+            return Ok(Some(PreflightResult::DirtyWorktree {
+                path: wt_path.clone(),
+            }));
+        }
+    }
+    Ok(None)
+}
+
+fn sync_blocker_in(paths: &[PathBuf]) -> Result<Option<PreflightResult>> {
+    for sync_path in paths {
         if let Some(blocker) = git::check_all_branches_synced(sync_path)? {
-            return Ok(match blocker {
+            return Ok(Some(match blocker {
                 SyncBlocker::NoUpstream { branch } => PreflightResult::NoUpstream { branch },
                 SyncBlocker::UnpushedCommits { branch, count } => {
                     PreflightResult::UnpushedCommits { branch, count }
@@ -126,15 +145,10 @@ pub fn run_preflight(path: &Path) -> Result<PreflightResult> {
                         "non-UTF8 branch name found".into(),
                     ));
                 }
-            });
+            }));
         }
     }
-
-    if git::has_stash(&canonical)? {
-        return Ok(PreflightResult::HasStash);
-    }
-
-    Ok(PreflightResult::Ready)
+    Ok(None)
 }
 
 fn git_cmd_clean() -> Command {
@@ -224,9 +238,9 @@ fn worktree_name_for_branch(
     unique_worktree_name(branch, &existing)
 }
 
-fn reject_blocked_preflight(preflight: PreflightResult) -> Result<ConvertResult> {
+fn reject_blocked_preflight(preflight: &PreflightResult) -> Result<()> {
     Err(WorkpotError::ConversionPreflight(preflight_message(
-        &preflight,
+        preflight,
     )))
 }
 
@@ -367,20 +381,46 @@ fn health_check_normal(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn convert_repo(
+fn path_to_utf8<'a>(path: &'a Path, label: &str) -> Result<&'a str> {
+    path.to_str()
+        .ok_or_else(|| WorkpotError::ConversionFailed(format!("{label} path not UTF-8")))
+}
+
+struct PreparedConversion {
+    canonical: PathBuf,
+    path_key: String,
+    parent_dir: PathBuf,
+    resolved_paths: Vec<(String, PathBuf)>,
+    temp_path: PathBuf,
+    target: ConvertTarget,
+    new_path: PathBuf,
+    new_name: String,
+    branch_for_bare: Option<String>,
+}
+
+enum PrepareOutcome {
+    DryRun {
+        preflight: PreflightResult,
+        resolved_paths: Vec<(String, PathBuf)>,
+    },
+    Ready(PreparedConversion),
+}
+
+fn prepare_conversion(
     conn: &Connection,
     config: &Config,
     path: &Path,
     target: ConvertTarget,
     dry_run: bool,
-) -> Result<ConvertResult> {
+) -> Result<PrepareOutcome> {
     let canonical = path
         .canonicalize()
         .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?;
     let path_key = canonical.display().to_string();
     let parent_dir = canonical
         .parent()
-        .ok_or_else(|| WorkpotError::InvalidPath("path has no parent directory".into()))?;
+        .ok_or_else(|| WorkpotError::InvalidPath("path has no parent directory".into()))?
+        .to_path_buf();
 
     if is_linked_worktree(&canonical) {
         let common = git::resolve_git_common_dir(&canonical)?;
@@ -393,16 +433,16 @@ pub fn convert_repo(
     let currently_bare = is_bare_repo(&canonical);
     match (target, currently_bare) {
         (ConvertTarget::Bare, true) => {
-            return reject_blocked_preflight(PreflightResult::WrongLayout {
+            reject_blocked_preflight(&PreflightResult::WrongLayout {
                 current: "bare",
                 requested: "bare",
-            });
+            })?;
         }
         (ConvertTarget::Normal, false) => {
-            return reject_blocked_preflight(PreflightResult::WrongLayout {
+            reject_blocked_preflight(&PreflightResult::WrongLayout {
                 current: "normal",
                 requested: "normal",
-            });
+            })?;
         }
         _ => {}
     }
@@ -410,18 +450,18 @@ pub fn convert_repo(
     let record = match find_record(conn, &path_key) {
         Ok(record) => record,
         Err(WorkpotError::NotFound(_)) => {
-            return reject_blocked_preflight(PreflightResult::NotInCatalog);
+            reject_blocked_preflight(&PreflightResult::NotInCatalog)?;
+            unreachable!("reject_blocked_preflight always returns an error")
         }
         Err(e) => return Err(e),
     };
 
     let preflight = run_preflight(&canonical)?;
     if preflight != PreflightResult::Ready {
-        return reject_blocked_preflight(preflight);
+        reject_blocked_preflight(&preflight)?;
     }
 
     let resolved_paths = resolve_target_paths(config, &record, &canonical, target)?;
-
     check_target_paths_exist(&resolved_paths, &canonical)?;
 
     if config.migration.delete_original
@@ -447,164 +487,178 @@ pub fn convert_repo(
     }
 
     if dry_run {
-        return Ok(ConvertResult::DryRun {
+        return Ok(PrepareOutcome::DryRun {
             preflight,
             resolved_paths,
         });
     }
 
     let (new_path, new_name, branch_for_bare) =
-        conversion_targets(config, &record, &canonical, target, parent_dir)?;
+        conversion_targets(config, &record, &canonical, target, &parent_dir)?;
 
     std::fs::rename(&canonical, &temp_path).map_err(|e| {
         log::warn!("convert_repo rename failed: {e}");
         WorkpotError::ConversionFailed(format!("rename failed: {e}"))
     })?;
 
-    let clone_result = match target {
-        ConvertTarget::Bare => {
-            let bare_git_path = resolved_paths
-                .iter()
-                .find(|(label, _)| label == "bare_repo")
-                .map(|(_, p)| p.clone())
-                .ok_or_else(|| WorkpotError::ConversionFailed("missing bare path".into()))?;
-            let worktree_path = resolved_paths
-                .iter()
-                .find(|(label, _)| label == "worktree")
-                .map(|(_, p)| p.clone())
-                .ok_or_else(|| WorkpotError::ConversionFailed("missing worktree path".into()))?;
-            let branch = branch_for_bare.ok_or_else(|| {
-                WorkpotError::ConversionFailed("missing branch for worktree".into())
-            })?;
+    Ok(PrepareOutcome::Ready(PreparedConversion {
+        canonical,
+        path_key,
+        parent_dir,
+        resolved_paths,
+        temp_path,
+        target,
+        new_path,
+        new_name,
+        branch_for_bare,
+    }))
+}
 
-            let status = git_cmd_clean()
-                .args([
-                    "clone",
-                    "--bare",
-                    "-q",
-                    temp_path.to_str().ok_or_else(|| {
-                        WorkpotError::ConversionFailed("temp path not UTF-8".into())
-                    })?,
-                    bare_git_path.to_str().ok_or_else(|| {
-                        WorkpotError::ConversionFailed("bare path not UTF-8".into())
-                    })?,
-                ])
-                .current_dir(parent_dir)
-                .status()
-                .map_err(WorkpotError::Io)?;
-            if !status.success() {
-                return Err(WorkpotError::ConversionFailed("bare clone failed".into()));
-            }
+fn clone_bare_layout(
+    prepared: &PreparedConversion,
+    resolved_paths: &[(String, PathBuf)],
+) -> Result<(PathBuf, String, String)> {
+    let bare_git_path = resolved_paths
+        .iter()
+        .find(|(label, _)| label == "bare_repo")
+        .map(|(_, p)| p.clone())
+        .ok_or_else(|| WorkpotError::ConversionFailed("missing bare path".into()))?;
+    let worktree_path = resolved_paths
+        .iter()
+        .find(|(label, _)| label == "worktree")
+        .map(|(_, p)| p.clone())
+        .ok_or_else(|| WorkpotError::ConversionFailed("missing worktree path".into()))?;
+    let branch = prepared
+        .branch_for_bare
+        .clone()
+        .ok_or_else(|| WorkpotError::ConversionFailed("missing branch for worktree".into()))?;
 
-            let status = git_cmd_clean()
-                .args([
-                    "worktree",
-                    "add",
-                    "-q",
-                    worktree_path.to_str().ok_or_else(|| {
-                        WorkpotError::ConversionFailed("worktree path not UTF-8".into())
-                    })?,
-                    &branch,
-                ])
-                .current_dir(&bare_git_path)
-                .status()
-                .map_err(WorkpotError::Io)?;
-            if !status.success() {
-                if let Err(e) = std::fs::remove_dir_all(&bare_git_path) {
-                    log::warn!(
-                        "failed to remove partial bare repo {} after worktree add failure: {e}",
-                        bare_git_path.display()
-                    );
-                }
-                return Err(WorkpotError::ConversionFailed("worktree add failed".into()));
-            }
+    let status = git_cmd_clean()
+        .args([
+            "clone",
+            "--bare",
+            "-q",
+            path_to_utf8(&prepared.temp_path, "temp")?,
+            path_to_utf8(&bare_git_path, "bare")?,
+        ])
+        .current_dir(&prepared.parent_dir)
+        .status()
+        .map_err(WorkpotError::Io)?;
+    if !status.success() {
+        return Err(WorkpotError::ConversionFailed("bare clone failed".into()));
+    }
 
-            if let Err(e) = health_check_bare(&bare_git_path, &worktree_path) {
-                if let Err(cleanup) = std::fs::remove_dir_all(&worktree_path) {
-                    log::warn!(
-                        "failed to remove partial worktree {} after health check failure: {cleanup}",
-                        worktree_path.display()
-                    );
-                }
-                if let Err(cleanup) = std::fs::remove_dir_all(&bare_git_path) {
-                    log::warn!(
-                        "failed to remove partial bare repo {} after health check failure: {cleanup}",
-                        bare_git_path.display()
-                    );
-                }
-                return Err(e);
-            }
-            let gcd = bare_git_path
-                .canonicalize()
-                .map_err(WorkpotError::Io)?
-                .display()
-                .to_string();
-            Ok((bare_git_path, new_name, gcd))
-        }
-        ConvertTarget::Normal => {
-            let target_path = new_path.clone();
-            let default_branch = git::detect_default_branch_for_path(&temp_path)?;
-            let status = git_cmd_clean()
-                .args([
-                    "clone",
-                    "-q",
-                    "-b",
-                    &default_branch,
-                    temp_path.to_str().ok_or_else(|| {
-                        WorkpotError::ConversionFailed("temp path not UTF-8".into())
-                    })?,
-                    target_path.to_str().ok_or_else(|| {
-                        WorkpotError::ConversionFailed("target path not UTF-8".into())
-                    })?,
-                ])
-                .current_dir(parent_dir)
-                .status()
-                .map_err(WorkpotError::Io)?;
-            if !status.success() {
-                return Err(WorkpotError::ConversionFailed("clone failed".into()));
-            }
-            if let Err(e) = health_check_normal(&target_path) {
-                if let Err(cleanup) = std::fs::remove_dir_all(&target_path) {
-                    log::warn!(
-                        "failed to remove partial normal checkout {} after health check failure: {cleanup}",
-                        target_path.display()
-                    );
-                }
-                return Err(e);
-            }
-            let gcd = git::resolve_git_common_dir(&target_path)?
-                .display()
-                .to_string();
-            Ok((target_path, new_name, gcd))
-        }
-    };
-
-    let (new_path, new_name, new_git_common_dir) = match clone_result {
-        Ok(v) => v,
-        Err(e) => {
+    let status = git_cmd_clean()
+        .args([
+            "worktree",
+            "add",
+            "-q",
+            path_to_utf8(&worktree_path, "worktree")?,
+            &branch,
+        ])
+        .current_dir(&bare_git_path)
+        .status()
+        .map_err(WorkpotError::Io)?;
+    if !status.success() {
+        if let Err(e) = std::fs::remove_dir_all(&bare_git_path) {
             log::warn!(
-                "convert_repo clone/health failed, leaving temp at {}",
-                temp_path.display()
+                "failed to remove partial bare repo {} after worktree add failure: {e}",
+                bare_git_path.display()
             );
-            return Err(e);
         }
-    };
+        return Err(WorkpotError::ConversionFailed("worktree add failed".into()));
+    }
 
+    if let Err(e) = health_check_bare(&bare_git_path, &worktree_path) {
+        if let Err(cleanup) = std::fs::remove_dir_all(&worktree_path) {
+            log::warn!(
+                "failed to remove partial worktree {} after health check failure: {cleanup}",
+                worktree_path.display()
+            );
+        }
+        if let Err(cleanup) = std::fs::remove_dir_all(&bare_git_path) {
+            log::warn!(
+                "failed to remove partial bare repo {} after health check failure: {cleanup}",
+                bare_git_path.display()
+            );
+        }
+        return Err(e);
+    }
+    let gcd = bare_git_path
+        .canonicalize()
+        .map_err(WorkpotError::Io)?
+        .display()
+        .to_string();
+    Ok((bare_git_path, prepared.new_name.clone(), gcd))
+}
+
+fn clone_normal_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String, String)> {
+    let target_path = prepared.new_path.clone();
+    let default_branch = git::detect_default_branch_for_path(&prepared.temp_path)?;
+    let status = git_cmd_clean()
+        .args([
+            "clone",
+            "-q",
+            "-b",
+            &default_branch,
+            path_to_utf8(&prepared.temp_path, "temp")?,
+            path_to_utf8(&target_path, "target")?,
+        ])
+        .current_dir(&prepared.parent_dir)
+        .status()
+        .map_err(WorkpotError::Io)?;
+    if !status.success() {
+        return Err(WorkpotError::ConversionFailed("clone failed".into()));
+    }
+    if let Err(e) = health_check_normal(&target_path) {
+        if let Err(cleanup) = std::fs::remove_dir_all(&target_path) {
+            log::warn!(
+                "failed to remove partial normal checkout {} after health check failure: {cleanup}",
+                target_path.display()
+            );
+        }
+        return Err(e);
+    }
+    let gcd = git::resolve_git_common_dir(&target_path)?
+        .display()
+        .to_string();
+    Ok((target_path, prepared.new_name.clone(), gcd))
+}
+
+fn clone_for_target(prepared: &PreparedConversion) -> Result<(PathBuf, String, String)> {
+    match prepared.target {
+        ConvertTarget::Bare => clone_bare_layout(prepared, &prepared.resolved_paths),
+        ConvertTarget::Normal => clone_normal_layout(prepared),
+    }
+}
+
+fn finalize_conversion(
+    conn: &Connection,
+    config: &Config,
+    prepared: &PreparedConversion,
+    new_path: PathBuf,
+    new_name: String,
+    new_git_common_dir: String,
+) -> Result<ConvertResult> {
     let new_key = new_path.display().to_string();
-    if new_key == path_key {
+    if new_key == prepared.path_key {
         conn.execute(
             "UPDATE repos SET name=?1, git_common_dir=?2,
              branch=NULL, is_dirty=NULL, ahead=NULL, behind=NULL,
              git_refreshed_at=NULL, git_state_error=NULL
              WHERE path=?3",
-            params![new_name, new_git_common_dir, path_key],
+            params![new_name, new_git_common_dir, prepared.path_key],
         )?;
-    } else if let Err(e) =
-        catalog_path_swap(conn, &path_key, &new_key, &new_name, &new_git_common_dir)
-    {
+    } else if let Err(e) = catalog_path_swap(
+        conn,
+        &prepared.path_key,
+        &new_key,
+        &new_name,
+        &new_git_common_dir,
+    ) {
         log::warn!(
             "convert_repo catalog swap failed, leaving temp at {}",
-            temp_path.display()
+            prepared.temp_path.display()
         );
         return Err(e);
     }
@@ -618,20 +672,62 @@ pub fn convert_repo(
 
     log::info!(
         "convert_repo: {} -> {}",
-        canonical.display(),
+        prepared.canonical.display(),
         new_path.display()
     );
 
     if config.migration.delete_original
-        && let Err(e) = std::fs::remove_dir_all(&temp_path)
+        && let Err(e) = std::fs::remove_dir_all(&prepared.temp_path)
     {
-        log::warn!("failed to delete temp dir {}: {e}", temp_path.display());
+        log::warn!(
+            "failed to delete temp dir {}: {e}",
+            prepared.temp_path.display()
+        );
     }
 
     Ok(ConvertResult::Converted {
-        from: canonical,
+        from: prepared.canonical.clone(),
         to: new_path,
     })
+}
+
+pub fn convert_repo(
+    conn: &Connection,
+    config: &Config,
+    path: &Path,
+    target: ConvertTarget,
+    dry_run: bool,
+) -> Result<ConvertResult> {
+    match prepare_conversion(conn, config, path, target, dry_run)? {
+        PrepareOutcome::DryRun {
+            preflight,
+            resolved_paths,
+        } => Ok(ConvertResult::DryRun {
+            preflight,
+            resolved_paths,
+        }),
+        PrepareOutcome::Ready(prepared) => {
+            let clone_result = clone_for_target(&prepared);
+            let (new_path, new_name, new_git_common_dir) = match clone_result {
+                Ok(v) => v,
+                Err(e) => {
+                    log::warn!(
+                        "convert_repo clone/health failed, leaving temp at {}",
+                        prepared.temp_path.display()
+                    );
+                    return Err(e);
+                }
+            };
+            finalize_conversion(
+                conn,
+                config,
+                &prepared,
+                new_path,
+                new_name,
+                new_git_common_dir,
+            )
+        }
+    }
 }
 
 fn resolve_target_paths(

@@ -11,7 +11,7 @@ function storyAllTags(): string[] {
       tags.add(tag);
     }
   }
-  return [...tags].sort();
+  return [...tags].sort((a, b) => a.localeCompare(b));
 }
 
 const storyBranches: BranchListItemDto[] = [

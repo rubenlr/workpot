@@ -193,65 +193,62 @@ impl Config {
                 self.limits.max_watch_roots
             ));
         }
-        if self.max_visible_rows < 1 || self.max_visible_rows > 100 {
-            return Err(format!(
-                "max_visible_rows {} must be between 1 and 100",
-                self.max_visible_rows
-            ));
-        }
-        if self.launch_cmd.trim().is_empty() {
-            return Err("launch_cmd must not be empty".into());
-        }
-        if !self.launch_cmd.contains("{path}") {
-            return Err("launch_cmd must contain {path} placeholder".into());
-        }
-        if self.push_cmd.trim().is_empty() {
-            return Err("push_cmd must not be empty".into());
-        }
-        if !self.push_cmd.contains("{path}") || !self.push_cmd.contains("{branch}") {
-            return Err("push_cmd must contain {path} and {branch} placeholders".into());
-        }
-        if self.pull_cmd.trim().is_empty() {
-            return Err("pull_cmd must not be empty".into());
-        }
-        if !self.pull_cmd.contains("{path}") || !self.pull_cmd.contains("{branch}") {
-            return Err("pull_cmd must contain {path} and {branch} placeholders".into());
-        }
-        if self.max_pinned < 1 || self.max_pinned > 20 {
-            return Err(format!(
-                "max_pinned {} must be between 1 and 20",
-                self.max_pinned
-            ));
-        }
-        if self.max_recent_days < 1 || self.max_recent_days > 365 {
-            return Err(format!(
-                "max_recent_days {} must be between 1 and 365",
-                self.max_recent_days
-            ));
-        }
+        validate_u32_range("max_visible_rows", self.max_visible_rows, 1, 100)?;
+        validate_shell_cmd("launch_cmd", &self.launch_cmd, &["{path}"])?;
+        validate_shell_cmd("push_cmd", &self.push_cmd, &["{path}", "{branch}"])?;
+        validate_shell_cmd("pull_cmd", &self.pull_cmd, &["{path}", "{branch}"])?;
+        validate_u32_range("max_pinned", self.max_pinned, 1, 20)?;
+        validate_u32_range("max_recent_days", self.max_recent_days, 1, 365)?;
         if self.min_recent_count > self.max_pinned {
             return Err(format!(
                 "min_recent_count {} must be <= max_pinned {}",
                 self.min_recent_count, self.max_pinned
             ));
         }
-        if self.stale_dirty_days < 1 || self.stale_dirty_days > 365 {
-            return Err(format!(
-                "stale_dirty_days {} must be between 1 and 365",
-                self.stale_dirty_days
-            ));
-        }
-        if self.migration.temp_suffix.is_empty() {
-            return Err("migration.temp_suffix must not be empty".into());
-        }
-        if !self.migration.bare_repo_template.contains("{project}") {
-            return Err("migration.bare_repo_template must contain {project}".into());
-        }
-        if !self.migration.worktree_template.contains("{project}")
-            || !self.migration.worktree_template.contains("{worktree}")
-        {
-            return Err("migration.worktree_template must contain {project} and {worktree}".into());
-        }
+        validate_u32_range("stale_dirty_days", self.stale_dirty_days, 1, 365)?;
+        validate_migration(&self.migration)?;
         Ok(())
     }
+}
+
+fn validate_u32_range(name: &str, value: u32, min: u32, max: u32) -> Result<(), String> {
+    if value < min || value > max {
+        return Err(format!("{name} {value} must be between {min} and {max}"));
+    }
+    Ok(())
+}
+
+fn validate_shell_cmd(name: &str, cmd: &str, placeholders: &[&str]) -> Result<(), String> {
+    if cmd.trim().is_empty() {
+        return Err(format!("{name} must not be empty"));
+    }
+    for placeholder in placeholders {
+        if cmd.contains(placeholder) {
+            continue;
+        }
+        let msg = if placeholders.len() == 1 {
+            format!("{name} must contain {} placeholder", placeholders[0])
+        } else {
+            format!(
+                "{name} must contain {} placeholders",
+                placeholders.join(" and ")
+            )
+        };
+        return Err(msg);
+    }
+    Ok(())
+}
+
+fn validate_migration(cfg: &MigrationConfig) -> Result<(), String> {
+    if cfg.temp_suffix.is_empty() {
+        return Err("migration.temp_suffix must not be empty".into());
+    }
+    if !cfg.bare_repo_template.contains("{project}") {
+        return Err("migration.bare_repo_template must contain {project}".into());
+    }
+    if !cfg.worktree_template.contains("{project}") || !cfg.worktree_template.contains("{worktree}")
+    {
+        return Err("migration.worktree_template must contain {project} and {worktree}".into());
+    }
+    Ok(())
 }

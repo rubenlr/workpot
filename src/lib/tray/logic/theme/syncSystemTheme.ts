@@ -9,9 +9,9 @@ function inTauriRuntime(): boolean {
 export function applyDocumentTheme(theme: "light" | "dark" | null): void {
   const root = document.documentElement;
   if (theme) {
-    root.setAttribute("data-theme", theme);
+    root.dataset.theme = theme;
   } else {
-    root.removeAttribute("data-theme");
+    delete root.dataset.theme;
   }
 }
 

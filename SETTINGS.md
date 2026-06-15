@@ -3,11 +3,18 @@
 All settings live in `config.toml`. On first run, workpot creates the file with defaults at:
 
 - macOS: `~/.config/workpot/config.toml`
-- Database: `~/.config/workpot/workpot.db`
+- Database: `~/Library/Application Support/workpot/workpot.db`
 
 Run `workpot paths` to print the resolved paths on your machine.
 
+Explicit bootstrap and documentation backfill:
+
+- `workpot settings init` — write a documented default `config.toml` (fails if the file already exists; use `--force` to overwrite)
+- `workpot settings --add-comments` — add missing inline documentation to an existing install without changing values
+
 ## Configuration file structure
+
+Inline comments in generated `config.toml` files are sourced from [`crates/workpot-core/src/infra/settings.template.toml`](crates/workpot-core/src/infra/settings.template.toml).
 
 ```toml
 watch_roots = []

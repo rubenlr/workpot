@@ -18,6 +18,14 @@ fn config_creates_defaults() {
     let contents = fs::read_to_string(&config_path).expect("config file exists");
     assert!(contents.contains("watch_roots"));
     assert!(contents.contains("excludes"));
+    assert!(
+        contents.contains('#'),
+        "default config should include documentation comments"
+    );
+    assert!(
+        contents.contains("{path}"),
+        "launch_cmd comment should document {{path}} placeholder"
+    );
 }
 
 #[test]
