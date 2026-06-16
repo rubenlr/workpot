@@ -109,19 +109,17 @@ pub fn format_sync_failure(
         parts.join("\n")
     };
     let detail_stripped = strip_ansi(&full_detail);
-
-    let summary =
-        if let Some(line) = find_line_containing(&detail_stripped, "failed to push some refs") {
-            line.to_string()
-        } else if let Some(hk) = extract_hk_failure(&detail_stripped) {
-            hk
-        } else if let Some(line) = last_non_empty_line(&detail_stripped) {
-            line.to_string()
-        } else {
-            format!("{program} exited with status {code}")
-        };
+    let summary = summarize_sync_failure(&detail_stripped, program, code);
 
     (truncate_summary(summary, 200), full_detail)
+}
+
+fn summarize_sync_failure(detail: &str, program: &str, code: &str) -> String {
+    find_line_containing(detail, "failed to push some refs")
+        .map(str::to_string)
+        .or_else(|| extract_hk_failure(detail))
+        .or_else(|| last_non_empty_line(detail).map(str::to_string))
+        .unwrap_or_else(|| format!("{program} exited with status {code}"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -58,12 +58,9 @@ pub fn discover_phase(conn: &Connection, config: &Config) -> Result<DiscoveryPla
     let mut upserts: Vec<(PathBuf, String)> = Vec::new();
     for path in scan_candidates {
         let path_key = path.display().to_string();
-        match resolve_git_common_dir(&path) {
-            Ok(common) => {
-                upserts.push((path, common.display().to_string()));
-            }
-            Err(_) => {
-                log::warn!("skip {}: git unavailable", path_key);
+        match try_resolve_git_common_dir(&path, &path_key) {
+            Ok(common) => upserts.push((path, common)),
+            Err(()) => {
                 pre_skipped += 1;
                 changelog.push(ChangeEntry {
                     path: path_key,
@@ -223,54 +220,21 @@ pub fn persist_index_git_phase(
 /// Phased index: release locks between discovery, merge, git refresh, and persist.
 pub fn run_phased(pool: &crate::infra::db::DbPool, config: &Config) -> Result<IndexSummary> {
     let started_at = crate::services::git_state::unix_now_secs();
-    log::debug!("index run_phased: start");
-    match run_phased_inner(pool, config, started_at) {
-        Ok(summary) => {
-            log::debug!(
-                "index run_phased: complete added={} removed={} skipped={} git_refreshed={} git_errors={}",
-                summary.added,
-                summary.removed,
-                summary.skipped,
-                summary.git_refreshed,
-                summary.git_errors
-            );
-            Ok(summary)
-        }
-        Err(WorkpotError::IndexCapExceeded { projected, max }) => {
-            Err(WorkpotError::IndexCapExceeded { projected, max })
-        }
-        Err(e) => {
-            if let Err(audit_err) = pool.with_write(|conn| record_error_run(conn, started_at, &e)) {
-                log::warn!("failed to record error audit row: {audit_err}");
-            }
-            Err(e)
-        }
-    }
-}
-
-fn run_phased_inner(
-    pool: &crate::infra::db::DbPool,
-    config: &Config,
-    _started_at: i64,
-) -> Result<IndexSummary> {
-    test_index_delay();
-
-    let plan = pool.with_read(|conn| discover_phase(conn, config))?;
-    let mut summary = pool.with_write(|conn| merge_catalog_phase(conn, config, plan))?;
-
-    let all_paths = pool.with_read(index_git_paths)?;
-    log::debug!("index git second pass: start repos={}", all_paths.len());
-    let git_pass_started = std::time::Instant::now();
-    let git_results = git_state::refresh_all(all_paths);
-    log::debug!(
-        "index git second pass: refresh_all elapsed_ms={}",
-        git_pass_started.elapsed().as_millis()
-    );
-
-    test_index_delay();
-
-    pool.with_write(|conn| persist_index_git_phase(conn, &mut summary, git_results))?;
-    Ok(summary)
+    run_index_with_audit(
+        "run_phased",
+        started_at,
+        || {
+            run_index_pipeline(
+                || pool.with_read(|conn| discover_phase(conn, config)),
+                |plan| pool.with_write(|conn| merge_catalog_phase(conn, config, plan)),
+                || pool.with_read(index_git_paths),
+                |summary, git_results| {
+                    pool.with_write(|conn| persist_index_git_phase(conn, summary, git_results))
+                },
+            )
+        },
+        |e| pool.with_write(|conn| record_error_run(conn, started_at, e)),
+    )
 }
 
 fn test_index_delay() {
@@ -289,11 +253,32 @@ pub fn run_full(pool: &crate::infra::db::DbPool, config: &Config) -> Result<Inde
 /// Single-connection variant for unit tests.
 pub fn run_full_connection(conn: &Connection, config: &Config) -> Result<IndexSummary> {
     let started_at = crate::services::git_state::unix_now_secs();
-    log::debug!("index run_full: start");
-    match run_full_inner(conn, config, started_at) {
+    run_index_with_audit(
+        "run_full",
+        started_at,
+        || {
+            run_index_pipeline(
+                || discover_phase(conn, config),
+                |plan| merge_catalog_phase(conn, config, plan),
+                || index_git_paths(conn),
+                |summary, git_results| persist_index_git_phase(conn, summary, git_results),
+            )
+        },
+        |e| record_error_run(conn, started_at, e),
+    )
+}
+
+fn run_index_with_audit(
+    label: &str,
+    _started_at: i64,
+    run: impl FnOnce() -> Result<IndexSummary>,
+    record_error: impl FnOnce(&WorkpotError) -> Result<()>,
+) -> Result<IndexSummary> {
+    log::debug!("index {label}: start");
+    match run() {
         Ok(summary) => {
             log::debug!(
-                "index run_full: complete added={} removed={} skipped={} git_refreshed={} git_errors={}",
+                "index {label}: complete added={} removed={} skipped={} git_refreshed={} git_errors={}",
                 summary.added,
                 summary.removed,
                 summary.skipped,
@@ -306,7 +291,7 @@ pub fn run_full_connection(conn: &Connection, config: &Config) -> Result<IndexSu
             Err(WorkpotError::IndexCapExceeded { projected, max })
         }
         Err(e) => {
-            if let Err(audit_err) = record_error_run(conn, started_at, &e) {
+            if let Err(audit_err) = record_error(&e) {
                 log::warn!("failed to record error audit row: {audit_err}");
             }
             Err(e)
@@ -314,13 +299,28 @@ pub fn run_full_connection(conn: &Connection, config: &Config) -> Result<IndexSu
     }
 }
 
-fn run_full_inner(conn: &Connection, config: &Config, _started_at: i64) -> Result<IndexSummary> {
+fn run_index_pipeline(
+    discover: impl FnOnce() -> Result<DiscoveryPlan>,
+    merge: impl FnOnce(DiscoveryPlan) -> Result<IndexSummary>,
+    git_paths: impl FnOnce() -> Result<Vec<PathBuf>>,
+    persist: impl FnOnce(
+        &mut IndexSummary,
+        Vec<crate::services::git_state::GitRefreshResult>,
+    ) -> Result<()>,
+) -> Result<IndexSummary> {
     test_index_delay();
+    let plan = discover()?;
+    let mut summary = merge(plan)?;
+    let all_paths = git_paths()?;
+    let git_results = refresh_git_states(all_paths);
+    test_index_delay();
+    persist(&mut summary, git_results)?;
+    Ok(summary)
+}
 
-    let plan = discover_phase(conn, config)?;
-    let mut summary = merge_catalog_phase(conn, config, plan)?;
-
-    let all_paths = index_git_paths(conn)?;
+fn refresh_git_states(
+    all_paths: Vec<PathBuf>,
+) -> Vec<crate::services::git_state::GitRefreshResult> {
     log::debug!("index git second pass: start repos={}", all_paths.len());
     let git_pass_started = std::time::Instant::now();
     let git_results = git_state::refresh_all(all_paths);
@@ -328,10 +328,17 @@ fn run_full_inner(conn: &Connection, config: &Config, _started_at: i64) -> Resul
         "index git second pass: refresh_all elapsed_ms={}",
         git_pass_started.elapsed().as_millis()
     );
+    git_results
+}
 
-    test_index_delay();
-    persist_index_git_phase(conn, &mut summary, git_results)?;
-    Ok(summary)
+fn try_resolve_git_common_dir(path: &Path, path_key: &str) -> std::result::Result<String, ()> {
+    match resolve_git_common_dir(path) {
+        Ok(common) => Ok(common.display().to_string()),
+        Err(_) => {
+            log::warn!("skip {path_key}: git unavailable");
+            Err(())
+        }
+    }
 }
 
 fn canonical_watch_roots(config: &Config) -> Vec<PathBuf> {
@@ -367,16 +374,14 @@ fn backfill_empty_git_common_dir(
         if !catalog::is_git_worktree(path) && !catalog::is_bare_repo(path) {
             continue;
         }
-        match resolve_git_common_dir(path) {
-            Ok(common) => {
-                let common_str = common.display().to_string();
+        match try_resolve_git_common_dir(path, &path_key) {
+            Ok(common_str) => {
                 conn.execute(
                     "UPDATE repos SET git_common_dir = ?1 WHERE path = ?2",
                     params![common_str, path_key],
                 )?;
             }
-            Err(_) => {
-                log::warn!("skip backfill {}: git unavailable", path.display());
+            Err(()) => {
                 skipped += 1;
                 changelog.push(ChangeEntry {
                     path: path_key,

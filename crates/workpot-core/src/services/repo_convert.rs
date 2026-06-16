@@ -84,20 +84,11 @@ pub fn run_preflight(path: &Path) -> Result<PreflightResult> {
         .canonicalize()
         .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?;
 
-    let state = git::open_and_query(&canonical)?;
-    if state.branch.as_deref() == Some(BRANCH_UNBORN) {
-        return Ok(PreflightResult::UnbornBranch);
+    if let Some(result) = branch_layout_preflight(&canonical)? {
+        return Ok(result);
     }
 
-    if !is_bare_repo(&canonical) && git::is_detached_head(&canonical)? {
-        return Ok(PreflightResult::DetachedHead);
-    }
-
-    let worktree_paths = if is_bare_repo(&canonical) {
-        git::list_worktree_paths(&canonical)?
-    } else {
-        vec![canonical.clone()]
-    };
+    let worktree_paths = worktree_paths_for_preflight(&canonical)?;
 
     if let Some(result) = dirty_worktree_in(&worktree_paths)? {
         return Ok(result);
@@ -112,6 +103,25 @@ pub fn run_preflight(path: &Path) -> Result<PreflightResult> {
     }
 
     Ok(PreflightResult::Ready)
+}
+
+fn branch_layout_preflight(canonical: &Path) -> Result<Option<PreflightResult>> {
+    let state = git::open_and_query(canonical)?;
+    if state.branch.as_deref() == Some(BRANCH_UNBORN) {
+        return Ok(Some(PreflightResult::UnbornBranch));
+    }
+    if !is_bare_repo(canonical) && git::is_detached_head(canonical)? {
+        return Ok(Some(PreflightResult::DetachedHead));
+    }
+    Ok(None)
+}
+
+fn worktree_paths_for_preflight(canonical: &Path) -> Result<Vec<PathBuf>> {
+    if is_bare_repo(canonical) {
+        git::list_worktree_paths(canonical)
+    } else {
+        Ok(vec![canonical.to_path_buf()])
+    }
 }
 
 fn dirty_worktree_in(paths: &[PathBuf]) -> Result<Option<PreflightResult>> {
@@ -419,22 +429,7 @@ fn prepare_conversion(
         )));
     }
 
-    let currently_bare = is_bare_repo(&canonical);
-    match (target, currently_bare) {
-        (ConvertTarget::Bare, true) => {
-            return Err(conversion_blocked(&PreflightResult::WrongLayout {
-                current: "bare",
-                requested: "bare",
-            }));
-        }
-        (ConvertTarget::Local, false) => {
-            return Err(conversion_blocked(&PreflightResult::WrongLayout {
-                current: "local",
-                requested: "local",
-            }));
-        }
-        _ => {}
-    }
+    assert_convertible_layout(target, is_bare_repo(&canonical))?;
 
     let record = catalog::get_repo_by_path(conn, &path_key).map_err(|e| match e {
         WorkpotError::NotFound(_) => conversion_blocked(&PreflightResult::NotInCatalog),
@@ -448,28 +443,7 @@ fn prepare_conversion(
 
     let resolved_paths = resolve_target_paths(config, &record, &canonical, target)?;
     check_target_paths_exist(&resolved_paths, &canonical)?;
-
-    if config.migration.delete_original
-        && let Some(untracked_path) = git::first_untracked_worktree(&canonical)?
-    {
-        return Err(WorkpotError::ConversionPreflight(format!(
-            "untracked files at {}; delete_original=true would destroy them",
-            untracked_path.display()
-        )));
-    }
-
-    let temp_path = resolved_paths
-        .iter()
-        .find(|(label, _)| label == "temp")
-        .map(|(_, p)| p.clone())
-        .ok_or_else(|| WorkpotError::ConversionFailed("missing temp path".into()))?;
-
-    if temp_path.exists() {
-        return Err(WorkpotError::ConversionPreflight(format!(
-            "temp path already exists: {}; remove it first",
-            temp_path.display()
-        )));
-    }
+    assert_safe_to_convert(config, &canonical, &resolved_paths)?;
 
     if dry_run {
         return Ok(PrepareOutcome::DryRun {
@@ -477,6 +451,8 @@ fn prepare_conversion(
             resolved_paths,
         });
     }
+
+    let temp_path = resolved_path_by_label(&resolved_paths, "temp")?;
 
     let (new_path, new_name, branch_for_bare) =
         conversion_targets(config, &record, &canonical, target, &parent_dir)?;
@@ -733,25 +709,11 @@ fn resolve_target_paths(
 
     match target {
         ConvertTarget::Bare => {
-            let branch = git::open_and_query(canonical)?
-                .branch
-                .ok_or_else(|| WorkpotError::ConversionPreflight("no current branch".into()))?;
-            let bare_rel = resolve_template(&config.migration.bare_repo_template, &project, "");
-            let worktree_name =
-                worktree_name_for_branch(&config.migration, &project, &branch, parent_dir);
-            let wt_rel = resolve_template(
-                &config.migration.worktree_template,
-                &project,
-                &worktree_name,
-            );
-            let bare_git_path = parent_dir.join(&bare_rel);
-            let worktree_path = parent_dir.join(&wt_rel);
-            validate_resolved_path(&bare_git_path, parent_dir)?;
-            validate_resolved_path(&worktree_path, parent_dir)?;
+            let layout = resolve_bare_layout(config, &project, canonical, parent_dir)?;
             Ok(vec![
                 ("temp".into(), temp_path),
-                ("bare_repo".into(), bare_git_path),
-                ("worktree".into(), worktree_path),
+                ("bare_repo".into(), layout.bare_git_path),
+                ("worktree".into(), layout.worktree_path),
             ])
         }
         ConvertTarget::Local => {
@@ -765,6 +727,81 @@ fn resolve_target_paths(
     }
 }
 
+struct BareLayoutPaths {
+    bare_git_path: PathBuf,
+    worktree_path: PathBuf,
+    branch: String,
+}
+
+fn resolve_bare_layout(
+    config: &Config,
+    project: &str,
+    canonical: &Path,
+    parent_dir: &Path,
+) -> Result<BareLayoutPaths> {
+    let branch = git::open_and_query(canonical)?
+        .branch
+        .ok_or_else(|| WorkpotError::ConversionPreflight("no current branch".into()))?;
+    let bare_rel = resolve_template(&config.migration.bare_repo_template, project, "");
+    let worktree_name = worktree_name_for_branch(&config.migration, project, &branch, parent_dir);
+    let wt_rel = resolve_template(&config.migration.worktree_template, project, &worktree_name);
+    let bare_git_path = parent_dir.join(&bare_rel);
+    let worktree_path = parent_dir.join(&wt_rel);
+    validate_resolved_path(&bare_git_path, parent_dir)?;
+    validate_resolved_path(&worktree_path, parent_dir)?;
+    Ok(BareLayoutPaths {
+        bare_git_path,
+        worktree_path,
+        branch,
+    })
+}
+
+fn assert_convertible_layout(target: ConvertTarget, currently_bare: bool) -> Result<()> {
+    match (target, currently_bare) {
+        (ConvertTarget::Bare, true) => Err(conversion_blocked(&PreflightResult::WrongLayout {
+            current: "bare",
+            requested: "bare",
+        })),
+        (ConvertTarget::Local, false) => Err(conversion_blocked(&PreflightResult::WrongLayout {
+            current: "local",
+            requested: "local",
+        })),
+        _ => Ok(()),
+    }
+}
+
+fn resolved_path_by_label(resolved_paths: &[(String, PathBuf)], label: &str) -> Result<PathBuf> {
+    resolved_paths
+        .iter()
+        .find(|(entry_label, _)| entry_label == label)
+        .map(|(_, path)| path.clone())
+        .ok_or_else(|| WorkpotError::ConversionFailed(format!("missing {label} path")))
+}
+
+fn assert_safe_to_convert(
+    config: &Config,
+    canonical: &Path,
+    resolved_paths: &[(String, PathBuf)],
+) -> Result<()> {
+    if config.migration.delete_original
+        && let Some(untracked_path) = git::first_untracked_worktree(canonical)?
+    {
+        return Err(WorkpotError::ConversionPreflight(format!(
+            "untracked files at {}; delete_original=true would destroy them",
+            untracked_path.display()
+        )));
+    }
+
+    let temp_path = resolved_path_by_label(resolved_paths, "temp")?;
+    if temp_path.exists() {
+        return Err(WorkpotError::ConversionPreflight(format!(
+            "temp path already exists: {}; remove it first",
+            temp_path.display()
+        )));
+    }
+    Ok(())
+}
+
 fn conversion_targets(
     config: &Config,
     record: &RepoRecord,
@@ -775,33 +812,19 @@ fn conversion_targets(
     let project = resolve_project_name(&config.migration, record);
     match target {
         ConvertTarget::Bare => {
-            let branch = git::open_and_query(canonical)?
-                .branch
-                .ok_or_else(|| WorkpotError::ConversionPreflight("no current branch".into()))?;
-            let bare_rel = resolve_template(&config.migration.bare_repo_template, &project, "");
-            let worktree_name =
-                worktree_name_for_branch(&config.migration, &project, &branch, parent_dir);
-            let wt_rel = resolve_template(
-                &config.migration.worktree_template,
-                &project,
-                &worktree_name,
-            );
-            let bare_git_path = parent_dir.join(&bare_rel);
-            validate_resolved_path(&bare_git_path, parent_dir)?;
-            let worktree_path = parent_dir.join(&wt_rel);
-            validate_resolved_path(&worktree_path, parent_dir)?;
-            let new_name = bare_git_path
+            let layout = resolve_bare_layout(config, &project, canonical, parent_dir)?;
+            let new_name = layout
+                .bare_git_path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("bare.git")
                 .to_string();
-            Ok((bare_git_path, new_name, Some(branch)))
+            Ok((layout.bare_git_path, new_name, Some(layout.branch)))
         }
         ConvertTarget::Local => {
             let target_path = parent_dir.join(&project);
             validate_resolved_path(&target_path, parent_dir)?;
-            let new_name = project.clone();
-            Ok((target_path, new_name, None))
+            Ok((target_path, project, None))
         }
     }
 }

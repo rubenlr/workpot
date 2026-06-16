@@ -7,6 +7,38 @@ use rusqlite::{Connection, Row, params};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+const REPO_ROW_SELECT: &str = "SELECT path, name, registered_at, source, git_common_dir,
+        branch, is_dirty, ahead, behind, git_refreshed_at, git_state_error, last_opened_at,
+        pinned, pin_order, notes, alias";
+
+fn new_repo_record(
+    path: PathBuf,
+    name: String,
+    registered_at: i64,
+    source: &str,
+    git_common_dir: String,
+) -> RepoRecord {
+    RepoRecord {
+        path,
+        name,
+        registered_at,
+        source: source.to_string(),
+        git_common_dir,
+        branch: None,
+        is_dirty: None,
+        ahead: None,
+        behind: None,
+        git_refreshed_at: None,
+        git_state_error: None,
+        last_opened_at: None,
+        pinned: false,
+        pin_order: None,
+        notes: None,
+        tags: vec![],
+        alias: None,
+    }
+}
+
 fn repo_record_from_row(row: &Row<'_>) -> rusqlite::Result<RepoRecord> {
     let path: String = row.get(0)?;
     let pinned: i64 = row.get(12)?;
@@ -82,25 +114,13 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
     );
 
     match rows {
-        Ok(_) => Ok(RepoRecord {
-            path: canonical,
+        Ok(_) => Ok(new_repo_record(
+            canonical,
             name,
             registered_at,
-            source: SOURCE_MANUAL.to_string(),
+            SOURCE_MANUAL,
             git_common_dir,
-            branch: None,
-            is_dirty: None,
-            ahead: None,
-            behind: None,
-            git_refreshed_at: None,
-            git_state_error: None,
-            last_opened_at: None,
-            pinned: false,
-            pin_order: None,
-            notes: None,
-            tags: vec![],
-            alias: None,
-        }),
+        )),
         Err(rusqlite::Error::SqliteFailure(err, _))
             if err.code == rusqlite::ErrorCode::ConstraintViolation =>
         {
@@ -111,12 +131,9 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
 }
 
 pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
-    let mut stmt = conn.prepare(
-        "SELECT path, name, registered_at, source, git_common_dir,
-                branch, is_dirty, ahead, behind, git_refreshed_at, git_state_error, last_opened_at,
-                pinned, pin_order, notes, alias
-         FROM repos WHERE excluded = 0 ORDER BY registered_at, path",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "{REPO_ROW_SELECT} FROM repos WHERE excluded = 0 ORDER BY registered_at, path"
+    ))?;
 
     let mut order: Vec<String> = Vec::new();
     let mut by_path: HashMap<String, RepoRecord> = HashMap::new();
@@ -158,10 +175,7 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
 /// Look up a registered repo by its SQLite path key.
 pub fn get_repo_by_path(conn: &Connection, path_key: &str) -> Result<RepoRecord> {
     conn.query_row(
-        "SELECT path, name, registered_at, source, git_common_dir,
-                branch, is_dirty, ahead, behind, git_refreshed_at, git_state_error, last_opened_at,
-                pinned, pin_order, notes, alias
-         FROM repos WHERE path = ?1 AND excluded = 0",
+        &format!("{REPO_ROW_SELECT} FROM repos WHERE path = ?1 AND excluded = 0"),
         params![path_key],
         repo_record_from_row,
     )

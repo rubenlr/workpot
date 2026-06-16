@@ -221,6 +221,14 @@ impl Default for Config {
 impl Config {
     /// Reject pathological limit values (D-22, D-23).
     pub fn validate(&self) -> Result<(), String> {
+        self.validate_index_limits()?;
+        self.validate_shell_commands()?;
+        self.validate_tray_settings()?;
+        self.migration.validate()?;
+        Ok(())
+    }
+
+    fn validate_index_limits(&self) -> Result<(), String> {
         if self.limits.max_watch_roots > HARD_MAX_WATCH_ROOTS {
             return Err(format!(
                 "max_watch_roots {} exceeds hard max {HARD_MAX_WATCH_ROOTS}",
@@ -240,10 +248,18 @@ impl Config {
                 self.limits.max_watch_roots
             ));
         }
-        validate_u32_range("max_visible_rows", self.max_visible_rows, 1, 100)?;
+        Ok(())
+    }
+
+    fn validate_shell_commands(&self) -> Result<(), String> {
         validate_shell_cmd("launch_cmd", &self.launch_cmd, &["{path}"])?;
         validate_shell_cmd("push_cmd", &self.push_cmd, &["{path}", "{branch}"])?;
         validate_shell_cmd("pull_cmd", &self.pull_cmd, &["{path}", "{branch}"])?;
+        Ok(())
+    }
+
+    fn validate_tray_settings(&self) -> Result<(), String> {
+        validate_u32_range("max_visible_rows", self.max_visible_rows, 1, 100)?;
         validate_u32_range("max_pinned", self.max_pinned, 1, 20)?;
         validate_u32_range("max_recent_days", self.max_recent_days, 1, 365)?;
         if self.min_recent_count > self.max_pinned {
@@ -253,7 +269,6 @@ impl Config {
             ));
         }
         validate_u32_range("stale_dirty_days", self.stale_dirty_days, 1, 365)?;
-        self.migration.validate()?;
         Ok(())
     }
 }
