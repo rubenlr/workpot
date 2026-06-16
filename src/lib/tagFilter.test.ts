@@ -29,6 +29,8 @@ function repo(
     notes: partial.notes ?? null,
     tags: partial.tags ?? [],
     branches: partial.branches ?? [],
+    is_bare: partial.is_bare ?? false,
+    convert_to: partial.convert_to ?? null,
   };
 }
 

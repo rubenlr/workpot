@@ -5,7 +5,12 @@
     TRAY_NO_MATCH_MESSAGE,
   } from "$lib/tray/logic/handlers/constants";
   import type { SectionedRepos } from "$lib/tray/logic/list/sort";
-  import type { ActiveSync, RepoDto, SyncDirection } from "$lib/types";
+  import type {
+    ActiveConvert,
+    ActiveSync,
+    RepoDto,
+    SyncDirection,
+  } from "$lib/types";
   import TrayListPlaceholder from "./TrayListPlaceholder.svelte";
   import TrayRepoList from "./TrayRepoList.svelte";
   import type { toPinOrderPayload } from "$lib/tray/logic/list/pinOrder";
@@ -23,6 +28,8 @@
     onDetail,
     activeSync = null,
     onSync,
+    activeConvert = null,
+    onConvert,
   }: {
     listView: TrayListView;
     emptyListMessage?: string;
@@ -42,6 +49,8 @@
       branch: string,
       direction: SyncDirection,
     ) => void;
+    activeConvert?: ActiveConvert | null;
+    onConvert?: (repoPath: string) => void;
   } = $props();
 </script>
 
@@ -58,6 +67,8 @@
     {onSelectRow}
     {activeSync}
     {onSync}
+    {activeConvert}
+    {onConvert}
     {onOpen}
     {onDetail}
   />

@@ -64,6 +64,25 @@ fn default_project_name_source() -> ProjectNameSource {
     ProjectNameSource::FolderName
 }
 
+fn default_allow_conversion_to_bare_repo() -> bool {
+    false
+}
+
+fn default_allow_conversion_to_local_repo() -> bool {
+    false
+}
+
+fn default_repo_layout() -> RepoLayout {
+    RepoLayout::Local
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RepoLayout {
+    Bare,
+    Local,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectNameSource {
@@ -83,6 +102,12 @@ pub struct MigrationConfig {
     pub worktree_template: String,
     #[serde(default = "default_project_name_source")]
     pub project_name_source: ProjectNameSource,
+    #[serde(default = "default_allow_conversion_to_bare_repo")]
+    pub allow_conversion_to_bare_repo: bool,
+    #[serde(default = "default_allow_conversion_to_local_repo")]
+    pub allow_conversion_to_local_repo: bool,
+    #[serde(default = "default_repo_layout")]
+    pub default_repo_layout: RepoLayout,
 }
 
 impl Default for MigrationConfig {
@@ -93,6 +118,9 @@ impl Default for MigrationConfig {
             bare_repo_template: default_bare_repo_template(),
             worktree_template: default_worktree_template(),
             project_name_source: default_project_name_source(),
+            allow_conversion_to_bare_repo: default_allow_conversion_to_bare_repo(),
+            allow_conversion_to_local_repo: default_allow_conversion_to_local_repo(),
+            default_repo_layout: default_repo_layout(),
         }
     }
 }

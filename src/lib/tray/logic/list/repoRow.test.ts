@@ -19,6 +19,8 @@ function repo(partial: Partial<RepoDto> & Pick<RepoDto, "name">): RepoDto {
     notes: null,
     tags: [],
     branches: [],
+    is_bare: false,
+    convert_to: null,
   };
 }
 

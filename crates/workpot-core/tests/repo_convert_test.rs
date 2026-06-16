@@ -13,7 +13,7 @@ use workpot_core::services::repo_convert::{
     self, ConvertResult, ConvertTarget, PreflightResult, catalog_path_swap,
 };
 
-fn normal_repo_clean_synced(parent: &Path) -> PathBuf {
+fn local_repo_clean_synced(parent: &Path) -> PathBuf {
     let bare_path = parent.join("remote.git");
     fs::create_dir_all(&bare_path).expect("bare dir");
     let status = common::git_cmd()
@@ -47,8 +47,8 @@ fn normal_repo_clean_synced(parent: &Path) -> PathBuf {
     clone_path
 }
 
-fn dirty_normal_repo(parent: &Path) -> PathBuf {
-    let path = normal_repo_clean_synced(parent);
+fn dirty_local_repo(parent: &Path) -> PathBuf {
+    let path = local_repo_clean_synced(parent);
     let marker = path.join("README");
     fs::write(&marker, "tracked\n").expect("write");
     let status = common::git_cmd()
@@ -67,8 +67,8 @@ fn dirty_normal_repo(parent: &Path) -> PathBuf {
     path
 }
 
-fn unpushed_normal_repo(parent: &Path) -> PathBuf {
-    let path = normal_repo_clean_synced(parent);
+fn unpushed_local_repo(parent: &Path) -> PathBuf {
+    let path = local_repo_clean_synced(parent);
     let status = common::git_cmd()
         .args(["commit", "--allow-empty", "-m", "local-only", "-q"])
         .current_dir(&path)
@@ -78,8 +78,8 @@ fn unpushed_normal_repo(parent: &Path) -> PathBuf {
     path
 }
 
-fn stash_normal_repo(parent: &Path) -> PathBuf {
-    let path = normal_repo_clean_synced(parent);
+fn stash_local_repo(parent: &Path) -> PathBuf {
+    let path = local_repo_clean_synced(parent);
     let marker = path.join("README");
     fs::write(&marker, "tracked\n").expect("write");
     let status = common::git_cmd()
@@ -110,7 +110,7 @@ fn stash_normal_repo(parent: &Path) -> PathBuf {
     path
 }
 
-fn unborn_normal_repo(parent: &Path) -> PathBuf {
+fn unborn_local_repo(parent: &Path) -> PathBuf {
     let path = parent.join("unborn");
     fs::create_dir_all(&path).expect("mkdir");
     let status = common::git_cmd()
@@ -130,7 +130,7 @@ fn unborn_normal_repo(parent: &Path) -> PathBuf {
     path
 }
 
-fn no_upstream_normal_repo(parent: &Path) -> PathBuf {
+fn no_upstream_local_repo(parent: &Path) -> PathBuf {
     let path = parent.join("no-upstream");
     fs::create_dir_all(&path).expect("mkdir");
     let status = common::git_cmd()
@@ -319,7 +319,7 @@ fn migration_config_serde_round_trip() {
 #[test]
 fn preflight_blocks_dirty() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = dirty_normal_repo(dir.path());
+    let path = dirty_local_repo(dir.path());
     let result = repo_convert::run_preflight(&path).expect("preflight");
     assert!(matches!(result, PreflightResult::DirtyWorktree { .. }));
 }
@@ -327,7 +327,7 @@ fn preflight_blocks_dirty() {
 #[test]
 fn preflight_blocks_detached_head() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = normal_repo_clean_synced(dir.path());
+    let path = local_repo_clean_synced(dir.path());
     let status = common::git_cmd()
         .args(["checkout", "--detach", "HEAD"])
         .current_dir(&path)
@@ -341,7 +341,7 @@ fn preflight_blocks_detached_head() {
 #[test]
 fn preflight_blocks_unborn() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = unborn_normal_repo(dir.path());
+    let path = unborn_local_repo(dir.path());
     let result = repo_convert::run_preflight(&path).expect("preflight");
     assert_eq!(result, PreflightResult::UnbornBranch);
 }
@@ -349,7 +349,7 @@ fn preflight_blocks_unborn() {
 #[test]
 fn preflight_blocks_no_upstream() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = no_upstream_normal_repo(dir.path());
+    let path = no_upstream_local_repo(dir.path());
     let result = repo_convert::run_preflight(&path).expect("preflight");
     assert!(matches!(result, PreflightResult::NoUpstream { .. }));
 }
@@ -357,7 +357,7 @@ fn preflight_blocks_no_upstream() {
 #[test]
 fn preflight_blocks_unpushed() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = unpushed_normal_repo(dir.path());
+    let path = unpushed_local_repo(dir.path());
     let result = repo_convert::run_preflight(&path).expect("preflight");
     assert!(matches!(result, PreflightResult::UnpushedCommits { .. }));
 }
@@ -365,7 +365,7 @@ fn preflight_blocks_unpushed() {
 #[test]
 fn preflight_blocks_stash() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = stash_normal_repo(dir.path());
+    let path = stash_local_repo(dir.path());
     let result = repo_convert::run_preflight(&path).expect("preflight");
     assert_eq!(result, PreflightResult::HasStash);
 }
@@ -373,7 +373,7 @@ fn preflight_blocks_stash() {
 #[test]
 fn preflight_passes_clean_synced() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = normal_repo_clean_synced(dir.path());
+    let path = local_repo_clean_synced(dir.path());
     let result = repo_convert::run_preflight(&path).expect("preflight");
     assert_eq!(result, PreflightResult::Ready);
 }
@@ -399,7 +399,7 @@ fn preflight_bare_passes_clean_synced() {
 fn catalog_path_swap_preserves_tags() {
     let dir = tempfile::tempdir().expect("tempdir");
     let ctx = test_ctx(dir.path());
-    let path = normal_repo_clean_synced(dir.path());
+    let path = local_repo_clean_synced(dir.path());
     ctx.register_manual(&path).expect("register");
     let old_key = path.canonicalize().expect("canon").display().to_string();
     ctx.set_tags(&old_key, &["keep-me"]).expect("set tags");
@@ -434,7 +434,7 @@ fn catalog_path_swap_preserves_tags() {
 fn convert_normal_to_bare() {
     let dir = tempfile::tempdir().expect("tempdir");
     let ctx = test_ctx(dir.path());
-    let path = normal_repo_clean_synced(dir.path());
+    let path = local_repo_clean_synced(dir.path());
     let old_key = path.canonicalize().expect("canon").display().to_string();
     ctx.register_manual(&path).expect("register");
     ctx.set_tags(&old_key, &["migrated"]).expect("tag");
@@ -483,7 +483,7 @@ fn convert_bare_to_normal() {
     ctx.register_manual(&bare_path).expect("register");
 
     let result = ctx
-        .convert_repo(&bare_path, ConvertTarget::Normal, false)
+        .convert_repo(&bare_path, ConvertTarget::Local, false)
         .expect("convert");
     let ConvertResult::Converted { from, to } = result else {
         panic!("expected Converted");
@@ -537,7 +537,7 @@ launch_cmd = "/usr/bin/true {path}"
     )
     .expect("write config");
     let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
-    let path = normal_repo_clean_synced(dir.path());
+    let path = local_repo_clean_synced(dir.path());
     ctx.register_manual(&path).expect("register");
 
     let result = ctx
@@ -652,7 +652,7 @@ bare_repo_template = "{project}/../../outside/bare.git"
 worktree_template = "{project}/wtrees/{worktree}"
 "#,
     );
-    let path = normal_repo_clean_synced(dir.path());
+    let path = local_repo_clean_synced(dir.path());
     ctx.register_manual(&path).expect("register");
 
     let err = ctx
@@ -670,7 +670,7 @@ fn dry_run_rejects_existing_temp_path() {
 
     let dir = tempfile::tempdir().expect("tempdir");
     let ctx = test_ctx(dir.path());
-    let path = normal_repo_clean_synced(dir.path());
+    let path = local_repo_clean_synced(dir.path());
     ctx.register_manual(&path).expect("register");
 
     let temp_path = path.with_file_name(format!(
@@ -701,7 +701,7 @@ fn convert_blocks_untracked_when_delete_original() {
 delete_original = true
 "#,
     );
-    let path = normal_repo_clean_synced(dir.path());
+    let path = local_repo_clean_synced(dir.path());
     ctx.register_manual(&path).expect("register");
     fs::write(path.join("untracked.txt"), "orphan data\n").expect("untracked");
 

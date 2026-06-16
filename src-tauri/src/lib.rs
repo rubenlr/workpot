@@ -63,6 +63,7 @@ pub fn run() {
         .manage(commands::ContextMenuRepo(Arc::new(Mutex::new(None))))
         .manage(commands::GitRefreshGuard::new())
         .manage(commands::RepoSyncGuard::new())
+        .manage(commands::RepoConvertGuard::new())
         .setup(|app| {
             let state = AppState::open().map_err(|e| e.to_string())?;
             app.manage(Arc::new(state));
@@ -91,6 +92,8 @@ pub fn run() {
             commands::checkout_repo_branch,
             commands::get_repo_sync_status,
             commands::sync_repo_branch,
+            commands::get_repo_convert_status,
+            commands::convert_repo,
             commands::open_in_cursor,
             commands::set_tags,
             commands::add_tag,

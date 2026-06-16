@@ -2,7 +2,12 @@
   import DetailPane from "$lib/tray/repo-detail/DetailPane.svelte";
   import type { TrayListView } from "$lib/tray/logic/list/listState";
   import type { SectionedRepos } from "$lib/tray/logic/list/sort";
-  import type { ActiveSync, RepoDto, SyncDirection } from "$lib/types";
+  import type {
+    ActiveConvert,
+    ActiveSync,
+    RepoDto,
+    SyncDirection,
+  } from "$lib/types";
   import type { toPinOrderPayload } from "$lib/tray/logic/list/pinOrder";
   import { observePanelHeight } from "$lib/tray/logic/layout/observePanelHeight";
   import TrayErrorBanner from "./TrayErrorBanner.svelte";
@@ -44,6 +49,8 @@
     onDetailMutated,
     activeSync = null,
     onSync,
+    activeConvert = null,
+    onConvert,
     branchRevision = 0,
   }: {
     listMaxHeightPx: number;
@@ -84,6 +91,8 @@
       branch: string,
       direction: SyncDirection,
     ) => void;
+    activeConvert?: ActiveConvert | null;
+    onConvert?: (repoPath: string) => void;
     branchRevision?: number;
   } = $props();
 </script>
@@ -142,6 +151,8 @@
         {onSelectRow}
         {activeSync}
         {onSync}
+        {activeConvert}
+        {onConvert}
         {onOpen}
         {onDetail}
       />

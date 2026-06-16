@@ -13,7 +13,7 @@ use std::process::Command;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConvertTarget {
     Bare,
-    Normal,
+    Local,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -356,7 +356,7 @@ fn health_check_bare(bare_path: &Path, worktree_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn health_check_normal(path: &Path) -> Result<()> {
+fn health_check_local(path: &Path) -> Result<()> {
     let status = git_cmd_clean()
         .args(["rev-parse", "HEAD"])
         .current_dir(path)
@@ -427,10 +427,10 @@ fn prepare_conversion(
                 requested: "bare",
             }));
         }
-        (ConvertTarget::Normal, false) => {
+        (ConvertTarget::Local, false) => {
             return Err(conversion_blocked(&PreflightResult::WrongLayout {
-                current: "normal",
-                requested: "normal",
+                current: "local",
+                requested: "local",
             }));
         }
         _ => {}
@@ -576,7 +576,7 @@ fn clone_bare_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String, 
     Ok((bare_git_path, prepared.new_name.clone(), gcd))
 }
 
-fn clone_normal_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String, String)> {
+fn clone_local_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String, String)> {
     let target_path = prepared.new_path.clone();
     let default_branch = git::detect_default_branch_for_path(&prepared.temp_path)?;
     let status = git_cmd_clean()
@@ -594,10 +594,10 @@ fn clone_normal_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String
     if !status.success() {
         return Err(WorkpotError::ConversionFailed("clone failed".into()));
     }
-    if let Err(e) = health_check_normal(&target_path) {
+    if let Err(e) = health_check_local(&target_path) {
         if let Err(cleanup) = std::fs::remove_dir_all(&target_path) {
             log::warn!(
-                "failed to remove partial normal checkout {} after health check failure: {cleanup}",
+                "failed to remove partial local checkout {} after health check failure: {cleanup}",
                 target_path.display()
             );
         }
@@ -612,7 +612,7 @@ fn clone_normal_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String
 fn clone_for_target(prepared: &PreparedConversion) -> Result<(PathBuf, String, String)> {
     match prepared.target {
         ConvertTarget::Bare => clone_bare_layout(prepared),
-        ConvertTarget::Normal => clone_normal_layout(prepared),
+        ConvertTarget::Local => clone_local_layout(prepared),
     }
 }
 
@@ -754,7 +754,7 @@ fn resolve_target_paths(
                 ("worktree".into(), worktree_path),
             ])
         }
-        ConvertTarget::Normal => {
+        ConvertTarget::Local => {
             let target_path = parent_dir.join(&project);
             validate_resolved_path(&target_path, parent_dir)?;
             Ok(vec![
@@ -797,7 +797,7 @@ fn conversion_targets(
                 .to_string();
             Ok((bare_git_path, new_name, Some(branch)))
         }
-        ConvertTarget::Normal => {
+        ConvertTarget::Local => {
             let target_path = parent_dir.join(&project);
             validate_resolved_path(&target_path, parent_dir)?;
             let new_name = project.clone();

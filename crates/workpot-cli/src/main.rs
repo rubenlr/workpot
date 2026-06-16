@@ -88,7 +88,7 @@ enum SettingsCommands {
 #[derive(Clone, Debug, clap::ValueEnum)]
 enum CliConvertTarget {
     Bare,
-    Normal,
+    Local,
 }
 
 #[derive(Subcommand)]
@@ -99,11 +99,11 @@ enum RepoCommands {
     List,
     /// Remove a registered repository.
     Remove { path: PathBuf },
-    /// Migrate a repository between normal checkout and bare+worktree layouts.
+    /// Migrate a repository between local checkout and bare+worktree layouts.
     Convert {
         /// Absolute or relative path to the repository to convert.
         path: PathBuf,
-        /// Target layout: bare or normal.
+        /// Target layout: bare or local.
         #[arg(long)]
         to: CliConvertTarget,
         /// Print resolved target paths and preflight gate results without making any changes.
@@ -343,7 +343,7 @@ fn run_repo(sub: RepoCommands) -> anyhow::Result<()> {
             let ctx = AppContext::open().context("failed to open workpot")?;
             let core_target = match to {
                 CliConvertTarget::Bare => ConvertTarget::Bare,
-                CliConvertTarget::Normal => ConvertTarget::Normal,
+                CliConvertTarget::Local => ConvertTarget::Local,
             };
             match ctx
                 .convert_repo(&path, core_target, dry_run)
@@ -628,7 +628,7 @@ mod cli_parse_tests {
                 "convert",
                 "/tmp/r",
                 "--to",
-                "normal",
+                "local",
                 "--dry-run"
             ])
             .unwrap()

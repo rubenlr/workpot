@@ -1187,7 +1187,7 @@ fn cli_parse_convert_help() {
         .args(["repo", "convert", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("bare").and(predicate::str::contains("normal")));
+        .stdout(predicate::str::contains("bare").and(predicate::str::contains("local")));
 }
 
 #[test]

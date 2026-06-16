@@ -53,3 +53,13 @@ commands.allow = ["get_repo_sync_status"]
 identifier = "allow-sync-repo-branch"
 description = "Allows sync_repo_branch IPC."
 commands.allow = ["sync_repo_branch"]
+
+[[permission]]
+identifier = "allow-get-repo-convert-status"
+description = "Allows get_repo_convert_status IPC."
+commands.allow = ["get_repo_convert_status"]
+
+[[permission]]
+identifier = "allow-convert-repo"
+description = "Allows convert_repo IPC."
+commands.allow = ["convert_repo"]

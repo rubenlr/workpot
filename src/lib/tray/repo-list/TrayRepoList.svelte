@@ -7,7 +7,12 @@
     toPinOrderPayload,
   } from "$lib/tray/logic/list/pinOrder";
   import type { SectionedRepos } from "$lib/tray/logic/list/sort";
-  import type { ActiveSync, RepoDto, SyncDirection } from "$lib/types";
+  import type {
+    ActiveConvert,
+    ActiveSync,
+    RepoDto,
+    SyncDirection,
+  } from "$lib/types";
   import { SECTION_META } from "$lib/tray/logic/handlers/constants";
 
   let {
@@ -20,6 +25,8 @@
     onDetail,
     activeSync = null,
     onSync,
+    activeConvert = null,
+    onConvert,
   }: {
     sectionedRepos: SectionedRepos;
     flatIndexByPath: Map<string, number>;
@@ -36,6 +43,8 @@
       branch: string,
       direction: SyncDirection,
     ) => void;
+    activeConvert?: ActiveConvert | null;
+    onConvert?: (repoPath: string) => void;
   } = $props();
 
   let hoveredRowIndex = $state<number | null>(null);
@@ -143,6 +152,8 @@
               }}
               {activeSync}
               {onSync}
+              {activeConvert}
+              {onConvert}
               onDetail={() => {
                 onSelectRow(idx);
                 onDetail(repo, idx);

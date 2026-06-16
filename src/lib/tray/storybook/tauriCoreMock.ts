@@ -64,6 +64,8 @@ export async function invoke(cmd: string, _args?: unknown): Promise<unknown> {
     case "checkout_repo_branch":
     case "get_repo_sync_status":
     case "sync_repo_branch":
+    case "get_repo_convert_status":
+    case "convert_repo":
       return undefined;
     default:
       return undefined;

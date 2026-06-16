@@ -38,6 +38,9 @@ describe("subscribeTrayPanelEvents", () => {
     const onRepoSyncStarted = vi.fn();
     const onRepoSyncComplete = vi.fn();
     const onRepoSyncFailed = vi.fn();
+    const onRepoConvertStarted = vi.fn();
+    const onRepoConvertComplete = vi.fn();
+    const onRepoConvertFailed = vi.fn();
     const onRepoContextAction = vi.fn();
 
     const unsubscribe = await subscribeTrayPanelEvents(
@@ -53,12 +56,15 @@ describe("subscribeTrayPanelEvents", () => {
         onRepoSyncStarted,
         onRepoSyncComplete,
         onRepoSyncFailed,
+        onRepoConvertStarted,
+        onRepoConvertComplete,
+        onRepoConvertFailed,
         onRepoContextAction,
       },
       listen,
     );
 
-    expect(listen).toHaveBeenCalledTimes(12);
+    expect(listen).toHaveBeenCalledTimes(15);
 
     handlers.get("panel-opened")!({ payload: undefined });
     expect(onPanelOpened).toHaveBeenCalledOnce();
@@ -111,6 +117,20 @@ describe("subscribeTrayPanelEvents", () => {
       payload: { ...syncEvent, error: "failed" },
     });
     expect(onRepoSyncFailed).toHaveBeenCalled();
+
+    const convertEvent = { repo_path: "/tmp/x" };
+    handlers.get("repo-convert-started")!({ payload: convertEvent });
+    expect(onRepoConvertStarted).toHaveBeenCalledWith(convertEvent);
+
+    handlers.get("repo-convert-complete")!({
+      payload: { ...convertEvent, new_path: "/tmp/x-bare" },
+    });
+    expect(onRepoConvertComplete).toHaveBeenCalled();
+
+    handlers.get("repo-convert-failed")!({
+      payload: { ...convertEvent, error: "failed" },
+    });
+    expect(onRepoConvertFailed).toHaveBeenCalled();
 
     const ctx = { action: "pin", repo_path: "/tmp/x" };
     handlers.get("repo-context-action")!({ payload: ctx });

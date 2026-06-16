@@ -32,6 +32,8 @@ function repo(name: string): RepoDto {
     notes: null,
     tags: [],
     branches: [],
+    is_bare: false,
+    convert_to: null,
   };
 }
 

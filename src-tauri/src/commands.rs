@@ -6,6 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::menu::{ContextMenu, Menu, MenuItem};
 use tauri::{AppHandle, Emitter, Manager, State, Window};
+use workpot_core::domain::config::{MigrationConfig, RepoLayout};
+use workpot_core::services::repo_convert::{ConvertResult, ConvertTarget};
 use workpot_core::{AppState, GitRefreshSummary, RepoRecord, SyncDirection, run_repo_sync};
 
 /// Prevents overlapping background git refresh jobs (panel open + Cmd+R).
@@ -78,6 +80,72 @@ impl Drop for RepoSyncGuardLease {
     }
 }
 
+/// Prevents overlapping per-repo layout conversion jobs and tracks the active path.
+#[derive(Clone)]
+pub struct RepoConvertGuard {
+    busy: Arc<AtomicBool>,
+    active_path: Arc<Mutex<Option<String>>>,
+}
+
+impl RepoConvertGuard {
+    pub fn new() -> Self {
+        Self {
+            busy: Arc::new(AtomicBool::new(false)),
+            active_path: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn try_start(&self, repo_path: String) -> bool {
+        if self
+            .busy
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return false;
+        }
+        if let Ok(mut active) = self.active_path.lock() {
+            *active = Some(repo_path);
+        }
+        true
+    }
+
+    pub fn finish(&self) {
+        if let Ok(mut active) = self.active_path.lock() {
+            *active = None;
+        }
+        self.busy.store(false, Ordering::Release);
+    }
+
+    pub fn status(&self) -> Option<RepoConvertEventDto> {
+        self.active_path
+            .lock()
+            .ok()
+            .and_then(|active| active.clone())
+            .map(|repo_path| RepoConvertEventDto {
+                repo_path,
+                new_path: None,
+                error: None,
+            })
+    }
+}
+
+struct RepoConvertGuardLease(RepoConvertGuard);
+
+impl Drop for RepoConvertGuardLease {
+    fn drop(&mut self) {
+        self.0.finish();
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RepoConvertEventDto {
+    pub repo_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct RepoSyncEventDto {
     pub repo_path: String,
@@ -113,6 +181,8 @@ pub struct RepoDto {
     pub notes: Option<String>,
     pub tags: Vec<String>,
     pub branches: Vec<String>,
+    pub is_bare: bool,
+    pub convert_to: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -132,11 +202,49 @@ pub struct BranchListItemDto {
     pub behind: Option<i64>,
 }
 
-pub fn repo_records_to_dtos(records: Vec<RepoRecord>) -> Vec<RepoDto> {
-    records.into_iter().map(record_to_dto).collect()
+pub fn repo_records_to_dtos(records: Vec<RepoRecord>, migration: &MigrationConfig) -> Vec<RepoDto> {
+    records
+        .into_iter()
+        .map(|record| record_to_dto(record, migration))
+        .collect()
 }
 
-fn record_to_dto(record: RepoRecord) -> RepoDto {
+fn path_is_bare(path: &Path) -> bool {
+    path.join("HEAD").is_file() && path.join("objects").is_dir()
+}
+
+fn convert_to_for_record(
+    record: &RepoRecord,
+    migration: &MigrationConfig,
+    is_bare: bool,
+) -> Option<String> {
+    let blocked = record.is_dirty == Some(true)
+        || record.git_state_error.is_some()
+        || record.ahead.is_some_and(|ahead| ahead > 0);
+    if blocked {
+        return None;
+    }
+
+    if is_bare {
+        if migration.allow_conversion_to_local_repo
+            || migration.default_repo_layout == RepoLayout::Local
+        {
+            Some("local".to_string())
+        } else {
+            None
+        }
+    } else if migration.allow_conversion_to_bare_repo
+        || migration.default_repo_layout == RepoLayout::Bare
+    {
+        Some("bare".to_string())
+    } else {
+        None
+    }
+}
+
+fn record_to_dto(record: RepoRecord, migration: &MigrationConfig) -> RepoDto {
+    let is_bare = path_is_bare(&record.path);
+    let convert_to = convert_to_for_record(&record, migration, is_bare);
     RepoDto {
         path: record.path.display().to_string(),
         name: record.name,
@@ -153,6 +261,8 @@ fn record_to_dto(record: RepoRecord) -> RepoDto {
         notes: record.notes.clone(),
         tags: record.tags.clone(),
         branches: vec![],
+        is_bare,
+        convert_to,
     }
 }
 
@@ -248,7 +358,8 @@ pub async fn list_repos(state: State<'_, Arc<AppState>>) -> Result<Vec<RepoDto>,
     let state = state.inner().clone();
     let repos = tauri::async_runtime::spawn_blocking(move || {
         let records = state.list_repos().map_err(|e| e.to_string())?;
-        Ok::<Vec<RepoDto>, String>(repo_records_to_dtos(records))
+        let migration = state.config().map_err(|e| e.to_string())?.migration.clone();
+        Ok::<Vec<RepoDto>, String>(repo_records_to_dtos(records, &migration))
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -691,7 +802,11 @@ fn reset_tray_icon_after_git_refresh(
             .config()
             .map(|c| c.stale_dirty_days)
             .unwrap_or(stale_dirty_days);
-        let dtos = repo_records_to_dtos(records);
+        let migration = state
+            .config()
+            .map(|c| c.migration.clone())
+            .unwrap_or_default();
+        let dtos = repo_records_to_dtos(records, &migration);
         update_tray_icon_state(app, &dtos, stale_days, false);
         return;
     }
@@ -940,6 +1055,115 @@ pub async fn sync_repo_branch(
     Ok(())
 }
 
+fn parse_convert_target(s: &str) -> Result<ConvertTarget, String> {
+    match s {
+        "bare" => Ok(ConvertTarget::Bare),
+        "local" => Ok(ConvertTarget::Local),
+        other => Err(format!("invalid convert target: {other}")),
+    }
+}
+
+#[tauri::command]
+pub fn get_repo_convert_status(guard: State<'_, RepoConvertGuard>) -> Option<RepoConvertEventDto> {
+    guard.status()
+}
+
+#[tauri::command]
+pub async fn convert_repo(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    guard: State<'_, RepoConvertGuard>,
+    repo_path: String,
+    target: String,
+) -> Result<(), String> {
+    let convert_target = parse_convert_target(&target)?;
+
+    if !guard.try_start(repo_path.clone()) {
+        return Err("a repo convert is already in progress".to_string());
+    }
+
+    log::info!("repo convert: started repo={repo_path} target={target}");
+
+    let started_payload = RepoConvertEventDto {
+        repo_path: repo_path.clone(),
+        new_path: None,
+        error: None,
+    };
+    if let Err(e) = app.emit("repo-convert-started", &started_payload) {
+        log_emit_err("repo-convert-started", e);
+    }
+
+    let state_clone = state.inner().clone();
+    let guard_clone = guard.inner().clone();
+    let repo_path_task = repo_path.clone();
+    let target_str = target.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let _lease = RepoConvertGuardLease(guard_clone);
+
+        let blocking_result = tauri::async_runtime::spawn_blocking(move || {
+            state_clone.convert_repo(Path::new(&repo_path_task), convert_target, false)
+        })
+        .await;
+
+        match blocking_result {
+            Ok(Ok(ConvertResult::Converted { from: _, to })) => {
+                let new_path = to.display().to_string();
+                log::info!(
+                    "repo convert: complete repo={repo_path} target={target_str} new_path={new_path}"
+                );
+                let complete_payload = RepoConvertEventDto {
+                    repo_path,
+                    new_path: Some(new_path),
+                    error: None,
+                };
+                if let Err(e) = app.emit("repo-convert-complete", &complete_payload) {
+                    log_emit_err("repo-convert-complete", e);
+                }
+            }
+            Ok(Ok(ConvertResult::DryRun { .. })) => {
+                let failed_payload = RepoConvertEventDto {
+                    repo_path: repo_path.clone(),
+                    new_path: None,
+                    error: Some("unexpected dry-run result".to_string()),
+                };
+                log::warn!(
+                    "repo convert: unexpected dry-run result repo={repo_path} target={target_str}"
+                );
+                if let Err(err) = app.emit("repo-convert-failed", &failed_payload) {
+                    log_emit_err("repo-convert-failed", err);
+                }
+            }
+            Ok(Err(e)) => {
+                let summary = e.to_string();
+                log::warn!("repo convert: failed repo={repo_path} target={target_str}: {summary}");
+                let failed_payload = RepoConvertEventDto {
+                    repo_path: repo_path.clone(),
+                    new_path: None,
+                    error: Some(summary),
+                };
+                if let Err(err) = app.emit("repo-convert-failed", &failed_payload) {
+                    log_emit_err("repo-convert-failed", err);
+                }
+            }
+            Err(join_err) => {
+                let msg = format!("repo convert task panicked or was cancelled: {join_err}");
+                log::error!("repo convert: failed repo={repo_path} target={target_str}: {msg}");
+                let failed_payload = RepoConvertEventDto {
+                    repo_path,
+                    new_path: None,
+                    error: Some(msg),
+                };
+                if let Err(err) = app.emit("repo-convert-failed", &failed_payload) {
+                    log_emit_err("repo-convert-failed", err);
+                }
+            }
+        }
+    });
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn open_in_cursor(
     path: String,
@@ -955,6 +1179,10 @@ mod tests {
     use std::path::PathBuf;
     use workpot_core::RepoRecord;
     use workpot_core::domain::SOURCE_MANUAL;
+
+    fn default_migration() -> MigrationConfig {
+        MigrationConfig::default()
+    }
 
     fn sample_record(path: PathBuf) -> RepoRecord {
         RepoRecord {
@@ -983,7 +1211,7 @@ mod tests {
         let home = std::env::var("HOME").expect("HOME");
         let path = PathBuf::from(format!("{home}/c/workpot/sample"));
         let record = sample_record(path);
-        let dto = record_to_dto(record);
+        let dto = record_to_dto(record, &default_migration());
         assert_eq!(dto.parent_dir, "~/c/workpot");
         assert_eq!(dto.branch, Some("main".to_string()));
         assert_eq!(dto.is_dirty, Some(false));
@@ -1009,7 +1237,7 @@ mod tests {
         let path = PathBuf::from("/tmp/alias-dto");
         let mut record = sample_record(path);
         record.alias = Some("Display Name".to_string());
-        let dto = record_to_dto(record);
+        let dto = record_to_dto(record, &default_migration());
         assert_eq!(dto.alias.as_deref(), Some("Display Name"));
     }
 
@@ -1029,14 +1257,14 @@ mod tests {
         record.name = "myrepo".to_string();
         record.branch = None;
         record.registered_at = 0;
-        let dto = record_to_dto(record);
+        let dto = record_to_dto(record, &default_migration());
         assert_eq!(dto.parent_dir, "~");
     }
 
     #[test]
     fn repo_dto_parent_dir_outside_home_uses_absolute_path() {
         let record = sample_record(PathBuf::from("/var/tmp/myrepo"));
-        let dto = record_to_dto(record);
+        let dto = record_to_dto(record, &default_migration());
         assert_eq!(dto.parent_dir, "/var/tmp");
     }
 
@@ -1045,7 +1273,7 @@ mod tests {
         let mut record = sample_record(PathBuf::from("/var/tmp/sync-repo"));
         record.ahead = Some(2);
         record.behind = Some(1);
-        let dto = record_to_dto(record);
+        let dto = record_to_dto(record, &default_migration());
         assert_eq!(dto.ahead, Some(2));
         assert_eq!(dto.behind, Some(1));
     }
@@ -1057,7 +1285,7 @@ mod tests {
         record.pin_order = Some(1);
         record.notes = Some("note".to_string());
         record.tags = vec!["rust".to_string()];
-        let dto = record_to_dto(record);
+        let dto = record_to_dto(record, &default_migration());
         assert!(dto.pinned);
         assert_eq!(dto.pin_order, Some(1));
         assert_eq!(dto.notes.as_deref(), Some("note"));
@@ -1094,6 +1322,8 @@ mod tests {
             notes: None,
             tags: vec![],
             branches: vec![],
+            is_bare: false,
+            convert_to: None,
         }
     }
 
@@ -1153,7 +1383,7 @@ mod tests {
             tags: vec![],
             alias: None,
         };
-        let dtos = repo_records_to_dtos(vec![record]);
+        let dtos = repo_records_to_dtos(vec![record], &default_migration());
         assert_eq!(dtos[0].git_state_error, Some("bare".to_string()));
         assert_eq!(dtos[0].last_opened_at, Some(42));
     }
@@ -1210,6 +1440,25 @@ mod tests {
             direction: "pull".to_string(),
             error: None,
         }));
+        guard.finish();
+    }
+
+    #[test]
+    fn repo_convert_guard_tracks_active_path() {
+        let guard = RepoConvertGuard::new();
+        assert!(guard.try_start("/tmp/r".to_string()));
+        assert_eq!(
+            guard.status(),
+            Some(RepoConvertEventDto {
+                repo_path: "/tmp/r".to_string(),
+                new_path: None,
+                error: None,
+            })
+        );
+        assert!(!guard.try_start("/tmp/other".to_string()));
+        guard.finish();
+        assert_eq!(guard.status(), None);
+        assert!(guard.try_start("/tmp/other".to_string()));
         guard.finish();
     }
 
@@ -1296,7 +1545,7 @@ mod tests {
         git2::Repository::init(&repo_path).expect("git init");
         ctx.register_manual(&repo_path).expect("register");
         let records = ctx.list_repos().expect("list");
-        let dtos = repo_records_to_dtos(records);
+        let dtos = repo_records_to_dtos(records, &default_migration());
         assert_eq!(dtos.len(), 1);
         assert_eq!(dtos[0].name, "sample");
         assert!(dtos[0].path.ends_with("/sample"));

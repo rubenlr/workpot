@@ -19,6 +19,8 @@ function repo(name: string, tags: string[] = []): RepoDto {
     notes: null,
     tags,
     branches: [],
+    is_bare: false,
+    convert_to: null,
   };
 }
 

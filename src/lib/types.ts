@@ -35,6 +35,16 @@ export interface ActiveSync {
   direction: SyncDirection;
 }
 
+export interface ActiveConvert {
+  repoPath: string;
+}
+
+export interface RepoConvertEvent {
+  repo_path: string;
+  new_path?: string;
+  error?: string;
+}
+
 export type BranchPresence =
   | "checkout"
   | "local_only"
@@ -64,4 +74,6 @@ export interface RepoDto {
   notes: string | null;
   tags: string[];
   branches: string[];
+  is_bare: boolean;
+  convert_to: "bare" | "local" | null;
 }

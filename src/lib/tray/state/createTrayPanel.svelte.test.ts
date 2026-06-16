@@ -38,6 +38,8 @@ function repo(path: string): RepoDto {
     notes: null,
     tags: [],
     branches: [],
+    is_bare: false,
+    convert_to: null,
   };
 }
 

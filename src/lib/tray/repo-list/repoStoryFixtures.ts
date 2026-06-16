@@ -19,6 +19,8 @@ export const storyRepoBase: RepoDto = {
   notes: null,
   tags: [],
   branches: ["main", "develop"],
+  is_bare: false,
+  convert_to: null,
 };
 
 export function storyRepo(overrides: Partial<RepoDto>): RepoDto {

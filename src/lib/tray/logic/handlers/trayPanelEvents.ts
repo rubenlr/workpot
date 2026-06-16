@@ -3,6 +3,7 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import type {
   GitRefreshSummary,
   IndexSummary,
+  RepoConvertEvent,
   RepoSyncEvent,
 } from "$lib/types";
 import { trayTrace } from "./trayTrace";
@@ -24,6 +25,9 @@ export interface TrayPanelEventHandlers {
   onRepoSyncStarted: (payload: RepoSyncEvent) => void;
   onRepoSyncComplete: (payload: RepoSyncEvent) => void;
   onRepoSyncFailed: (payload: RepoSyncEvent) => void;
+  onRepoConvertStarted: (payload: RepoConvertEvent) => void;
+  onRepoConvertComplete: (payload: RepoConvertEvent) => void;
+  onRepoConvertFailed: (payload: RepoConvertEvent) => void;
   onRepoContextAction: (payload: { action: string; repo_path: string }) => void;
 }
 
@@ -58,6 +62,15 @@ export async function subscribeTrayPanelEvents(
     ),
     listenFn<RepoSyncEvent>("repo-sync-failed", (event) =>
       handlers.onRepoSyncFailed(event.payload),
+    ),
+    listenFn<RepoConvertEvent>("repo-convert-started", (event) =>
+      handlers.onRepoConvertStarted(event.payload),
+    ),
+    listenFn<RepoConvertEvent>("repo-convert-complete", (event) =>
+      handlers.onRepoConvertComplete(event.payload),
+    ),
+    listenFn<RepoConvertEvent>("repo-convert-failed", (event) =>
+      handlers.onRepoConvertFailed(event.payload),
     ),
     listenFn<{ action: string; repo_path: string }>(
       "repo-context-action",

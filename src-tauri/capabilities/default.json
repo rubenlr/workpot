@@ -18,6 +18,8 @@
     "allow-open-in-cursor",
     "allow-org-commands",
     "allow-get-repo-sync-status",
-    "allow-sync-repo-branch"
+    "allow-sync-repo-branch",
+    "allow-get-repo-convert-status",
+    "allow-convert-repo"
   ]
 }

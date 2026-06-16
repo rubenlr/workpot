@@ -25,6 +25,8 @@ function repo(name: string, overrides: Partial<RepoDto> = {}): RepoDto {
     notes: null,
     tags: [],
     branches: [],
+    is_bare: false,
+    convert_to: null,
     ...overrides,
   };
 }

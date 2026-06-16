@@ -52,9 +52,10 @@ fn collect_from_table(
 }
 
 fn build_template_cache() -> TemplateCache {
-    let doc = SETTINGS_TEMPLATE
-        .parse::<DocumentMut>()
-        .expect("settings.template.toml must parse as valid TOML");
+    let doc = match SETTINGS_TEMPLATE.parse::<DocumentMut>() {
+        Ok(doc) => doc,
+        Err(err) => panic!("settings.template.toml must parse as valid TOML: {err}"),
+    };
     let mut comments = HashMap::new();
     let mut registry_keys = Vec::new();
     collect_from_table(doc.as_table(), "", &mut comments, &mut registry_keys);
