@@ -55,6 +55,7 @@ export async function invoke(cmd: string, _args?: unknown): Promise<unknown> {
     case "refresh_index":
     case "refresh_all_git_state":
     case "open_in_cursor":
+    case "open_in_finder":
     case "show_repo_context_menu":
     case "set_pin":
     case "set_pin_order":

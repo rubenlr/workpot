@@ -59,6 +59,14 @@ function tagInput(container: HTMLElement): HTMLInputElement {
   return el;
 }
 
+function aliasInput(container: HTMLElement): HTMLInputElement {
+  const el = container.querySelector(
+    'input[placeholder="Display name…"]',
+  ) as HTMLInputElement;
+  expect(el).toBeTruthy();
+  return el;
+}
+
 function renderPane(
   repo: RepoDto,
   opts: {
@@ -422,5 +430,59 @@ describe("DetailPane", () => {
       expect(onTagFocusDone).toHaveBeenCalled();
     });
     focusSpy.mockRestore();
+  });
+
+  it("displays_local_path_with_home_replaced_by_tilde", () => {
+    const { getByText } = renderPane({
+      ...baseRepo,
+      path: "/Users/me/c/myrepo",
+      parent_dir: "~/c",
+    });
+    expect(getByText("~/c/myrepo")).toBeTruthy();
+  });
+
+  it("invokes open_in_finder when finder badge is clicked", async () => {
+    const { getByRole } = renderPane(baseRepo);
+    const finderBtn = getByRole("button", { name: "finder" });
+    await fireEvent.click(finderBtn);
+    expect(invokeMock).toHaveBeenCalledWith("open_in_finder", {
+      path: baseRepo.path,
+    });
+  });
+
+  it("alias_input_shows_current_alias", () => {
+    const { container } = renderPane({ ...baseRepo, alias: "my-alias" });
+    expect(aliasInput(container).value).toBe("my-alias");
+  });
+
+  it("alias_blur_invokes_set_alias_and_onMutated", async () => {
+    const onMutated = vi.fn();
+    const { container } = renderPane(
+      { ...baseRepo, alias: null },
+      { onMutated },
+    );
+    const input = aliasInput(container);
+    await fireEvent.input(input, { target: { value: "new-name" } });
+    await fireEvent.blur(input);
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("set_alias", {
+        repoPath: baseRepo.path,
+        alias: "new-name",
+      });
+    });
+    expect(onMutated).toHaveBeenCalled();
+  });
+
+  it("alias_blur_skips_invoke_when_unchanged", async () => {
+    const { container } = renderPane({ ...baseRepo, alias: "same" });
+    const input = aliasInput(container);
+    await fireEvent.blur(input);
+    await waitFor(() => {
+      expect(invokeMock).not.toHaveBeenCalledWith(
+        "set_alias",
+        expect.anything(),
+      );
+    });
   });
 });

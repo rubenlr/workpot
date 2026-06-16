@@ -95,6 +95,7 @@ pub fn run() {
             commands::get_repo_convert_status,
             commands::convert_repo,
             commands::open_in_cursor,
+            commands::open_in_finder,
             commands::set_tags,
             commands::add_tag,
             commands::remove_tag,

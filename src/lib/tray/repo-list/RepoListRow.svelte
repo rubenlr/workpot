@@ -83,7 +83,7 @@
 
   const chevronClass = $derived(
     [
-      "flex shrink-0 cursor-pointer items-center justify-center self-center rounded-lg border-0 bg-transparent px-2 py-2 text-inherit shadow-none outline-none focus-visible:ring-1 focus-visible:ring-primary",
+      "detail-btn flex shrink-0 cursor-pointer items-center justify-center self-center rounded-lg border-0 bg-transparent px-2 py-2 text-inherit shadow-none outline-none focus-visible:ring-1 focus-visible:ring-primary",
       selected ? "" : "opacity-80",
     ].join(" "),
   );
@@ -196,3 +196,18 @@
     </button>
   </div>
 </li>
+
+<style>
+  /*
+   * When the detail chevron button is hovered, suppress the row-wide hover
+   * overlay so only the chevron itself is highlighted — not the whole row.
+   * This visually communicates that the two zones trigger different actions.
+   */
+  div:has(.detail-btn:hover) {
+    background-color: transparent !important;
+  }
+
+  .detail-btn:hover {
+    background-color: color-mix(in srgb, currentColor 12%, transparent);
+  }
+</style>

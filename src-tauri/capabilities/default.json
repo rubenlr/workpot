@@ -16,6 +16,7 @@
     "allow-refresh-index",
     "allow-checkout-repo-branch",
     "allow-open-in-cursor",
+    "allow-open-in-finder",
     "allow-org-commands",
     "allow-get-repo-sync-status",
     "allow-sync-repo-branch",

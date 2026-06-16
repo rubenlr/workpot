@@ -1,7 +1,7 @@
 <script lang="ts">
   import MaterialIcon from "$lib/tray/commons/MaterialIcon.svelte";
   import SyncBadge from "$lib/tray/commons/SyncBadge.svelte";
-  import { branchPresenceLabel } from "$lib/branchStatus";
+  import { branchPresenceLabel, isCheckoutable } from "$lib/branchStatus";
   import type {
     ActiveSync,
     BranchListItemDto,
@@ -30,6 +30,8 @@
 
   const isCheckout = $derived(branch.presence === "checkout");
   const isRemoteOnly = $derived(branch.presence === "remote_only");
+  const isLocalOnly = $derived(branch.presence === "local_only");
+  const isClickable = $derived(isCheckout || isCheckoutable(branch.presence));
 
   const syncingDirection = $derived(
     activeSync &&
@@ -47,6 +49,7 @@
       isCheckout
         ? "font-medium text-inverse-on-surface"
         : "text-inverse-on-surface-variant",
+      isClickable ? "cursor-pointer" : "cursor-default",
     ].join(" "),
   );
 </script>
@@ -66,6 +69,7 @@
     type="button"
     class={nameButtonClass}
     aria-label="Activate branch {branch.name}"
+    disabled={!isClickable}
     onclick={() => onActivate?.(branch)}
   >
     <span class="min-w-0 flex-1 truncate text-sm">
@@ -78,15 +82,23 @@
     >
       remote
     </span>
+  {:else if isLocalOnly}
+    <span
+      class="shrink-0 rounded-full bg-hover-overlay px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-inverse-on-surface-variant"
+    >
+      local
+    </span>
   {/if}
-  <SyncBadge
-    ahead={branch.ahead}
-    behind={branch.behind}
-    branch={branch.name}
-    {syncingDirection}
-    disabled={syncDisabled}
-    onHoverChange={onSyncHoverChange}
-    onPush={onSync ? () => onSync(repoPath, branch.name, "push") : undefined}
-    onPull={onSync ? () => onSync(repoPath, branch.name, "pull") : undefined}
-  />
+  <div class="flex shrink-0 items-center self-center">
+    <SyncBadge
+      ahead={branch.ahead}
+      behind={branch.behind}
+      branch={branch.name}
+      {syncingDirection}
+      disabled={syncDisabled}
+      onHoverChange={onSyncHoverChange}
+      onPush={onSync ? () => onSync(repoPath, branch.name, "push") : undefined}
+      onPull={onSync ? () => onSync(repoPath, branch.name, "pull") : undefined}
+    />
+  </div>
 </div>

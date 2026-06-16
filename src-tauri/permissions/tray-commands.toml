@@ -29,6 +29,11 @@ description = "Allows open_in_cursor IPC."
 commands.allow = ["open_in_cursor"]
 
 [[permission]]
+identifier = "allow-open-in-finder"
+description = "Allows open_in_finder IPC."
+commands.allow = ["open_in_finder"]
+
+[[permission]]
 identifier = "allow-org-commands"
 description = "Allows Phase 5 org IPC (tags, notes, pins, branches, context menu)."
 commands.allow = [

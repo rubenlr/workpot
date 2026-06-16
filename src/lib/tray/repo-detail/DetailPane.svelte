@@ -17,6 +17,7 @@
   import DetailPaneHeader from "./DetailPaneHeader.svelte";
   import TagAutocomplete from "$lib/tray/commons/TagAutocomplete.svelte";
   import TagChip from "$lib/tray/commons/TagChip.svelte";
+  import MaterialIcon from "$lib/tray/commons/MaterialIcon.svelte";
 
   let {
     repo,
@@ -49,19 +50,44 @@
     return allTags.filter((t) => !onRepo.has(t));
   });
 
+  const displayPath = $derived.by(() => {
+    const path = repo.path;
+    const parentDir = repo.parent_dir;
+    if (!parentDir) {
+      return path;
+    }
+    const lastSlashIdx = Math.max(
+      path.lastIndexOf("/"),
+      path.lastIndexOf("\\"),
+    );
+    if (lastSlashIdx !== -1) {
+      const absoluteParent = path.slice(0, lastSlashIdx);
+      if (path.startsWith(absoluteParent)) {
+        return parentDir + path.slice(lastSlashIdx);
+      }
+    }
+    return path;
+  });
+
   let branches = $state<BranchListItemDto[]>([]);
   let branchError = $state<string | null>(null);
   let checkoutError = $state<string | null>(null);
   let notesValue = $state("");
+  let aliasValue = $state("");
   let tagInput = $state("");
   let tagError = $state<string | null>(null);
+  let aliasError = $state<string | null>(null);
   let notesTextarea = $state<HTMLTextAreaElement | undefined>(undefined);
   let tagInputEl = $state<HTMLInputElement | undefined>(undefined);
+  let aliasInputEl = $state<HTMLInputElement | undefined>(undefined);
 
   $effect(() => {
     repo.path;
     if (document.activeElement !== notesTextarea) {
       notesValue = repo.notes ?? "";
+    }
+    if (document.activeElement !== aliasInputEl) {
+      aliasValue = repo.alias ?? "";
     }
   });
 
@@ -187,10 +213,32 @@
     }
   }
 
+  async function handleAliasSave() {
+    aliasError = null;
+    const trimmed = aliasValue.trim() || null;
+    if (trimmed === (repo.alias ?? null)) {
+      return;
+    }
+    try {
+      await invoke("set_alias", { repoPath: repo.path, alias: trimmed });
+      onMutated();
+    } catch (e) {
+      aliasError = String(e);
+    }
+  }
+
   function onTagInputKeydown(e: KeyboardEvent) {
     if (e.key === "Enter") {
       e.preventDefault();
       void handleAddTag(tagInput);
+    }
+  }
+
+  async function openInFinder() {
+    try {
+      await invoke("open_in_finder", { path: repo.path });
+    } catch (e) {
+      console.error(e);
     }
   }
 
@@ -220,6 +268,55 @@
   />
 
   <div class="flex flex-col gap-4 p-3">
+    <div
+      class="flex items-center justify-between gap-1.5 rounded-lg border border-card-border bg-card-surface p-2.5 text-xs text-inverse-on-surface-variant font-mono"
+    >
+      <div class="flex items-center gap-1.5 min-w-0">
+        <MaterialIcon name="folder" size={14} class="shrink-0" />
+        <span class="break-all select-all">{displayPath}</span>
+      </div>
+      <button
+        type="button"
+        onclick={openInFinder}
+        class="shrink-0 rounded-full bg-tag-blue-bg/10 border border-tag-blue-text/30 text-tag-blue-text px-2 py-0.5 text-[10px] font-medium hover:bg-tag-blue-bg/20 active:bg-tag-blue-bg/30 transition-colors uppercase tracking-wider cursor-pointer"
+        aria-label="finder"
+      >
+        finder
+      </button>
+    </div>
+
+    <section>
+      <h3
+        class="mb-2 text-xs font-semibold uppercase tracking-widest text-inverse-on-surface-variant"
+      >
+        Alias
+      </h3>
+      <div class="rounded-xl border border-card-border bg-card-surface p-2">
+        <input
+          type="text"
+          bind:this={aliasInputEl}
+          bind:value={aliasValue}
+          placeholder="Display name…"
+          maxlength="64"
+          autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          class="w-full rounded-lg border border-card-border bg-input-surface px-3 py-2 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
+          onblur={() => void handleAliasSave()}
+          onkeydown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              aliasInputEl?.blur();
+            }
+          }}
+        />
+        {#if aliasError}
+          <p class="mt-1 text-sm text-error">{aliasError}</p>
+        {/if}
+      </div>
+    </section>
+
     <section>
       <h3
         class="mb-2 text-xs font-semibold uppercase tracking-widest text-inverse-on-surface-variant"

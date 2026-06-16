@@ -29,4 +29,37 @@ describe("BranchListRow", () => {
     );
     expect(onActivate).toHaveBeenCalledWith(branch);
   });
+
+  it("renders 'remote' badge for remote_only branches", () => {
+    const { queryByText } = render(BranchListRow, {
+      props: {
+        branch: { ...branch, presence: "remote_only" },
+        repoPath: "/tmp/repo",
+      },
+    });
+    expect(queryByText("remote")).toBeTruthy();
+    expect(queryByText("local")).toBeNull();
+  });
+
+  it("renders 'local' badge for local_only branches", () => {
+    const { queryByText } = render(BranchListRow, {
+      props: {
+        branch: { ...branch, presence: "local_only" },
+        repoPath: "/tmp/repo",
+      },
+    });
+    expect(queryByText("local")).toBeTruthy();
+    expect(queryByText("remote")).toBeNull();
+  });
+
+  it("does not render badges for local_remote branches", () => {
+    const { queryByText } = render(BranchListRow, {
+      props: {
+        branch: { ...branch, presence: "local_remote" },
+        repoPath: "/tmp/repo",
+      },
+    });
+    expect(queryByText("remote")).toBeNull();
+    expect(queryByText("local")).toBeNull();
+  });
 });
