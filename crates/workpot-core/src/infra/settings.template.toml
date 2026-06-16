@@ -66,3 +66,14 @@ worktree_template = "{project}/wtrees/{worktree}"
 # Source for {project}: folder_name | alias
 # folder_name uses the directory name; alias uses the workpot alias.
 project_name_source = "folder_name"
+
+# Tray convert UI (opt-in; defaults apply when commented out).
+# When true, show "Convert to bare" for normal repositories.
+# allow_conversion_to_bare_repo = false
+
+# When true, show "Convert to local" for bare repositories.
+# allow_conversion_to_local_repo = false
+
+# Default layout hint for tray convert: bare | local (default: local).
+# Enables convert actions when set to the target layout, even if allow_conversion_* is false.
+# default_repo_layout = "local"

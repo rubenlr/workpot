@@ -1,7 +1,7 @@
 //! Documented `config.toml` rendering and comment-preserving updates.
 
 use crate::domain::Config;
-use crate::domain::config::ProjectNameSource;
+use crate::domain::config::{ProjectNameSource, RepoLayout};
 use crate::error::{Result, WorkpotError};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -71,12 +71,33 @@ fn template_cache() -> &'static TemplateCache {
     CACHE.get_or_init(build_template_cache)
 }
 
+const OPTIONAL_FIELD_COMMENTS: &[(&str, &str)] = &[
+    (
+        "migration.allow_conversion_to_bare_repo",
+        "# When true, show \"Convert to bare\" for normal repositories.\n",
+    ),
+    (
+        "migration.allow_conversion_to_local_repo",
+        "# When true, show \"Convert to local\" for bare repositories.\n",
+    ),
+    (
+        "migration.default_repo_layout",
+        "# Default layout hint for tray convert: bare | local (default: local).\n# Enables convert actions when set to the target layout, even if allow_conversion_* is false.\n",
+    ),
+];
+
 /// Canonical inline documentation for a config key (dotted path).
 pub fn comment_for_key(path: &str) -> Option<&'static str> {
     template_cache()
         .comments
         .get(path)
         .map(|comment| comment.as_str())
+        .or_else(|| {
+            OPTIONAL_FIELD_COMMENTS
+                .iter()
+                .find(|(key, _)| *key == path)
+                .map(|(_, comment)| *comment)
+        })
 }
 
 /// All registry keys derived from the embedded settings template.
@@ -119,11 +140,20 @@ fn project_name_source_str(source: &ProjectNameSource) -> &'static str {
     }
 }
 
+fn repo_layout_str(layout: &RepoLayout) -> &'static str {
+    match layout {
+        RepoLayout::Bare => "bare",
+        RepoLayout::Local => "local",
+    }
+}
+
 struct ConfigFieldSpec {
     section: Option<&'static str>,
     key: &'static str,
     comment_path: &'static str,
     is_section: bool,
+    #[allow(dead_code)] // used by registry_tests only
+    optional: bool,
     write: fn(&Config, &mut Item),
 }
 
@@ -133,6 +163,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "watch_roots",
         comment_path: "watch_roots",
         is_section: false,
+        optional: false,
         write: |c, item| set_path_array(item, &c.watch_roots),
     },
     ConfigFieldSpec {
@@ -140,6 +171,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "excludes",
         comment_path: "excludes",
         is_section: false,
+        optional: false,
         write: |c, item| set_string_array(item, &c.excludes),
     },
     ConfigFieldSpec {
@@ -147,6 +179,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "limits",
         comment_path: "limits",
         is_section: true,
+        optional: false,
         write: |_, _| {},
     },
     ConfigFieldSpec {
@@ -154,6 +187,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "max_watch_roots",
         comment_path: "limits.max_watch_roots",
         is_section: false,
+        optional: false,
         write: |c, item| assign_u32(item, c.limits.max_watch_roots),
     },
     ConfigFieldSpec {
@@ -161,6 +195,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "max_repos",
         comment_path: "limits.max_repos",
         is_section: false,
+        optional: false,
         write: |c, item| assign_u32(item, c.limits.max_repos),
     },
     ConfigFieldSpec {
@@ -168,6 +203,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "launch_cmd",
         comment_path: "launch_cmd",
         is_section: false,
+        optional: false,
         write: |c, item| assign_string(item, &c.launch_cmd),
     },
     ConfigFieldSpec {
@@ -175,6 +211,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "push_cmd",
         comment_path: "push_cmd",
         is_section: false,
+        optional: false,
         write: |c, item| assign_string(item, &c.push_cmd),
     },
     ConfigFieldSpec {
@@ -182,6 +219,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "pull_cmd",
         comment_path: "pull_cmd",
         is_section: false,
+        optional: false,
         write: |c, item| assign_string(item, &c.pull_cmd),
     },
     ConfigFieldSpec {
@@ -189,6 +227,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "max_visible_rows",
         comment_path: "max_visible_rows",
         is_section: false,
+        optional: false,
         write: |c, item| assign_u32(item, c.max_visible_rows),
     },
     ConfigFieldSpec {
@@ -196,6 +235,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "max_pinned",
         comment_path: "max_pinned",
         is_section: false,
+        optional: false,
         write: |c, item| assign_u32(item, c.max_pinned),
     },
     ConfigFieldSpec {
@@ -203,6 +243,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "max_recent_days",
         comment_path: "max_recent_days",
         is_section: false,
+        optional: false,
         write: |c, item| assign_u32(item, c.max_recent_days),
     },
     ConfigFieldSpec {
@@ -210,6 +251,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "min_recent_count",
         comment_path: "min_recent_count",
         is_section: false,
+        optional: false,
         write: |c, item| assign_u32(item, c.min_recent_count),
     },
     ConfigFieldSpec {
@@ -217,6 +259,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "stale_dirty_days",
         comment_path: "stale_dirty_days",
         is_section: false,
+        optional: false,
         write: |c, item| assign_u32(item, c.stale_dirty_days),
     },
     ConfigFieldSpec {
@@ -224,6 +267,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "migration",
         comment_path: "migration",
         is_section: true,
+        optional: false,
         write: |_, _| {},
     },
     ConfigFieldSpec {
@@ -231,6 +275,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "temp_suffix",
         comment_path: "migration.temp_suffix",
         is_section: false,
+        optional: false,
         write: |c, item| assign_string(item, &c.migration.temp_suffix),
     },
     ConfigFieldSpec {
@@ -238,6 +283,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "delete_original",
         comment_path: "migration.delete_original",
         is_section: false,
+        optional: false,
         write: |c, item| assign_bool(item, c.migration.delete_original),
     },
     ConfigFieldSpec {
@@ -245,6 +291,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "bare_repo_template",
         comment_path: "migration.bare_repo_template",
         is_section: false,
+        optional: false,
         write: |c, item| assign_string(item, &c.migration.bare_repo_template),
     },
     ConfigFieldSpec {
@@ -252,6 +299,7 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "worktree_template",
         comment_path: "migration.worktree_template",
         is_section: false,
+        optional: false,
         write: |c, item| assign_string(item, &c.migration.worktree_template),
     },
     ConfigFieldSpec {
@@ -259,12 +307,37 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         key: "project_name_source",
         comment_path: "migration.project_name_source",
         is_section: false,
+        optional: false,
         write: |c, item| {
             assign_string(
                 item,
                 project_name_source_str(&c.migration.project_name_source),
             )
         },
+    },
+    ConfigFieldSpec {
+        section: Some("migration"),
+        key: "allow_conversion_to_bare_repo",
+        comment_path: "migration.allow_conversion_to_bare_repo",
+        is_section: false,
+        optional: true,
+        write: |c, item| assign_bool(item, c.migration.allow_conversion_to_bare_repo),
+    },
+    ConfigFieldSpec {
+        section: Some("migration"),
+        key: "allow_conversion_to_local_repo",
+        comment_path: "migration.allow_conversion_to_local_repo",
+        is_section: false,
+        optional: true,
+        write: |c, item| assign_bool(item, c.migration.allow_conversion_to_local_repo),
+    },
+    ConfigFieldSpec {
+        section: Some("migration"),
+        key: "default_repo_layout",
+        comment_path: "migration.default_repo_layout",
+        is_section: false,
+        optional: true,
+        write: |c, item| assign_string(item, repo_layout_str(&c.migration.default_repo_layout)),
     },
 ];
 
@@ -426,11 +499,28 @@ mod registry_tests {
     #[test]
     fn registry_covers_all_config_fields() {
         for spec in super::CONFIG_FIELDS {
+            if spec.optional {
+                continue;
+            }
             assert!(
                 registry_keys()
                     .iter()
                     .any(|registered| registered == spec.comment_path),
                 "template registry missing key: {}",
+                spec.comment_path
+            );
+        }
+    }
+
+    #[test]
+    fn optional_config_fields_have_comments() {
+        for spec in super::CONFIG_FIELDS {
+            if !spec.optional {
+                continue;
+            }
+            assert!(
+                super::comment_for_key(spec.comment_path).is_some(),
+                "optional field has no comment: {}",
                 spec.comment_path
             );
         }
@@ -473,6 +563,23 @@ mod registry_tests {
         assert!(
             round_trip.contains("Glob patterns excluded from indexing"),
             "parsed document should preserve key comments on serialize:\n{round_trip}"
+        );
+    }
+
+    #[test]
+    fn render_init_config_preserves_optional_migration_docs() {
+        let rendered = super::render_init_config(&crate::domain::Config::default());
+        assert!(
+            rendered.contains("# allow_conversion_to_bare_repo"),
+            "rendered config should include commented optional migration keys:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("# allow_conversion_to_local_repo"),
+            "rendered config should include commented optional migration keys:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("# default_repo_layout"),
+            "rendered config should include commented optional migration keys:\n{rendered}"
         );
     }
 }

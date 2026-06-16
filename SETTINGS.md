@@ -77,7 +77,7 @@ project_name_source = "folder_name"
 
 ## Repo migration settings (`[migration]`)
 
-Migration settings control `workpot repo convert`, which switches a repository between a normal checkout and a bare repository plus linked worktree layout. Conversion is CLI-only in v1 (no tray UI).
+Migration settings control `workpot repo convert`, which switches a repository between a normal checkout and a bare repository plus linked worktree layout. The tray panel can also surface convert actions when enabled (see **Tray convert UI** below).
 
 Path templates are global only — there are no per-repo template overrides in v1.
 
@@ -90,6 +90,18 @@ Path templates are global only — there are no per-repo template overrides in v
 | `migration.bare_repo_template`  | `"{project}/bare.git"`          | Path template for the bare git repository. Must contain `{project}`.                                                                                                                                                                  |
 | `migration.worktree_template`   | `"{project}/wtrees/{worktree}"` | Path template for the first worktree. Must contain `{project}` and `{worktree}`.                                                                                                                                                      |
 | `migration.project_name_source` | `"folder_name"`                 | Source for `{project}`: `folder_name` uses the directory name; `alias` uses the workpot alias (falls back to folder name if unset).                                                                                                   |
+
+### Tray convert UI
+
+These keys are optional in generated `config.toml` (commented out by default). Serde still applies defaults when they are absent.
+
+| Key                                        | Default   | Description                                                                                                                                                                                |
+| ------------------------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `migration.allow_conversion_to_bare_repo`  | `false`   | When `true`, show **Convert to bare** for normal repositories in the tray.                                                                                                                 |
+| `migration.allow_conversion_to_local_repo` | `false`   | When `true`, show **Convert to local** for bare repositories in the tray.                                                                                                                  |
+| `migration.default_repo_layout`            | `"local"` | Layout hint for tray convert: `bare` or `local`. When set to the target layout, convert actions appear even if the matching `allow_conversion_*` flag is `false`. Values: `bare`, `local`. |
+
+**Default tray behavior:** `default_repo_layout` defaults to `local`, so bare repositories already show **Convert to local** without uncommenting any keys. Normal repositories need `allow_conversion_to_bare_repo = true` (or `default_repo_layout = "bare"`) to show **Convert to bare**.
 
 ### Template variables
 
