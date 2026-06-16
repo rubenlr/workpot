@@ -103,12 +103,7 @@ pub fn run_preflight(path: &Path) -> Result<PreflightResult> {
         return Ok(result);
     }
 
-    let sync_roots = if is_bare_repo(&canonical) {
-        worktree_paths
-    } else {
-        vec![canonical.clone()]
-    };
-    if let Some(result) = sync_blocker_in(&sync_roots)? {
+    if let Some(result) = sync_blocker_in(&worktree_paths)? {
         return Ok(result);
     }
 
@@ -199,11 +194,7 @@ pub fn catalog_path_swap(
 }
 
 fn is_linked_worktree(path: &Path) -> bool {
-    path.join(".git").is_file()
-}
-
-fn find_record(conn: &Connection, path_key: &str) -> Result<RepoRecord> {
-    catalog::get_repo_by_path(conn, path_key)
+    catalog::is_git_worktree(path) && path.join(".git").is_file()
 }
 
 fn existing_worktree_dir_names(dir: &Path) -> Vec<String> {
@@ -238,10 +229,8 @@ fn worktree_name_for_branch(
     unique_worktree_name(branch, &existing)
 }
 
-fn reject_blocked_preflight(preflight: &PreflightResult) -> Result<()> {
-    Err(WorkpotError::ConversionPreflight(preflight_message(
-        preflight,
-    )))
+fn conversion_blocked(preflight: &PreflightResult) -> WorkpotError {
+    WorkpotError::ConversionPreflight(preflight_message(preflight))
 }
 
 fn check_target_paths_exist(resolved_paths: &[(String, PathBuf)], source: &Path) -> Result<()> {
@@ -433,32 +422,28 @@ fn prepare_conversion(
     let currently_bare = is_bare_repo(&canonical);
     match (target, currently_bare) {
         (ConvertTarget::Bare, true) => {
-            reject_blocked_preflight(&PreflightResult::WrongLayout {
+            return Err(conversion_blocked(&PreflightResult::WrongLayout {
                 current: "bare",
                 requested: "bare",
-            })?;
+            }));
         }
         (ConvertTarget::Normal, false) => {
-            reject_blocked_preflight(&PreflightResult::WrongLayout {
+            return Err(conversion_blocked(&PreflightResult::WrongLayout {
                 current: "normal",
                 requested: "normal",
-            })?;
+            }));
         }
         _ => {}
     }
 
-    let record = match find_record(conn, &path_key) {
-        Ok(record) => record,
-        Err(WorkpotError::NotFound(_)) => {
-            reject_blocked_preflight(&PreflightResult::NotInCatalog)?;
-            unreachable!("reject_blocked_preflight always returns an error")
-        }
-        Err(e) => return Err(e),
-    };
+    let record = catalog::get_repo_by_path(conn, &path_key).map_err(|e| match e {
+        WorkpotError::NotFound(_) => conversion_blocked(&PreflightResult::NotInCatalog),
+        e => e,
+    })?;
 
     let preflight = run_preflight(&canonical)?;
     if preflight != PreflightResult::Ready {
-        reject_blocked_preflight(&preflight)?;
+        return Err(conversion_blocked(&preflight));
     }
 
     let resolved_paths = resolve_target_paths(config, &record, &canonical, target)?;

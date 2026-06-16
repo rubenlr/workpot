@@ -237,11 +237,6 @@ pub fn run_phased(pool: &crate::infra::db::DbPool, config: &Config) -> Result<In
             Ok(summary)
         }
         Err(WorkpotError::IndexCapExceeded { projected, max }) => {
-            if let Err(e) = pool.with_write(|conn| {
-                record_cap_exceeded_run(conn, started_at, i64::from(projected), max)
-            }) {
-                log::warn!("failed to record cap-exceeded audit row: {e}");
-            }
             Err(WorkpotError::IndexCapExceeded { projected, max })
         }
         Err(e) => {
@@ -309,9 +304,6 @@ pub fn run_full_connection(conn: &Connection, config: &Config) -> Result<IndexSu
             Ok(summary)
         }
         Err(WorkpotError::IndexCapExceeded { projected, max }) => {
-            if let Err(e) = record_cap_exceeded_run(conn, started_at, i64::from(projected), max) {
-                log::warn!("failed to record cap-exceeded audit row: {e}");
-            }
             Err(WorkpotError::IndexCapExceeded { projected, max })
         }
         Err(e) => {
@@ -323,124 +315,14 @@ pub fn run_full_connection(conn: &Connection, config: &Config) -> Result<IndexSu
     }
 }
 
-fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result<IndexSummary> {
-    let exclude_set = discovery::build_exclude_set(config)?;
-    let max_repos = config.limits.max_repos;
+fn run_full_inner(conn: &Connection, config: &Config, _started_at: i64) -> Result<IndexSummary> {
+    test_index_delay();
 
-    let watch_roots = canonical_watch_roots(config);
-    let configured_roots = &config.watch_roots;
-    let mut changelog: Vec<ChangeEntry> = Vec::new();
-    let mut pre_skipped = 0u32;
+    let plan = discover_phase(conn, config)?;
+    let mut summary = merge_catalog_phase(conn, config, plan)?;
 
-    let mut seen_paths: HashSet<String> = HashSet::new();
-    let mut scan_candidates: Vec<PathBuf> = Vec::new();
-
-    for root in &watch_roots {
-        let candidates = discovery::scan_root(root, &exclude_set)?;
-        for path in candidates {
-            let path_key = path.display().to_string();
-            if seen_paths.insert(path_key) {
-                scan_candidates.push(path);
-            }
-        }
-    }
-
-    let scan_candidate_count = scan_candidates.len();
-    let mut upserts: Vec<(PathBuf, String)> = Vec::new();
-    for path in scan_candidates {
-        let path_key = path.display().to_string();
-        match resolve_git_common_dir(&path) {
-            Ok(common) => {
-                upserts.push((path, common.display().to_string()));
-            }
-            Err(_) => {
-                log::warn!("skip {}: git unavailable", path_key);
-                pre_skipped += 1;
-                changelog.push(ChangeEntry {
-                    path: path_key,
-                    action: "skipped",
-                });
-            }
-        }
-    }
-
-    let mut removes = collect_stale_scan_paths(conn, configured_roots, &watch_roots, &seen_paths)?;
-    removes.extend(collect_orphan_scan_paths(conn, configured_roots)?);
-    removes.extend(catalog::missing_repo_paths(conn)?);
-    validate_manual_outside_roots(conn, configured_roots, &mut removes)?;
-    removes.sort();
-    removes.dedup();
-
-    log::debug!(
-        "index discovery: scan_candidates={} upserts={} removes={}",
-        scan_candidate_count,
-        upserts.len(),
-        removes.len()
-    );
-
-    let projected = projected_repo_count(conn, &removes, &upserts)?;
-    if projected > i64::from(max_repos) {
-        let projected_u32 = u32::try_from(projected).unwrap_or(u32::MAX);
-        return Err(WorkpotError::IndexCapExceeded {
-            projected: projected_u32,
-            max: max_repos,
-        });
-    }
-
-    let mut summary = IndexSummary {
-        skipped: pre_skipped,
-        ..IndexSummary::default()
-    };
-
-    let tx = conn.unchecked_transaction()?;
-    let run_id = insert_index_run(&tx, started_at)?;
-
-    let backfill_skipped_tx = backfill_empty_git_common_dir(&tx, &mut changelog)?;
-    summary.skipped += backfill_skipped_tx;
-
-    for (path, git_common_dir) in &upserts {
-        let path_key = path.display().to_string();
-        if catalog::upsert_scan(&tx, path, git_common_dir)? {
-            summary.added += 1;
-            changelog.push(ChangeEntry {
-                path: path_key,
-                action: "added",
-            });
-        }
-    }
-
-    for path_key in &removes {
-        let deleted = tx.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
-        if deleted > 0 {
-            summary.removed += 1;
-            changelog.push(ChangeEntry {
-                path: path_key.clone(),
-                action: "removed",
-            });
-        }
-    }
-
-    for entry in &changelog {
-        tx.execute(
-            "INSERT INTO index_changes (run_id, path, action) VALUES (?1, ?2, ?3)",
-            params![run_id, entry.path, entry.action],
-        )?;
-    }
-
-    finish_index_run(&tx, run_id, "ok", &summary, None)?;
-    tx.commit()?;
-
-    // Second pass: git state refresh (separate transaction per Pitfall 6)
-    let all_paths: Vec<PathBuf> = {
-        let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
-        stmt.query_map([], |row| row.get::<_, String>(0))?
-            .filter_map(|r| r.ok())
-            .map(PathBuf::from)
-            .collect()
-    };
-
+    let all_paths = index_git_paths(conn)?;
     log::debug!("index git second pass: start repos={}", all_paths.len());
-    // rayon parallel refresh must complete before opening any DB transaction
     let git_pass_started = std::time::Instant::now();
     let git_results = git_state::refresh_all(all_paths);
     log::debug!(
@@ -448,45 +330,8 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
         git_pass_started.elapsed().as_millis()
     );
 
-    for r in &git_results {
-        if r.state.error.is_some() {
-            summary.git_errors += 1;
-        } else {
-            summary.git_refreshed += 1;
-        }
-    }
-
-    let git_tx = conn.unchecked_transaction()?;
-    let refresh_time = crate::services::git_state::unix_now_secs();
-    for r in &git_results {
-        let updated = git_tx.execute(
-            "UPDATE repos SET branch=?1, is_dirty=?2, ahead=?3, behind=?4,
-                              git_refreshed_at=?5, git_state_error=?6
-             WHERE path=?7",
-            rusqlite::params![
-                r.state.branch,
-                r.state.is_dirty.map(|b| b as i64),
-                r.state.ahead,
-                r.state.behind,
-                refresh_time,
-                r.state.error,
-                r.path,
-            ],
-        )?;
-        if updated == 0 {
-            log::warn!("git refresh: no repo row matched path {}", r.path);
-            if r.state.error.is_none() {
-                summary.git_refreshed = summary.git_refreshed.saturating_sub(1);
-                summary.git_errors += 1;
-            }
-        }
-    }
-    if let Err(e) = git_tx.commit() {
-        log::warn!("git refresh commit failed after successful index merge: {e}");
-        summary.git_errors = summary.git_errors.saturating_add(summary.git_refreshed);
-        summary.git_refreshed = 0;
-    }
-
+    test_index_delay();
+    persist_index_git_phase(conn, &mut summary, git_results)?;
     Ok(summary)
 }
 
@@ -544,16 +389,20 @@ fn backfill_empty_git_common_dir(
     Ok(skipped)
 }
 
+fn scan_paths_by_source(conn: &Connection, source: &str) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1 AND excluded = 0")?;
+    stmt.query_map(params![source], |row| row.get(0))?
+        .collect::<std::result::Result<_, _>>()
+        .map_err(WorkpotError::Database)
+}
+
 fn collect_stale_scan_paths(
     conn: &Connection,
     configured_roots: &[PathBuf],
     scan_roots: &[PathBuf],
     seen: &HashSet<String>,
 ) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1 AND excluded = 0")?;
-    let paths: Vec<String> = stmt
-        .query_map(params![SOURCE_SCAN], |row| row.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
+    let paths = scan_paths_by_source(conn, SOURCE_SCAN)?;
 
     let mut stale = Vec::new();
     for path_key in paths {
@@ -583,10 +432,7 @@ fn collect_orphan_scan_paths(
     conn: &Connection,
     configured_roots: &[PathBuf],
 ) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1 AND excluded = 0")?;
-    let paths: Vec<String> = stmt
-        .query_map(params![SOURCE_SCAN], |row| row.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
+    let paths = scan_paths_by_source(conn, SOURCE_SCAN)?;
 
     Ok(paths
         .into_iter()
@@ -604,10 +450,7 @@ fn validate_manual_outside_roots(
     configured_roots: &[PathBuf],
     removes: &mut Vec<String>,
 ) -> Result<()> {
-    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1 AND excluded = 0")?;
-    let paths: Vec<String> = stmt
-        .query_map(params![SOURCE_MANUAL], |row| row.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
+    let paths = scan_paths_by_source(conn, SOURCE_MANUAL)?;
 
     for path_key in paths {
         let path = Path::new(&path_key);

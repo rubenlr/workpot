@@ -128,16 +128,12 @@ fn prune_scan_repos_under_root_conn(conn: &Connection, root: &Path) -> Result<u3
     let mut removed = 0u32;
     for path_key in paths {
         let repo_path = Path::new(&path_key);
-        if repo_under_root(repo_path, &root_canon)? {
+        if paths::path_under_root(repo_path, &root_canon) {
             conn.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
             removed += 1;
         }
     }
     Ok(removed)
-}
-
-fn repo_under_root(repo_path: &Path, root_canon: &Path) -> Result<bool> {
-    Ok(paths::path_under_root(repo_path, root_canon))
 }
 
 fn canonicalize_watch_root(path: &Path) -> Result<PathBuf> {

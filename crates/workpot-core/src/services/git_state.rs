@@ -74,11 +74,12 @@ pub fn refresh_and_persist_catalog_entry(
 
 /// Refresh git state for a single repo and persist the result to SQLite.
 pub fn refresh_and_persist(conn: &Connection, path: &Path) -> Result<GitState> {
-    let canonical = path
+    let path_key = path
         .canonicalize()
-        .map_err(|_| crate::error::WorkpotError::GitUnavailable(path.to_path_buf()))?;
-    let path_key = canonical.display().to_string();
-    let state = crate::infra::git::open_and_query(&canonical)?;
+        .map_err(|_| crate::error::WorkpotError::GitUnavailable(path.to_path_buf()))?
+        .display()
+        .to_string();
+    let state = refresh_git_state(path)?;
     persist_git_state(conn, &path_key, &state)?;
     Ok(state)
 }

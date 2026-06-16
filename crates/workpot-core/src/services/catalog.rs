@@ -2,10 +2,37 @@ use crate::domain::{Config, RepoRecord, SOURCE_MANUAL, SOURCE_SCAN};
 use crate::error::{Result, WorkpotError};
 use crate::infra::git::{self, resolve_git_common_dir};
 use crate::save_config;
-use rusqlite::{Connection, params};
+use crate::services::git_state::unix_now_secs;
+use rusqlite::{Connection, Row, params};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+
+fn repo_record_from_row(row: &Row<'_>) -> rusqlite::Result<(String, RepoRecord)> {
+    let path: String = row.get(0)?;
+    let pinned: i64 = row.get(12)?;
+    Ok((
+        path.clone(),
+        RepoRecord {
+            path: PathBuf::from(path),
+            name: row.get(1)?,
+            registered_at: row.get(2)?,
+            source: row.get(3)?,
+            git_common_dir: row.get(4)?,
+            branch: row.get(5)?,
+            is_dirty: row.get::<_, Option<i64>>(6)?.map(|v| v != 0),
+            ahead: row.get(7)?,
+            behind: row.get(8)?,
+            git_refreshed_at: row.get(9)?,
+            git_state_error: row.get(10)?,
+            last_opened_at: row.get(11)?,
+            pinned: pinned != 0,
+            pin_order: row.get(13)?,
+            notes: row.get(14)?,
+            tags: vec![],
+            alias: row.get(15)?,
+        },
+    ))
+}
 
 pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Result<RepoRecord> {
     if !path.exists() {
@@ -48,10 +75,7 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
         });
     }
 
-    let registered_at = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
+    let registered_at = unix_now_secs();
 
     let git_common_dir = resolve_git_common_dir(&canonical)?.display().to_string();
 
@@ -100,32 +124,7 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
     let mut order: Vec<String> = Vec::new();
     let mut by_path: HashMap<String, RepoRecord> = HashMap::new();
 
-    let rows = stmt.query_map([], |row| {
-        let path: String = row.get(0)?;
-        let pinned: i64 = row.get(12)?;
-        Ok((
-            path.clone(),
-            RepoRecord {
-                path: PathBuf::from(path),
-                name: row.get(1)?,
-                registered_at: row.get(2)?,
-                source: row.get(3)?,
-                git_common_dir: row.get(4)?,
-                branch: row.get(5)?,
-                is_dirty: row.get::<_, Option<i64>>(6)?.map(|v| v != 0),
-                ahead: row.get(7)?,
-                behind: row.get(8)?,
-                git_refreshed_at: row.get(9)?,
-                git_state_error: row.get(10)?,
-                last_opened_at: row.get(11)?,
-                pinned: pinned != 0,
-                pin_order: row.get(13)?,
-                notes: row.get(14)?,
-                tags: vec![],
-                alias: row.get(15)?,
-            },
-        ))
-    })?;
+    let rows = stmt.query_map([], repo_record_from_row)?;
 
     for row in rows {
         let (path, record) = row.map_err(WorkpotError::Database)?;
@@ -166,29 +165,7 @@ pub fn get_repo_by_path(conn: &Connection, path_key: &str) -> Result<RepoRecord>
                 pinned, pin_order, notes, alias
          FROM repos WHERE path = ?1 AND excluded = 0",
         params![path_key],
-        |row| {
-            let path: String = row.get(0)?;
-            let pinned: i64 = row.get(12)?;
-            Ok(RepoRecord {
-                path: PathBuf::from(path),
-                name: row.get(1)?,
-                registered_at: row.get(2)?,
-                source: row.get(3)?,
-                git_common_dir: row.get(4)?,
-                branch: row.get(5)?,
-                is_dirty: row.get::<_, Option<i64>>(6)?.map(|v| v != 0),
-                ahead: row.get(7)?,
-                behind: row.get(8)?,
-                git_refreshed_at: row.get(9)?,
-                git_state_error: row.get(10)?,
-                last_opened_at: row.get(11)?,
-                pinned: pinned != 0,
-                pin_order: row.get(13)?,
-                notes: row.get(14)?,
-                tags: vec![],
-                alias: row.get(15)?,
-            })
-        },
+        |row| Ok(repo_record_from_row(row)?.1),
     )
     .map_err(|e| match e {
         rusqlite::Error::QueryReturnedNoRows => WorkpotError::NotFound(path_key.to_string()),
@@ -204,22 +181,13 @@ pub fn get_repo_by_path(conn: &Connection, path_key: &str) -> Result<RepoRecord>
 /// worktree is used.
 pub fn indexed_launch_path(conn: &Connection, path: &Path) -> Result<PathBuf> {
     let (repo_path, path_key) = resolve_repo_location(conn, path)?;
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM repos WHERE path = ?1 AND excluded = 0",
-        params![path_key],
-        |row| row.get(0),
-    )?;
-    if count == 0 {
-        return Err(WorkpotError::NotFound(path_key));
-    }
+    let record = get_repo_by_path(conn, &path_key)?;
     if is_bare_repo(&repo_path) {
         let worktrees = git::list_worktree_paths(&repo_path)?;
         if worktrees.is_empty() {
             return Err(WorkpotError::GitUnavailable(repo_path));
         }
-        let catalog_branch = get_repo_by_path(conn, &path_key)
-            .ok()
-            .and_then(|record| record.branch);
+        let catalog_branch = record.branch;
         if let Some(branch) = catalog_branch {
             for wt in &worktrees {
                 if let Ok(state) = git::open_and_query(wt)
@@ -499,10 +467,7 @@ pub fn upsert_scan(conn: &Connection, path: &Path, git_common_dir: &str) -> Resu
         )
         .unwrap_or(0)
     } else {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0)
+        unix_now_secs()
     };
 
     conn.execute(
