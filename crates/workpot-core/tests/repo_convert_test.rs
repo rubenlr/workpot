@@ -10,7 +10,9 @@ use workpot_core::services::catalog;
 use workpot_core::services::git_state::refresh_and_persist;
 use workpot_core::services::launch::launch_repo;
 use workpot_core::services::repo_convert::{
-    self, ConvertResult, ConvertTarget, PreflightResult, catalog_path_swap,
+    self, ConvertResult, ConvertTarget, PreflightResult, assess_conversion_readiness,
+    assess_structural_blockers, catalog_path_swap, persist_structural_preflight_for_repo,
+    run_volatile_preflight,
 };
 
 fn local_repo_clean_synced(parent: &Path) -> PathBuf {
@@ -599,6 +601,7 @@ fn resolve_project_name_uses_alias_when_configured() {
         notes: None,
         tags: vec![],
         alias: Some("display-alias".into()),
+        convert_block_reason: None,
     };
     assert_eq!(
         repo_convert::resolve_project_name(&cfg, &record),
@@ -633,6 +636,7 @@ fn resolve_project_name_falls_back_to_folder_without_alias() {
         notes: None,
         tags: vec![],
         alias: None,
+        convert_block_reason: None,
     };
     assert_eq!(
         repo_convert::resolve_project_name(&cfg, &record),
@@ -734,4 +738,118 @@ fn convert_rejects_already_bare_layout() {
         matches!(err, WorkpotError::ConversionPreflight(ref msg) if msg.contains("already bare")),
         "unexpected error: {err:?}"
     );
+}
+
+#[test]
+fn structural_blocks_linked_worktree() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ctx = test_ctx_with_migration(
+        dir.path(),
+        "[migration]\nallow_conversion_to_bare_repo = true\n",
+    );
+    let (_bare_path, wt_path) = bare_repo_with_worktree(dir.path());
+    ctx.register_manual(&wt_path).expect("register worktree");
+
+    let config = ctx.config().expect("config");
+    ctx.db()
+        .with_write(|conn| persist_structural_preflight_for_repo(conn, &config, &wt_path))
+        .expect("persist");
+
+    let path_key = wt_path.canonicalize().expect("canon").display().to_string();
+    let reason: Option<String> = ctx
+        .db()
+        .with_read(|conn| {
+            conn.query_row(
+                "SELECT convert_block_reason FROM repos WHERE path = ?1",
+                rusqlite::params![path_key],
+                |row| row.get(0),
+            )
+            .map_err(workpot_core::WorkpotError::from)
+        })
+        .expect("query");
+    assert!(
+        reason
+            .as_deref()
+            .is_some_and(|r| r.contains("git worktree")),
+        "expected linked worktree blocker, got {reason:?}"
+    );
+
+    ctx.db()
+        .with_read(|conn| {
+            let result = assess_structural_blockers(conn, &config, &wt_path, ConvertTarget::Bare)?;
+            assert!(matches!(result, PreflightResult::Blocked { .. }));
+            Ok(())
+        })
+        .expect("assess");
+}
+
+#[test]
+fn dirty_repo_persists_null_structural_block_reason() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ctx = test_ctx_with_migration(
+        dir.path(),
+        "[migration]\nallow_conversion_to_bare_repo = true\n",
+    );
+    let path = dirty_local_repo(dir.path());
+    ctx.register_manual(&path).expect("register");
+
+    let config = ctx.config().expect("config");
+    ctx.db()
+        .with_write(|conn| persist_structural_preflight_for_repo(conn, &config, &path))
+        .expect("persist");
+
+    let path_key = path.canonicalize().expect("canon").display().to_string();
+    let reason: Option<String> = ctx
+        .db()
+        .with_read(|conn| {
+            conn.query_row(
+                "SELECT convert_block_reason FROM repos WHERE path = ?1",
+                rusqlite::params![path_key],
+                |row| row.get(0),
+            )
+            .map_err(workpot_core::WorkpotError::from)
+        })
+        .expect("query");
+    assert_eq!(reason, None);
+
+    let volatile = run_volatile_preflight(&path).expect("volatile");
+    assert!(matches!(volatile, PreflightResult::DirtyWorktree { .. }));
+}
+
+#[test]
+fn assess_conversion_readiness_rejects_dirty_after_structural_clear() {
+    use workpot_core::WorkpotError;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ctx = test_ctx_with_migration(
+        dir.path(),
+        "[migration]\nallow_conversion_to_bare_repo = true\n",
+    );
+    let path = dirty_local_repo(dir.path());
+    ctx.register_manual(&path).expect("register");
+
+    let config = ctx.config().expect("config");
+    ctx.db()
+        .with_read(|conn| {
+            let readiness = assess_conversion_readiness(conn, &config, &path, ConvertTarget::Bare)?;
+            assert!(matches!(readiness, PreflightResult::DirtyWorktree { .. }));
+            Ok(())
+        })
+        .expect("assess");
+
+    let err = ctx
+        .convert_repo(&path, ConvertTarget::Bare, false)
+        .expect_err("dirty repo must fail convert");
+    assert!(
+        matches!(err, WorkpotError::ConversionPreflight(ref msg) if msg.contains("dirty worktree")),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn volatile_preflight_is_independent_of_db_block_reason() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dirty_local_repo(dir.path());
+    let result = run_volatile_preflight(&path).expect("volatile");
+    assert!(matches!(result, PreflightResult::DirtyWorktree { .. }));
 }

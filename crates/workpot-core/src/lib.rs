@@ -236,6 +236,8 @@ impl AppState {
                 }
             }
             catalog::prune_missing_repos(&tx)?;
+            let config = self.config.read().map_err(lock_poison)?;
+            crate::services::repo_convert::persist_all_structural_preflight(&tx, &config)?;
             tx.commit()?;
             Ok(())
         })?;

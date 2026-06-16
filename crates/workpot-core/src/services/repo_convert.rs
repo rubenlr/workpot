@@ -1,4 +1,4 @@
-use crate::domain::config::{MigrationConfig, ProjectNameSource};
+use crate::domain::config::{MigrationConfig, ProjectNameSource, RepoLayout};
 use crate::domain::{BRANCH_UNBORN, Config, RepoRecord};
 use crate::error::{Result, WorkpotError};
 use crate::infra::git::{self, SyncBlocker};
@@ -36,6 +36,9 @@ pub enum PreflightResult {
     WrongLayout {
         current: &'static str,
         requested: &'static str,
+    },
+    Blocked {
+        reason: String,
     },
 }
 
@@ -79,7 +82,29 @@ pub fn resolve_project_name(config: &MigrationConfig, record: &RepoRecord) -> St
     }
 }
 
-pub fn run_preflight(path: &Path) -> Result<PreflightResult> {
+pub fn convert_target_for_record(
+    migration: &MigrationConfig,
+    is_bare: bool,
+) -> Option<ConvertTarget> {
+    if is_bare {
+        if migration.allow_conversion_to_local_repo
+            || migration.default_repo_layout == RepoLayout::Local
+        {
+            Some(ConvertTarget::Local)
+        } else {
+            None
+        }
+    } else if migration.allow_conversion_to_bare_repo
+        || migration.default_repo_layout == RepoLayout::Bare
+    {
+        Some(ConvertTarget::Bare)
+    } else {
+        None
+    }
+}
+
+/// Volatile git state — always run live (never persist).
+pub fn run_volatile_preflight(path: &Path) -> Result<PreflightResult> {
     let canonical = path
         .canonicalize()
         .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?;
@@ -103,6 +128,134 @@ pub fn run_preflight(path: &Path) -> Result<PreflightResult> {
     }
 
     Ok(PreflightResult::Ready)
+}
+
+/// Structural blockers only — safe to persist during index.
+pub fn assess_structural_blockers(
+    conn: &Connection,
+    config: &Config,
+    path: &Path,
+    target: ConvertTarget,
+) -> Result<PreflightResult> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?;
+
+    if is_linked_worktree(&canonical) {
+        let common = git::resolve_git_common_dir(&canonical)?;
+        return Ok(PreflightResult::Blocked {
+            reason: format!(
+                "path is a git worktree; run convert on the bare repo at {}",
+                common.display()
+            ),
+        });
+    }
+
+    if let Some(wrong_layout) = wrong_layout_for_target(target, is_bare_repo(&canonical)) {
+        return Ok(wrong_layout);
+    }
+
+    let path_key = canonical.display().to_string();
+    let record = match catalog::get_repo_by_path(conn, &path_key) {
+        Ok(record) => record,
+        Err(WorkpotError::NotFound(_)) => return Ok(PreflightResult::NotInCatalog),
+        Err(e) => return Err(e),
+    };
+
+    let resolved_paths = resolve_target_paths(config, &record, &canonical, target)?;
+    if let Err(e) = check_target_paths_exist(&resolved_paths, &canonical) {
+        return Ok(blocked_from_preflight_error(e));
+    }
+    if let Err(e) = assert_safe_to_convert(config, &canonical, &resolved_paths) {
+        return Ok(blocked_from_preflight_error(e));
+    }
+
+    Ok(PreflightResult::Ready)
+}
+
+/// Full gate — structural then volatile. Used by prepare_conversion.
+pub fn assess_conversion_readiness(
+    conn: &Connection,
+    config: &Config,
+    path: &Path,
+    target: ConvertTarget,
+) -> Result<PreflightResult> {
+    let structural = assess_structural_blockers(conn, config, path, target)?;
+    if structural != PreflightResult::Ready {
+        return Ok(structural);
+    }
+    run_volatile_preflight(path)
+}
+
+pub fn persist_structural_preflight_for_repo(
+    conn: &Connection,
+    config: &Config,
+    path: &Path,
+) -> Result<()> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?;
+    let path_key = canonical.display().to_string();
+    let is_bare = is_bare_repo(&canonical);
+    let reason = match convert_target_for_record(&config.migration, is_bare) {
+        Some(target) => {
+            let result = assess_structural_blockers(conn, config, &canonical, target)?;
+            structural_block_reason(&result)
+        }
+        None => None,
+    };
+    conn.execute(
+        "UPDATE repos SET convert_block_reason = ?1 WHERE path = ?2",
+        params![reason, path_key],
+    )?;
+    Ok(())
+}
+
+pub fn persist_all_structural_preflight(conn: &Connection, config: &Config) -> Result<()> {
+    let repos = catalog::list_repos(conn)?;
+    for record in repos {
+        if record.path.exists() {
+            persist_structural_preflight_for_repo(conn, config, &record.path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Full preflight including volatile checks. Prefer [`run_volatile_preflight`] or
+/// [`assess_conversion_readiness`] for tier-specific gates.
+pub fn run_preflight(path: &Path) -> Result<PreflightResult> {
+    run_volatile_preflight(path)
+}
+
+fn blocked_from_preflight_error(err: WorkpotError) -> PreflightResult {
+    match err {
+        WorkpotError::ConversionPreflight(reason) => PreflightResult::Blocked { reason },
+        other => PreflightResult::Blocked {
+            reason: other.to_string(),
+        },
+    }
+}
+
+fn structural_block_reason(result: &PreflightResult) -> Option<String> {
+    if *result == PreflightResult::Ready {
+        None
+    } else {
+        Some(preflight_message(result))
+    }
+}
+
+fn wrong_layout_for_target(target: ConvertTarget, currently_bare: bool) -> Option<PreflightResult> {
+    match (target, currently_bare) {
+        (ConvertTarget::Bare, true) => Some(PreflightResult::WrongLayout {
+            current: "bare",
+            requested: "bare",
+        }),
+        (ConvertTarget::Local, false) => Some(PreflightResult::WrongLayout {
+            current: "local",
+            requested: "local",
+        }),
+        _ => None,
+    }
 }
 
 fn branch_layout_preflight(canonical: &Path) -> Result<Option<PreflightResult>> {
@@ -184,12 +337,12 @@ pub fn catalog_path_swap(
         "INSERT INTO repos (
             path, name, registered_at, source, excluded, git_common_dir,
             branch, is_dirty, ahead, behind, git_refreshed_at, git_state_error,
-            last_opened_at, pinned, pin_order, notes, alias
+            last_opened_at, pinned, pin_order, notes, alias, convert_block_reason
          )
          SELECT
             ?1, ?2, registered_at, source, excluded, ?3,
             NULL, NULL, NULL, NULL, NULL, NULL,
-            last_opened_at, pinned, pin_order, notes, alias
+            last_opened_at, pinned, pin_order, notes, alias, NULL
          FROM repos WHERE path = ?4",
         params![new_key, new_name, new_git_common_dir, old_key],
     )?;
@@ -288,7 +441,7 @@ fn validate_resolved_path(resolved: &Path, parent: &Path) -> Result<()> {
     Ok(())
 }
 
-fn preflight_message(result: &PreflightResult) -> String {
+pub fn preflight_message(result: &PreflightResult) -> String {
     match result {
         PreflightResult::Ready => "ready".into(),
         PreflightResult::DirtyWorktree { path } => {
@@ -311,6 +464,7 @@ fn preflight_message(result: &PreflightResult) -> String {
         PreflightResult::WrongLayout { current, requested } => {
             format!("already {current}, cannot convert to {requested}")
         }
+        PreflightResult::Blocked { reason } => reason.clone(),
     }
 }
 
@@ -421,29 +575,14 @@ fn prepare_conversion(
         .ok_or_else(|| WorkpotError::InvalidPath("path has no parent directory".into()))?
         .to_path_buf();
 
-    if is_linked_worktree(&canonical) {
-        let common = git::resolve_git_common_dir(&canonical)?;
-        return Err(WorkpotError::ConversionPreflight(format!(
-            "path is a git worktree; run convert on the bare repo at {}",
-            common.display()
-        )));
-    }
-
-    assert_convertible_layout(target, is_bare_repo(&canonical))?;
-
-    let record = catalog::get_repo_by_path(conn, &path_key).map_err(|e| match e {
-        WorkpotError::NotFound(_) => conversion_blocked(&PreflightResult::NotInCatalog),
-        e => e,
-    })?;
-
-    let preflight = run_preflight(&canonical)?;
+    let preflight = assess_conversion_readiness(conn, config, path, target)?;
     if preflight != PreflightResult::Ready {
         return Err(conversion_blocked(&preflight));
     }
 
+    let record = catalog::get_repo_by_path(conn, &path_key)?;
+
     let resolved_paths = resolve_target_paths(config, &record, &canonical, target)?;
-    check_target_paths_exist(&resolved_paths, &canonical)?;
-    assert_safe_to_convert(config, &canonical, &resolved_paths)?;
 
     if dry_run {
         return Ok(PrepareOutcome::DryRun {
@@ -605,7 +744,7 @@ fn finalize_conversion(
         conn.execute(
             "UPDATE repos SET name=?1, git_common_dir=?2,
              branch=NULL, is_dirty=NULL, ahead=NULL, behind=NULL,
-             git_refreshed_at=NULL, git_state_error=NULL
+             git_refreshed_at=NULL, git_state_error=NULL, convert_block_reason=NULL
              WHERE path=?3",
             params![new_name, new_git_common_dir, prepared.path_key],
         )?;
@@ -754,20 +893,6 @@ fn resolve_bare_layout(
         worktree_path,
         branch,
     })
-}
-
-fn assert_convertible_layout(target: ConvertTarget, currently_bare: bool) -> Result<()> {
-    match (target, currently_bare) {
-        (ConvertTarget::Bare, true) => Err(conversion_blocked(&PreflightResult::WrongLayout {
-            current: "bare",
-            requested: "bare",
-        })),
-        (ConvertTarget::Local, false) => Err(conversion_blocked(&PreflightResult::WrongLayout {
-            current: "local",
-            requested: "local",
-        })),
-        _ => Ok(()),
-    }
 }
 
 fn resolved_path_by_label(resolved_paths: &[(String, PathBuf)], label: &str) -> Result<PathBuf> {

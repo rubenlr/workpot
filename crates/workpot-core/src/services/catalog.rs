@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 const REPO_ROW_SELECT: &str = "SELECT path, name, registered_at, source, git_common_dir,
         branch, is_dirty, ahead, behind, git_refreshed_at, git_state_error, last_opened_at,
-        pinned, pin_order, notes, alias";
+        pinned, pin_order, notes, alias, convert_block_reason";
 
 fn new_repo_record(
     path: PathBuf,
@@ -36,6 +36,7 @@ fn new_repo_record(
         notes: None,
         tags: vec![],
         alias: None,
+        convert_block_reason: None,
     }
 }
 
@@ -60,6 +61,7 @@ fn repo_record_from_row(row: &Row<'_>) -> rusqlite::Result<RepoRecord> {
         notes: row.get(14)?,
         tags: vec![],
         alias: row.get(15)?,
+        convert_block_reason: row.get(16)?,
     })
 }
 

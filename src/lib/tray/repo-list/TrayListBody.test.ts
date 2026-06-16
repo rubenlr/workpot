@@ -41,6 +41,7 @@ function repo(name: string): RepoDto {
     branches: [],
     is_bare: false,
     convert_to: null,
+    convert_block_reason: null,
   };
 }
 

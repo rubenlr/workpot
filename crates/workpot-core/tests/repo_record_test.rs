@@ -29,6 +29,7 @@ fn repo_record_round_trips_field_assignment() {
         notes: Some("note".to_string()),
         tags: vec!["cli".to_string()],
         alias: Some("wp".to_string()),
+        convert_block_reason: None,
     };
 
     assert_eq!(record.path, PathBuf::from("/tmp/workpot-repo"));

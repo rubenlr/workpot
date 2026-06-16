@@ -173,6 +173,7 @@ pub fn index_git_paths(conn: &Connection) -> Result<Vec<PathBuf>> {
 /// Phase 4: persist rayon git refresh results (write connection, one transaction).
 pub fn persist_index_git_phase(
     conn: &Connection,
+    config: &Config,
     summary: &mut IndexSummary,
     git_results: Vec<crate::services::git_state::GitRefreshResult>,
 ) -> Result<()> {
@@ -209,6 +210,7 @@ pub fn persist_index_git_phase(
             }
         }
     }
+    crate::services::repo_convert::persist_all_structural_preflight(&git_tx, config)?;
     if let Err(e) = git_tx.commit() {
         log::warn!("git refresh commit failed after successful index merge: {e}");
         summary.git_errors = summary.git_errors.saturating_add(summary.git_refreshed);
@@ -229,7 +231,9 @@ pub fn run_phased(pool: &crate::infra::db::DbPool, config: &Config) -> Result<In
                 |plan| pool.with_write(|conn| merge_catalog_phase(conn, config, plan)),
                 || pool.with_read(index_git_paths),
                 |summary, git_results| {
-                    pool.with_write(|conn| persist_index_git_phase(conn, summary, git_results))
+                    pool.with_write(|conn| {
+                        persist_index_git_phase(conn, config, summary, git_results)
+                    })
                 },
             )
         },
@@ -261,7 +265,7 @@ pub fn run_full_connection(conn: &Connection, config: &Config) -> Result<IndexSu
                 || discover_phase(conn, config),
                 |plan| merge_catalog_phase(conn, config, plan),
                 || index_git_paths(conn),
-                |summary, git_results| persist_index_git_phase(conn, summary, git_results),
+                |summary, git_results| persist_index_git_phase(conn, config, summary, git_results),
             )
         },
         |e| record_error_run(conn, started_at, e),

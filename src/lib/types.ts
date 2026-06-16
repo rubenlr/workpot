@@ -76,4 +76,5 @@ export interface RepoDto {
   branches: string[];
   is_bare: boolean;
   convert_to: "bare" | "local" | null;
+  convert_block_reason: string | null;
 }

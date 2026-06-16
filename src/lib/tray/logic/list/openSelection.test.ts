@@ -21,6 +21,7 @@ function repo(name: string, path?: string): RepoDto {
     branches: [],
     is_bare: false,
     convert_to: null,
+    convert_block_reason: null,
   };
 }
 

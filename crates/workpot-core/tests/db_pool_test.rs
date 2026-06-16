@@ -64,7 +64,7 @@ fn assert_schema_ready(conn: &Connection) {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("user_version");
-    assert_eq!(version, 7);
+    assert_eq!(version, 8);
 
     let repos_exists: i32 = conn
         .query_row(

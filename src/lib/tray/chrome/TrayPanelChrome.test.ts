@@ -33,6 +33,7 @@ const baseRepo: RepoDto = {
   branches: [],
   is_bare: false,
   convert_to: null,
+  convert_block_reason: null,
 };
 
 import type { TrayListView } from "$lib/tray/logic/list/listState";

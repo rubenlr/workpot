@@ -463,7 +463,7 @@ fn persist_index_git_phase_updates_repo_git_columns() {
         },
     }];
 
-    index::persist_index_git_phase(&conn, &mut summary, git_results).expect("persist git");
+    index::persist_index_git_phase(&conn, &config, &mut summary, git_results).expect("persist git");
     assert_eq!(summary.git_refreshed, 1);
     assert_eq!(summary.git_errors, 0);
 
@@ -497,4 +497,104 @@ fn index_git_failure_writes_skipped() {
         )
         .expect("skipped changes");
     assert!(skipped >= 1);
+}
+
+fn seed_committed_repo(repo: &Path) {
+    for (key, val) in [("user.email", "t@example.com"), ("user.name", "Test")] {
+        let status = common::git_cmd()
+            .args(["config", key, val])
+            .current_dir(repo)
+            .status()
+            .expect("config");
+        assert!(status.success());
+    }
+    let marker = repo.join("README");
+    fs::write(&marker, "tracked\n").expect("write");
+    let status = common::git_cmd()
+        .args(["add", "README"])
+        .current_dir(repo)
+        .status()
+        .expect("add");
+    assert!(status.success());
+    let status = common::git_cmd()
+        .args(["commit", "-m", "init", "-q"])
+        .current_dir(repo)
+        .status()
+        .expect("commit");
+    assert!(status.success());
+}
+
+#[test]
+fn index_persists_null_structural_block_for_volatile_dirty_repo() {
+    let (_dir, conn, mut config) = open_index_fixture(None);
+    config.migration.allow_conversion_to_bare_repo = true;
+    let watch_root = config.watch_roots[0].clone();
+    let repo_path = git_worktree(&watch_root, "dirty-volatile");
+    seed_committed_repo(&repo_path);
+    fs::write(repo_path.join("README"), "dirty\n").expect("dirty");
+
+    index::run_full_connection(&conn, &config).expect("index");
+
+    let path_key = repo_path
+        .canonicalize()
+        .expect("canon")
+        .display()
+        .to_string();
+    let (is_dirty, block_reason): (Option<i64>, Option<String>) = conn
+        .query_row(
+            "SELECT is_dirty, convert_block_reason FROM repos WHERE path = ?1",
+            rusqlite::params![path_key],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("row");
+    assert_eq!(is_dirty, Some(1));
+    assert_eq!(block_reason, None);
+}
+
+#[test]
+fn index_persists_structural_linked_worktree_block() {
+    let (_dir, conn, mut config) = open_index_fixture(None);
+    config.migration.allow_conversion_to_bare_repo = true;
+    let watch_root = config.watch_roots[0].clone();
+
+    let bare_path = watch_root.join("proj.git");
+    fs::create_dir_all(&bare_path).expect("bare dir");
+    let status = common::git_cmd()
+        .args(["init", "--bare", "-q", "-b", "main"])
+        .current_dir(&bare_path)
+        .status()
+        .expect("bare init");
+    assert!(status.success());
+    common::seed_bare_repo(&bare_path);
+
+    let wt_path = watch_root.join("proj");
+    let status = common::git_cmd()
+        .args([
+            "worktree",
+            "add",
+            "-q",
+            wt_path.to_str().expect("utf8"),
+            "main",
+        ])
+        .current_dir(&bare_path)
+        .status()
+        .expect("worktree add");
+    assert!(status.success());
+
+    index::run_full_connection(&conn, &config).expect("index");
+
+    let path_key = wt_path.canonicalize().expect("canon").display().to_string();
+    let block_reason: Option<String> = conn
+        .query_row(
+            "SELECT convert_block_reason FROM repos WHERE path = ?1",
+            rusqlite::params![path_key],
+            |row| row.get(0),
+        )
+        .expect("row");
+    assert!(
+        block_reason
+            .as_deref()
+            .is_some_and(|r| r.contains("git worktree")),
+        "expected linked worktree structural block, got {block_reason:?}"
+    );
 }

@@ -117,6 +117,7 @@ mod tests {
             notes: None,
             tags: vec![],
             alias: None,
+            convert_block_reason: None,
         }
     }
 

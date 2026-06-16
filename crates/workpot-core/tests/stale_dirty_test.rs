@@ -28,6 +28,7 @@ fn make_repo(is_dirty: Option<bool>, last_opened_at: Option<i64>) -> RepoRecord 
         notes: None,
         tags: vec![],
         alias: None,
+        convert_block_reason: None,
     }
 }
 

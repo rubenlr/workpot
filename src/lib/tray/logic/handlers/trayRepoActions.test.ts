@@ -27,6 +27,7 @@ function repo(overrides: Partial<RepoDto> = {}): RepoDto {
     branches: [],
     is_bare: false,
     convert_to: null,
+    convert_block_reason: null,
     ...overrides,
   };
 }

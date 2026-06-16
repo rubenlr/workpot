@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -6,8 +6,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, Manager, State, Window};
-use workpot_core::domain::config::{MigrationConfig, RepoLayout};
-use workpot_core::services::repo_convert::{ConvertResult, ConvertTarget};
+use workpot_core::domain::config::MigrationConfig;
+use workpot_core::services::repo_convert::{
+    ConvertResult, ConvertTarget, PreflightResult, convert_target_for_record, preflight_message,
+    run_volatile_preflight,
+};
 use workpot_core::{AppState, GitRefreshSummary, RepoRecord, SyncDirection, run_repo_sync};
 
 /// Prevents overlapping background git refresh jobs (panel open + Cmd+R).
@@ -164,6 +167,15 @@ fn log_emit_err(event: &str, err: tauri::Error) {
 /// Active repo path for the most recent `show_repo_context_menu` popup.
 pub struct ContextMenuRepo(pub Arc<Mutex<Option<String>>>);
 
+#[derive(Debug, Deserialize)]
+pub struct ShowRepoContextMenuArgs {
+    repo_path: String,
+    is_pinned: bool,
+    tags: Vec<String>,
+    convert_to: Option<String>,
+    convert_block_reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct RepoDto {
     pub path: String,
@@ -183,6 +195,7 @@ pub struct RepoDto {
     pub branches: Vec<String>,
     pub is_bare: bool,
     pub convert_to: Option<String>,
+    pub convert_block_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -218,28 +231,11 @@ fn convert_to_for_record(
     migration: &MigrationConfig,
     is_bare: bool,
 ) -> Option<String> {
-    let blocked = record.is_dirty == Some(true)
-        || record.git_state_error.is_some()
-        || record.ahead.is_some_and(|ahead| ahead > 0);
-    if blocked {
-        return None;
-    }
-
-    if is_bare {
-        if migration.allow_conversion_to_local_repo
-            || migration.default_repo_layout == RepoLayout::Local
-        {
-            Some("local".to_string())
-        } else {
-            None
-        }
-    } else if migration.allow_conversion_to_bare_repo
-        || migration.default_repo_layout == RepoLayout::Bare
-    {
-        Some("bare".to_string())
-    } else {
-        None
-    }
+    let _ = record;
+    convert_target_for_record(migration, is_bare).map(|target| match target {
+        ConvertTarget::Bare => "bare".to_string(),
+        ConvertTarget::Local => "local".to_string(),
+    })
 }
 
 fn record_to_dto(record: RepoRecord, migration: &MigrationConfig) -> RepoDto {
@@ -263,6 +259,7 @@ fn record_to_dto(record: RepoRecord, migration: &MigrationConfig) -> RepoDto {
         branches: vec![],
         is_bare,
         convert_to,
+        convert_block_reason: record.convert_block_reason,
     }
 }
 
@@ -666,11 +663,23 @@ fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String>
     Ok(items)
 }
 
-fn convert_menu_label(target: &str) -> &'static str {
-    match target {
+fn truncate_menu_reason(reason: &str, max_chars: usize) -> String {
+    if reason.chars().count() <= max_chars {
+        reason.to_string()
+    } else {
+        format!("{}…", reason.chars().take(max_chars).collect::<String>())
+    }
+}
+
+fn convert_menu_label(target: &str, block_reason: Option<&str>) -> String {
+    let base = match target {
         "bare" => "Convert to bare",
         "local" => "Convert to local",
         _ => "Convert",
+    };
+    match block_reason {
+        Some(reason) => format!("{base} — {}", truncate_menu_reason(reason, 48)),
+        None => base.to_string(),
     }
 }
 
@@ -678,13 +687,18 @@ fn convert_menu_label(target: &str) -> &'static str {
 pub async fn show_repo_context_menu(
     window: Window,
     app: AppHandle,
-    repo_path: String,
-    is_pinned: bool,
-    tags: Vec<String>,
-    convert_to: Option<String>,
+    args: ShowRepoContextMenuArgs,
     menu_repo: State<'_, ContextMenuRepo>,
     convert_guard: State<'_, RepoConvertGuard>,
 ) -> Result<(), String> {
+    let ShowRepoContextMenuArgs {
+        repo_path,
+        is_pinned,
+        tags,
+        convert_to,
+        convert_block_reason,
+    } = args;
+
     {
         let mut guard = menu_repo
             .0
@@ -692,6 +706,24 @@ pub async fn show_repo_context_menu(
             .map_err(|_| "context menu state lock poisoned".to_string())?;
         *guard = Some(repo_path.clone());
     }
+
+    let convert_menu_block = if convert_to.is_some() {
+        let repo_path_for_check = repo_path.clone();
+        let volatile_result = tauri::async_runtime::spawn_blocking(move || {
+            run_volatile_preflight(Path::new(&repo_path_for_check))
+        })
+        .await
+        .map_err(|e| format!("volatile preflight task failed: {e}"))?
+        .map_err(|e| e.to_string())?;
+
+        let volatile_reason = match volatile_result {
+            PreflightResult::Ready => None,
+            other => Some(preflight_message(&other)),
+        };
+        volatile_reason.or(convert_block_reason)
+    } else {
+        None
+    };
 
     let pin_label = if is_pinned { "Unpin" } else { "Pin" };
     let pin_item =
@@ -718,13 +750,12 @@ pub async fn show_repo_context_menu(
     };
 
     let convert_item = convert_to
-        .as_deref()
         .map(|target| {
-            let enabled = convert_guard.status().is_none();
+            let enabled = convert_menu_block.is_none() && convert_guard.status().is_none();
             MenuItem::with_id(
                 &app,
                 "convert",
-                convert_menu_label(target),
+                convert_menu_label(&target, convert_menu_block.as_deref()),
                 enabled,
                 None::<&str>,
             )
@@ -1269,6 +1300,7 @@ mod tests {
             notes: None,
             tags: vec![],
             alias: None,
+            convert_block_reason: None,
         }
     }
 
@@ -1390,6 +1422,7 @@ mod tests {
             branches: vec![],
             is_bare: false,
             convert_to: None,
+            convert_block_reason: None,
         }
     }
 
@@ -1409,6 +1442,36 @@ mod tests {
             }],
             7
         ));
+    }
+
+    #[test]
+    fn convert_to_for_record_is_settings_only() {
+        let mut migration = default_migration();
+        migration.allow_conversion_to_bare_repo = true;
+        let mut record = sample_record(PathBuf::from("/tmp/dirty-convert"));
+        record.is_dirty = Some(true);
+        record.ahead = Some(3);
+        record.git_state_error = Some("sync failed".into());
+        let dto = record_to_dto(record, &migration);
+        assert_eq!(dto.convert_to.as_deref(), Some("bare"));
+    }
+
+    #[test]
+    fn convert_menu_label_embeds_block_reason() {
+        let label = convert_menu_label("bare", Some("dirty worktree at /tmp/repo"));
+        assert!(label.contains("Convert to bare"));
+        assert!(label.contains("dirty worktree"));
+    }
+
+    #[test]
+    fn repo_dto_maps_convert_block_reason() {
+        let mut record = sample_record(PathBuf::from("/tmp/blocked"));
+        record.convert_block_reason = Some("already bare, cannot convert to bare".into());
+        let dto = record_to_dto(record, &default_migration());
+        assert_eq!(
+            dto.convert_block_reason.as_deref(),
+            Some("already bare, cannot convert to bare")
+        );
     }
 
     #[test]
@@ -1448,6 +1511,7 @@ mod tests {
             notes: None,
             tags: vec![],
             alias: None,
+            convert_block_reason: None,
         };
         let dtos = repo_records_to_dtos(vec![record], &default_migration());
         assert_eq!(dtos[0].git_state_error, Some("bare".to_string()));

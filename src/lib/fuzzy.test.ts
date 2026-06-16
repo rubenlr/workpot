@@ -21,6 +21,7 @@ function repo(partial: Partial<RepoDto> & Pick<RepoDto, "name">): RepoDto {
     branches: partial.branches ?? [],
     is_bare: partial.is_bare ?? false,
     convert_to: partial.convert_to ?? null,
+    convert_block_reason: partial.convert_block_reason ?? null,
   };
 }
 

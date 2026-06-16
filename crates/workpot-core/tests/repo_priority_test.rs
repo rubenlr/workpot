@@ -39,6 +39,7 @@ fn repo(name: &str) -> RepoRecord {
         notes: None,
         tags: vec![],
         alias: None,
+        convert_block_reason: None,
     }
 }
 

@@ -21,6 +21,7 @@ export const storyRepoBase: RepoDto = {
   branches: ["main", "develop"],
   is_bare: false,
   convert_to: null,
+  convert_block_reason: null,
 };
 
 export function storyRepo(overrides: Partial<RepoDto>): RepoDto {
