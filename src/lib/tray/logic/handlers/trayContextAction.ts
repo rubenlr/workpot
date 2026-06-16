@@ -1,11 +1,12 @@
 import type { RepoDto } from "$lib/types";
 
-export type ContextAction = "pin" | "remove_tag" | "add_tag";
+export type ContextAction = "pin" | "remove_tag" | "add_tag" | "convert";
 
 export type ContextCommand =
   | { kind: "toggle_pin"; repoPath: string; pinned: boolean }
   | { kind: "remove_tag"; repoPath: string; tag: string }
   | { kind: "open_detail_tag_focus"; repo: RepoDto }
+  | { kind: "convert_repo"; repoPath: string }
   | { kind: "noop" };
 
 export function resolveContextAction(
@@ -30,6 +31,12 @@ export function resolveContextAction(
   }
   if (action === "add_tag" && repo) {
     return { kind: "open_detail_tag_focus", repo };
+  }
+  if (action === "convert") {
+    if (repo?.convert_to) {
+      return { kind: "convert_repo", repoPath };
+    }
+    return { kind: "noop" };
   }
   return { kind: "noop" };
 }

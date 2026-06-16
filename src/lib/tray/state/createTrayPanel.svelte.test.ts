@@ -449,21 +449,10 @@ describe("createTrayPanel", () => {
     expect(invoke).toHaveBeenCalledWith("list_repos");
   });
 
-  it("handleConvert no-ops when convert_to is null", async () => {
-    const panel = createTrayPanel();
-    await panel.mount();
-    invoke.mockClear();
-
-    await panel.handleConvert("/tmp/a");
-
-    expect(invoke).not.toHaveBeenCalledWith("convert_repo", expect.anything());
-  });
-
-  it("handleConvert invokes convert_repo when convert_to is set", async () => {
+  it("repo-context-action convert invokes convert_repo when convert_to is set", async () => {
+    const r = { ...repo("/tmp/a"), convert_to: "bare" as const };
     invoke.mockImplementation(async (cmd: string) => {
-      if (cmd === "list_repos") {
-        return [{ ...repo("/tmp/a"), convert_to: "bare" as const }];
-      }
+      if (cmd === "list_repos") return [r];
       if (cmd === "list_all_tags") return [];
       if (cmd === "get_tray_config") {
         return {
@@ -483,12 +472,30 @@ describe("createTrayPanel", () => {
     await panel.mount();
     invoke.mockClear();
 
-    await panel.handleConvert("/tmp/a");
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+    await handlers.onRepoContextAction({
+      action: "convert",
+      repo_path: "/tmp/a",
+    });
 
     expect(invoke).toHaveBeenCalledWith("convert_repo", {
       repoPath: "/tmp/a",
       target: "bare",
     });
+  });
+
+  it("repo-context-action convert no-ops when convert_to is null", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    invoke.mockClear();
+
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+    await handlers.onRepoContextAction({
+      action: "convert",
+      repo_path: "/tmp/a",
+    });
+
+    expect(invoke).not.toHaveBeenCalledWith("convert_repo", expect.anything());
   });
 
   it("index_failed clears indexing and sets list error", async () => {

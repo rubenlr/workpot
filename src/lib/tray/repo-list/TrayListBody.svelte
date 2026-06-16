@@ -29,7 +29,6 @@
     activeSync = null,
     onSync,
     activeConvert = null,
-    onConvert,
   }: {
     listView: TrayListView;
     emptyListMessage?: string;
@@ -50,7 +49,6 @@
       direction: SyncDirection,
     ) => void;
     activeConvert?: ActiveConvert | null;
-    onConvert?: (repoPath: string) => void;
   } = $props();
 </script>
 
@@ -68,7 +66,6 @@
     {activeSync}
     {onSync}
     {activeConvert}
-    {onConvert}
     {onOpen}
     {onDetail}
   />

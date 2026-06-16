@@ -26,7 +26,6 @@
     activeSync = null,
     onSync,
     activeConvert = null,
-    onConvert,
   }: {
     sectionedRepos: SectionedRepos;
     flatIndexByPath: Map<string, number>;
@@ -44,7 +43,6 @@
       direction: SyncDirection,
     ) => void;
     activeConvert?: ActiveConvert | null;
-    onConvert?: (repoPath: string) => void;
   } = $props();
 
   let hoveredRowIndex = $state<number | null>(null);
@@ -138,6 +136,7 @@
                   repoPath: repo.path,
                   isPinned: repo.pinned,
                   tags: repo.tags,
+                  convertTo: repo.convert_to,
                 });
               }}
               onRowDragStart={draggable
@@ -153,7 +152,6 @@
               {activeSync}
               {onSync}
               {activeConvert}
-              {onConvert}
               onDetail={() => {
                 onSelectRow(idx);
                 onDetail(repo, idx);

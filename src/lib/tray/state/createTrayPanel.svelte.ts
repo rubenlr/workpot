@@ -81,13 +81,6 @@ export function createTrayPanel() {
     list.selectedIndex = 0;
   }
 
-  const actionDeps: TrayRepoActionsDeps = {
-    invoke,
-    refresh: () => data.refresh(),
-    onError: (e) => data.setListError(String(e)),
-    openDetailWithTagFocus: (repo) => detail.openDetailWithTagFocus(repo),
-  };
-
   const syncDeps: TrayRepoSyncDeps = {
     invoke,
     refresh: () => data.refresh(),
@@ -107,6 +100,22 @@ export function createTrayPanel() {
     setActiveConvert: (convert) => {
       activeConvert = convert;
     },
+  };
+
+  async function handleConvert(repoPath: string): Promise<void> {
+    const repo = data.repos.find((r) => r.path === repoPath);
+    if (!repo?.convert_to) {
+      return;
+    }
+    await convertRepo(repoPath, repo.convert_to, convertDeps);
+  }
+
+  const actionDeps: TrayRepoActionsDeps = {
+    invoke,
+    refresh: () => data.refresh(),
+    onError: (e) => data.setListError(String(e)),
+    openDetailWithTagFocus: (repo) => detail.openDetailWithTagFocus(repo),
+    onConvert: handleConvert,
   };
 
   const indexDeps = {
@@ -132,14 +141,6 @@ export function createTrayPanel() {
     direction: SyncDirection,
   ) {
     await syncRepoBranch(repoPath, branch, direction, syncDeps);
-  }
-
-  async function handleConvert(repoPath: string): Promise<void> {
-    const repo = data.repos.find((r) => r.path === repoPath);
-    if (!repo?.convert_to) {
-      return;
-    }
-    await convertRepo(repoPath, repo.convert_to, convertDeps);
   }
 
   const gitRefreshDeps = {
@@ -330,7 +331,6 @@ export function createTrayPanel() {
     removeTagFromRepo,
     handlePinReorder,
     handleSync,
-    handleConvert,
     onFilterKeydown: keyboard.onFilterKeydown,
     onPanelKeydown: keyboard.onPanelKeydown,
     dismissLaunchError: launch.dismissLaunchError,

@@ -14,7 +14,7 @@ fn init_logging() {
 }
 
 fn handle_repo_context_menu(app: &tauri::AppHandle, menu_id: &str) {
-    if !matches!(menu_id, "pin" | "add_tag" | "remove_tag") {
+    if !matches!(menu_id, "pin" | "add_tag" | "remove_tag" | "convert") {
         return;
     }
     let state = app.state::<commands::ContextMenuRepo>();

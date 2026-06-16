@@ -50,7 +50,6 @@
   activeSync={panel.activeSync}
   onSync={panel.handleSync}
   activeConvert={panel.activeConvert}
-  onConvert={panel.handleConvert}
   branchRevision={panel.branchRevision}
   detailRepo={panel.detailRepo}
   focusTagOnDetailOpen={panel.focusTagOnDetailOpen}

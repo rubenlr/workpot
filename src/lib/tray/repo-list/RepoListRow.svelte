@@ -20,7 +20,6 @@
     onOpen,
     onDetail,
     onSync,
-    onConvert,
     onRowContextMenu,
     onRowDragStart,
     onRowDragOver,
@@ -43,7 +42,6 @@
       branch: string,
       direction: SyncDirection,
     ) => void;
-    onConvert?: (repoPath: string) => void;
     onRowContextMenu?: (e: MouseEvent) => void;
     onRowDragStart?: (e: DragEvent) => void;
     onRowDragOver?: (e: DragEvent) => void;
@@ -66,9 +64,6 @@
   const syncDisabled = $derived(activeSync != null || activeConvert != null);
 
   const converting = $derived(activeConvert?.repoPath === repo.path);
-
-  const convertButtonClass =
-    "flex shrink-0 cursor-pointer items-center justify-center self-center rounded-lg border-0 bg-transparent p-1.5 text-inherit shadow-none outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50";
 
   const rowSurfaceClass = $derived(
     selected
@@ -154,28 +149,13 @@
           ? () => onSync(repo.path, repo.branch!, "pull")
           : undefined}
       />
-      {#if repo.convert_to}
-        {#if converting}
-          <span
-            class="flex shrink-0 items-center self-center p-1.5 opacity-80"
-            aria-label="Converting to {repo.convert_to}"
-          >
-            <MaterialIcon name="sync" size={14} class="animate-spin" />
-          </span>
-        {:else}
-          <button
-            type="button"
-            class={convertButtonClass}
-            aria-label="Convert to {repo.convert_to}"
-            disabled={activeConvert != null}
-            onclick={(e) => {
-              e.stopPropagation();
-              onConvert?.(repo.path);
-            }}
-          >
-            <MaterialIcon name="transform" size={14} />
-          </button>
-        {/if}
+      {#if repo.convert_to && converting}
+        <span
+          class="flex shrink-0 items-center self-center p-1.5 opacity-80"
+          aria-label="Converting to {repo.convert_to}"
+        >
+          <MaterialIcon name="sync" size={14} class="animate-spin" />
+        </span>
       {/if}
     </div>
     <div

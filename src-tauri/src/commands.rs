@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::menu::{ContextMenu, Menu, MenuItem};
+use tauri::menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, Manager, State, Window};
 use workpot_core::domain::config::{MigrationConfig, RepoLayout};
 use workpot_core::services::repo_convert::{ConvertResult, ConvertTarget};
@@ -666,6 +666,14 @@ fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String>
     Ok(items)
 }
 
+fn convert_menu_label(target: &str) -> &'static str {
+    match target {
+        "bare" => "Convert to bare",
+        "local" => "Convert to local",
+        _ => "Convert",
+    }
+}
+
 #[tauri::command]
 pub async fn show_repo_context_menu(
     window: Window,
@@ -673,7 +681,9 @@ pub async fn show_repo_context_menu(
     repo_path: String,
     is_pinned: bool,
     tags: Vec<String>,
+    convert_to: Option<String>,
     menu_repo: State<'_, ContextMenuRepo>,
+    convert_guard: State<'_, RepoConvertGuard>,
 ) -> Result<(), String> {
     {
         let mut guard = menu_repo
@@ -698,8 +708,38 @@ pub async fn show_repo_context_menu(
     )
     .map_err(|e| e.to_string())?;
 
-    let menu = Menu::with_items(&app, &[&pin_item, &add_tag_item, &remove_tag_item])
-        .map_err(|e| e.to_string())?;
+    let mut menu_items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+        vec![&pin_item, &add_tag_item, &remove_tag_item];
+
+    let separator = if convert_to.is_some() {
+        Some(PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+
+    let convert_item = convert_to
+        .as_deref()
+        .map(|target| {
+            let enabled = convert_guard.status().is_none();
+            MenuItem::with_id(
+                &app,
+                "convert",
+                convert_menu_label(target),
+                enabled,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())
+        })
+        .transpose()?;
+
+    if let Some(ref sep) = separator {
+        menu_items.push(sep);
+    }
+    if let Some(ref item) = convert_item {
+        menu_items.push(item);
+    }
+
+    let menu = Menu::with_items(&app, &menu_items).map_err(|e| e.to_string())?;
     menu.popup(window).map_err(|e| e.to_string())?;
     Ok(())
 }

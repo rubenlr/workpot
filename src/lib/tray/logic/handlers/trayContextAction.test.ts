@@ -81,6 +81,27 @@ describe("resolveContextAction", () => {
     });
   });
 
+  it("convert resolves to convert_repo when convert_to is set", () => {
+    expect(
+      resolveContextAction("convert", repo({ convert_to: "bare" }), "/tmp/foo"),
+    ).toEqual({
+      kind: "convert_repo",
+      repoPath: "/tmp/foo",
+    });
+  });
+
+  it("noop convert when convert_to is null", () => {
+    expect(resolveContextAction("convert", repo(), "/tmp/foo")).toEqual({
+      kind: "noop",
+    });
+  });
+
+  it("noop convert when repo missing", () => {
+    expect(resolveContextAction("convert", null, "/tmp/foo")).toEqual({
+      kind: "noop",
+    });
+  });
+
   it("noop unknown action", () => {
     expect(resolveContextAction("unknown", repo(), "/tmp/foo")).toEqual({
       kind: "noop",

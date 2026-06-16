@@ -112,4 +112,28 @@ describe("trayRepoActions", () => {
       pinned: true,
     });
   });
+
+  it("executeContextCommand convert calls onConvert without refresh", async () => {
+    const onConvert = vi.fn().mockResolvedValue(undefined);
+    const d = deps({ onConvert });
+    await executeContextCommand(
+      { kind: "convert_repo", repoPath: "/tmp/foo" },
+      d,
+    );
+    expect(onConvert).toHaveBeenCalledWith("/tmp/foo");
+    expect(d.refresh).not.toHaveBeenCalled();
+  });
+
+  it("handleRepoContextAction convert calls onConvert when convert_to is set", async () => {
+    const onConvert = vi.fn().mockResolvedValue(undefined);
+    const d = deps({ onConvert });
+    const repos = [repo({ path: "/tmp/foo", convert_to: "bare" })];
+    await handleRepoContextAction(
+      { action: "convert", repo_path: "/tmp/foo" },
+      repos,
+      d,
+    );
+    expect(onConvert).toHaveBeenCalledWith("/tmp/foo");
+    expect(d.invoke).not.toHaveBeenCalled();
+  });
 });

@@ -12,6 +12,7 @@ export interface TrayRepoActionsDeps {
   refresh: () => Promise<void>;
   onError: (e: unknown) => void;
   openDetailWithTagFocus: (repo: RepoDto) => void;
+  onConvert?: (repoPath: string) => Promise<void>;
 }
 
 async function mutateThenRefresh(
@@ -71,6 +72,9 @@ export async function executeContextCommand(
       break;
     case "open_detail_tag_focus":
       deps.openDetailWithTagFocus(cmd.repo);
+      break;
+    case "convert_repo":
+      await deps.onConvert?.(cmd.repoPath);
       break;
     case "noop":
       break;

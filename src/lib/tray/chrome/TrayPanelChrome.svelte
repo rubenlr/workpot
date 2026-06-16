@@ -50,7 +50,6 @@
     activeSync = null,
     onSync,
     activeConvert = null,
-    onConvert,
     branchRevision = 0,
   }: {
     listMaxHeightPx: number;
@@ -92,7 +91,6 @@
       direction: SyncDirection,
     ) => void;
     activeConvert?: ActiveConvert | null;
-    onConvert?: (repoPath: string) => void;
     branchRevision?: number;
   } = $props();
 </script>
@@ -152,7 +150,6 @@
         {activeSync}
         {onSync}
         {activeConvert}
-        {onConvert}
         {onOpen}
         {onDetail}
       />
