@@ -251,7 +251,7 @@ pub fn run_phased(pool: &crate::infra::db::DbPool, config: &Config) -> Result<In
 fn run_phased_inner(
     pool: &crate::infra::db::DbPool,
     config: &Config,
-    started_at: i64,
+    _started_at: i64,
 ) -> Result<IndexSummary> {
     test_index_delay();
 
@@ -270,7 +270,6 @@ fn run_phased_inner(
     test_index_delay();
 
     pool.with_write(|conn| persist_index_git_phase(conn, &mut summary, git_results))?;
-    let _ = started_at;
     Ok(summary)
 }
 

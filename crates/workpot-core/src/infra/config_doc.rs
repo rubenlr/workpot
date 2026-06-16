@@ -367,8 +367,14 @@ fn set_string_array(item: &mut Item, values: &[String]) {
 }
 
 fn set_path_array(item: &mut Item, values: &[PathBuf]) {
-    let strings: Vec<String> = values.iter().map(|p| p.display().to_string()).collect();
-    set_string_array(item, &strings);
+    if !item.is_array() {
+        *item = value(toml_edit::Array::new());
+    }
+    let arr = item.as_array_mut().expect("array item");
+    arr.clear();
+    for p in values {
+        arr.push(p.display().to_string().as_str());
+    }
 }
 
 fn ensure_table<'a>(parent: &'a mut Table, key: &str) -> &'a mut Table {
@@ -390,10 +396,9 @@ pub fn render_init_config(config: &Config) -> String {
 /// Parse an existing config file, or build a documented default when missing.
 pub fn load_document(path: &Path) -> Result<DocumentMut> {
     if !path.exists() {
-        let contents = render_init_config(&Config::default());
-        return contents
-            .parse::<DocumentMut>()
-            .map_err(|e| WorkpotError::Config(e.to_string()));
+        let mut doc = template_cache().doc.clone();
+        apply_config_to_document(&mut doc, &Config::default());
+        return Ok(doc);
     }
     let contents = std::fs::read_to_string(path)?;
     contents

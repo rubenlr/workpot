@@ -223,18 +223,9 @@ fn validate_shell_cmd(name: &str, cmd: &str, placeholders: &[&str]) -> Result<()
         return Err(format!("{name} must not be empty"));
     }
     for placeholder in placeholders {
-        if cmd.contains(placeholder) {
-            continue;
+        if !cmd.contains(placeholder) {
+            return Err(format!("{name} must contain {placeholder} placeholder"));
         }
-        let msg = if placeholders.len() == 1 {
-            format!("{name} must contain {} placeholder", placeholders[0])
-        } else {
-            format!(
-                "{name} must contain {} placeholders",
-                placeholders.join(" and ")
-            )
-        };
-        return Err(msg);
     }
     Ok(())
 }

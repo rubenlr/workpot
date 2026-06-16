@@ -499,16 +499,15 @@ fn prepare_conversion(
     }))
 }
 
-fn clone_bare_layout(
-    prepared: &PreparedConversion,
-    resolved_paths: &[(String, PathBuf)],
-) -> Result<(PathBuf, String, String)> {
-    let bare_git_path = resolved_paths
+fn clone_bare_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String, String)> {
+    let bare_git_path = prepared
+        .resolved_paths
         .iter()
         .find(|(label, _)| label == "bare_repo")
         .map(|(_, p)| p.clone())
         .ok_or_else(|| WorkpotError::ConversionFailed("missing bare path".into()))?;
-    let worktree_path = resolved_paths
+    let worktree_path = prepared
+        .resolved_paths
         .iter()
         .find(|(label, _)| label == "worktree")
         .map(|(_, p)| p.clone())
@@ -612,7 +611,7 @@ fn clone_normal_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String
 
 fn clone_for_target(prepared: &PreparedConversion) -> Result<(PathBuf, String, String)> {
     match prepared.target {
-        ConvertTarget::Bare => clone_bare_layout(prepared, &prepared.resolved_paths),
+        ConvertTarget::Bare => clone_bare_layout(prepared),
         ConvertTarget::Normal => clone_normal_layout(prepared),
     }
 }

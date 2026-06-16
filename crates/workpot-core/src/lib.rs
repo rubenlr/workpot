@@ -371,12 +371,14 @@ pub fn init_config_file(path: &Path, home: &Path, force: bool) -> Result<()> {
 
 /// Backfill missing documentation comments in an existing config file.
 pub fn annotate_config_comments(path: &Path) -> Result<usize> {
-    let config = load_config(path)?;
+    let raw = fs::read_to_string(path)?;
+    let config: Config = toml::from_str(&raw).map_err(|e| WorkpotError::Config(e.to_string()))?;
     config.validate().map_err(WorkpotError::Config)?;
-    let mut doc = config_doc::load_document(path)?;
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| WorkpotError::Config(e.to_string()))?;
     let added = config_doc::add_missing_comments(&mut doc);
     config_doc::write_document(path, &doc)?;
-    let _ = config;
     Ok(added)
 }
 
