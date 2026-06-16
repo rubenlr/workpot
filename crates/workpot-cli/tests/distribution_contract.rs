@@ -77,6 +77,20 @@ fn tauri_bundle_targets_app_only() {
 }
 
 #[test]
+fn tauri_bundle_hides_macos_dock_icon() {
+    let conf = read_repo_file("src-tauri/tauri.conf.json");
+    assert!(
+        conf.contains("\"infoPlist\"") && conf.contains("Info.plist"),
+        "bundle.macOS.infoPlist must reference Info.plist for dock-less tray launches"
+    );
+    let plist = read_repo_file("src-tauri/Info.plist");
+    assert!(
+        plist.contains("LSUIElement") && plist.contains("<true/>"),
+        "Info.plist must set LSUIElement so tray .app launches without a Dock icon"
+    );
+}
+
+#[test]
 fn install_md_is_homebrew_only() {
     let install = read_repo_file("INSTALL.md");
     assert!(install.contains("brew install rubenlr/workpot/workpot"));

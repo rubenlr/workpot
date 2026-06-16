@@ -65,6 +65,8 @@ pub fn run() {
         .manage(commands::RepoSyncGuard::new())
         .manage(commands::RepoConvertGuard::new())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let state = AppState::open().map_err(|e| e.to_string())?;
             app.manage(Arc::new(state));
             #[cfg(target_os = "macos")]
