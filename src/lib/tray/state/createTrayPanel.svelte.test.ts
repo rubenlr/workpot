@@ -61,6 +61,7 @@ describe("createTrayPanel", () => {
         };
       }
       if (cmd === "get_repo_sync_status") return null;
+      if (cmd === "get_repo_convert_status") return null;
       return undefined;
     });
   });
@@ -402,5 +403,205 @@ describe("createTrayPanel", () => {
     });
     expect(panel.listError).toBe("network unreachable");
     expect(panel.listView).toEqual({ kind: "list" });
+  });
+
+  it("mount restores activeConvert when backend reports in-flight convert", async () => {
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "list_repos") return [repo("/tmp/a")];
+      if (cmd === "list_all_tags") return [];
+      if (cmd === "get_tray_config") {
+        return {
+          max_visible_rows: 10,
+          max_recent_days: 14,
+          min_recent_count: 3,
+          max_pinned: 5,
+          stale_dirty_days: 30,
+        };
+      }
+      if (cmd === "get_repo_sync_status") return null;
+      if (cmd === "get_repo_convert_status") {
+        return { repo_path: "/tmp/a", error: null };
+      }
+      return undefined;
+    });
+
+    const panel = createTrayPanel();
+    await panel.mount();
+
+    expect(panel.activeConvert).toEqual({ repoPath: "/tmp/a" });
+  });
+
+  it("handlePinReorder invokes set_pin_order and refreshes", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    invoke.mockClear();
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "list_repos") return [repo("/tmp/a")];
+      if (cmd === "get_repo_sync_status") return null;
+      return undefined;
+    });
+
+    await panel.handlePinReorder([{ path: "/tmp/a", order: 0 }]);
+
+    expect(invoke).toHaveBeenCalledWith("set_pin_order", {
+      items: [{ path: "/tmp/a", order: 0 }],
+    });
+    expect(invoke).toHaveBeenCalledWith("list_repos");
+  });
+
+  it("handleConvert no-ops when convert_to is null", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    invoke.mockClear();
+
+    await panel.handleConvert("/tmp/a");
+
+    expect(invoke).not.toHaveBeenCalledWith("convert_repo", expect.anything());
+  });
+
+  it("handleConvert invokes convert_repo when convert_to is set", async () => {
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "list_repos") {
+        return [{ ...repo("/tmp/a"), convert_to: "bare" as const }];
+      }
+      if (cmd === "list_all_tags") return [];
+      if (cmd === "get_tray_config") {
+        return {
+          max_visible_rows: 10,
+          max_recent_days: 14,
+          min_recent_count: 3,
+          max_pinned: 5,
+          stale_dirty_days: 30,
+        };
+      }
+      if (cmd === "get_repo_sync_status") return null;
+      if (cmd === "get_repo_convert_status") return null;
+      return undefined;
+    });
+
+    const panel = createTrayPanel();
+    await panel.mount();
+    invoke.mockClear();
+
+    await panel.handleConvert("/tmp/a");
+
+    expect(invoke).toHaveBeenCalledWith("convert_repo", {
+      repoPath: "/tmp/a",
+      target: "bare",
+    });
+  });
+
+  it("index_failed clears indexing and sets list error", async () => {
+    vi.useFakeTimers();
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+
+    handlers.onIndexStarted();
+    expect(panel.indexing).toBe(true);
+
+    handlers.onIndexFailed("index exploded");
+    await vi.runAllTimersAsync();
+
+    expect(panel.indexing).toBe(false);
+    expect(panel.listError).toBe("index exploded");
+    vi.useRealTimers();
+  });
+
+  it("panel-opened triggers git refresh handler", async () => {
+    const panel = createTrayPanel();
+    const input = document.createElement("input");
+    input.focus = focus;
+    panel.bindFilterInput(input);
+    await panel.mount();
+    invoke.mockClear();
+    focus.mockClear();
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "list_repos") return [repo("/tmp/a")];
+      if (cmd === "get_repo_sync_status") return null;
+      return undefined;
+    });
+
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+    handlers.onPanelOpened();
+
+    expect(invoke).toHaveBeenCalledWith("list_repos");
+    expect(focus).toHaveBeenCalled();
+  });
+
+  it("repo-context-action invokes expected command", async () => {
+    const r = { ...repo("/tmp/a"), pinned: false };
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "list_repos") return [r];
+      if (cmd === "list_all_tags") return [];
+      if (cmd === "get_tray_config") {
+        return {
+          max_visible_rows: 10,
+          max_recent_days: 14,
+          min_recent_count: 3,
+          max_pinned: 5,
+          stale_dirty_days: 30,
+        };
+      }
+      if (cmd === "get_repo_sync_status") return null;
+      if (cmd === "get_repo_convert_status") return null;
+      return undefined;
+    });
+
+    const panel = createTrayPanel();
+    await panel.mount();
+    invoke.mockClear();
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "list_repos") return [r];
+      if (cmd === "get_repo_sync_status") return null;
+      return undefined;
+    });
+
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+    await handlers.onRepoContextAction({ action: "pin", repo_path: "/tmp/a" });
+
+    expect(invoke).toHaveBeenCalledWith("set_pin", {
+      repoPath: "/tmp/a",
+      pinned: true,
+    });
+    expect(invoke).toHaveBeenCalledWith("list_repos");
+  });
+
+  it("repo-convert-started sets activeConvert", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+
+    handlers.onRepoConvertStarted({ repo_path: "/tmp/a", error: null });
+
+    expect(panel.activeConvert).toEqual({ repoPath: "/tmp/a" });
+  });
+
+  it("repo-convert-complete clears activeConvert and refreshes repos", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+    invoke.mockClear();
+
+    handlers.onRepoConvertStarted({ repo_path: "/tmp/a", error: null });
+    await handlers.onRepoConvertComplete({ repo_path: "/tmp/a", error: null });
+
+    expect(panel.activeConvert).toBeNull();
+    expect(invoke).toHaveBeenCalledWith("list_repos");
+  });
+
+  it("repo-convert-failed clears activeConvert and surfaces error", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+
+    handlers.onRepoConvertStarted({ repo_path: "/tmp/a", error: null });
+    handlers.onRepoConvertFailed({
+      repo_path: "/tmp/a",
+      error: "convert failed",
+    });
+
+    expect(panel.activeConvert).toBeNull();
+    expect(panel.listError).toBe("convert failed");
   });
 });
