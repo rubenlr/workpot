@@ -97,6 +97,23 @@ impl Default for MigrationConfig {
     }
 }
 
+impl MigrationConfig {
+    pub(super) fn validate(&self) -> Result<(), String> {
+        if self.temp_suffix.is_empty() {
+            return Err("migration.temp_suffix must not be empty".into());
+        }
+        if !self.bare_repo_template.contains("{project}") {
+            return Err("migration.bare_repo_template must contain {project}".into());
+        }
+        if !self.worktree_template.contains("{project}")
+            || !self.worktree_template.contains("{worktree}")
+        {
+            return Err("migration.worktree_template must contain {project} and {worktree}".into());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Limits {
     #[serde(default = "default_max_watch_roots")]
@@ -206,7 +223,7 @@ impl Config {
             ));
         }
         validate_u32_range("stale_dirty_days", self.stale_dirty_days, 1, 365)?;
-        validate_migration(&self.migration)?;
+        self.migration.validate()?;
         Ok(())
     }
 }
@@ -224,22 +241,15 @@ fn validate_shell_cmd(name: &str, cmd: &str, placeholders: &[&str]) -> Result<()
     }
     for placeholder in placeholders {
         if !cmd.contains(placeholder) {
-            return Err(format!("{name} must contain {placeholder} placeholder"));
+            return Err(if placeholders.len() == 1 {
+                format!("{name} must contain {placeholder} placeholder")
+            } else {
+                format!(
+                    "{name} must contain {} placeholders",
+                    placeholders.join(" and ")
+                )
+            });
         }
-    }
-    Ok(())
-}
-
-fn validate_migration(cfg: &MigrationConfig) -> Result<(), String> {
-    if cfg.temp_suffix.is_empty() {
-        return Err("migration.temp_suffix must not be empty".into());
-    }
-    if !cfg.bare_repo_template.contains("{project}") {
-        return Err("migration.bare_repo_template must contain {project}".into());
-    }
-    if !cfg.worktree_template.contains("{project}") || !cfg.worktree_template.contains("{worktree}")
-    {
-        return Err("migration.worktree_template must contain {project} and {worktree}".into());
     }
     Ok(())
 }
