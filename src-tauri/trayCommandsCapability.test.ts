@@ -76,4 +76,9 @@ describe("tray command capability parity", () => {
       `default.json references unknown tray permission ids: ${missing}`,
     ).toEqual([]);
   });
+
+  it("registers repo convert IPC commands", () => {
+    expect(registered).toContain("convert_repo");
+    expect(registered).toContain("get_repo_convert_status");
+  });
 });

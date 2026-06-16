@@ -5,8 +5,9 @@ mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use workpot_core::WorkpotError;
-use workpot_core::domain::Config;
+use workpot_core::domain::{Config, GitState};
 use workpot_core::infra::store;
+use workpot_core::services::git_state::GitRefreshResult;
 use workpot_core::services::{catalog, index};
 
 fn git_worktree(parent: &Path, name: &str) -> PathBuf {
@@ -378,6 +379,105 @@ fn index_git_pass_counts_refresh_errors() {
         git_err.is_some(),
         "failed refresh must persist git_state_error (D-09)"
     );
+}
+
+#[test]
+fn discover_phase_includes_missing_repo_paths_in_removes() {
+    let (_dir, conn, config) = open_index_fixture(None);
+    let gone_key = "/tmp/workpot-discover-missing-repo";
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'gone', 0, 'manual', '', 0)",
+        rusqlite::params![gone_key],
+    )
+    .expect("seed missing row");
+
+    let plan = index::discover_phase(&conn, &config).expect("discover");
+    assert!(
+        plan.removes.iter().any(|p| p == gone_key),
+        "missing path should be scheduled for removal: {:?}",
+        plan.removes
+    );
+}
+
+#[test]
+fn merge_catalog_phase_applies_discovery_plan() {
+    let (_dir, conn, config) = open_index_fixture(None);
+    let watch_root = config.watch_roots[0].clone();
+    let repo_path = git_worktree(&watch_root, "phase-merge");
+    let path_key = repo_path
+        .canonicalize()
+        .expect("canonicalize")
+        .display()
+        .to_string();
+    let gcd = workpot_core::infra::git::resolve_git_common_dir(&repo_path)
+        .expect("gcd")
+        .display()
+        .to_string();
+
+    let plan = index::discover_phase(&conn, &config).expect("discover");
+    let summary = index::merge_catalog_phase(&conn, &config, plan).expect("merge");
+    assert_eq!(summary.added, 1);
+
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM repos WHERE path = ?1 AND excluded = 0",
+            rusqlite::params![path_key],
+            |row| row.get(0),
+        )
+        .expect("count");
+    assert_eq!(count, 1);
+
+    let stored_gcd: String = conn
+        .query_row(
+            "SELECT git_common_dir FROM repos WHERE path = ?1",
+            rusqlite::params![path_key],
+            |row| row.get(0),
+        )
+        .expect("gcd");
+    assert_eq!(stored_gcd, gcd);
+}
+
+#[test]
+fn persist_index_git_phase_updates_repo_git_columns() {
+    let (_dir, conn, config) = open_index_fixture(None);
+    let watch_root = config.watch_roots[0].clone();
+    let repo_path = git_worktree(&watch_root, "persist-git");
+    let path_key = repo_path
+        .canonicalize()
+        .expect("canonicalize")
+        .display()
+        .to_string();
+
+    index::run_full_connection(&conn, &config).expect("seed catalog row");
+
+    let mut summary = index::IndexSummary::default();
+    let git_results = vec![GitRefreshResult {
+        path: path_key.clone(),
+        state: GitState {
+            branch: Some("main".to_string()),
+            is_dirty: Some(false),
+            ahead: Some(1),
+            behind: Some(2),
+            error: None,
+        },
+    }];
+
+    index::persist_index_git_phase(&conn, &mut summary, git_results).expect("persist git");
+    assert_eq!(summary.git_refreshed, 1);
+    assert_eq!(summary.git_errors, 0);
+
+    let (branch, ahead, behind, git_err): (String, i64, i64, Option<String>) = conn
+        .query_row(
+            "SELECT branch, ahead, behind, git_state_error FROM repos WHERE path = ?1",
+            rusqlite::params![path_key],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("git columns");
+    assert_eq!(branch, "main");
+    assert_eq!(ahead, 1);
+    assert_eq!(behind, 2);
+    assert!(git_err.is_none());
 }
 
 #[test]

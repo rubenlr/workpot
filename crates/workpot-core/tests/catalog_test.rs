@@ -589,6 +589,64 @@ fn upsert_scan_updates_git_common_dir_for_scan_rows() {
 }
 
 #[test]
+fn get_repo_by_path_returns_record_and_not_found() {
+    let (dir, repo_path) = git_fixture();
+    let conn = store::open_connection(&dir.path().join("workpot.db")).expect("open db");
+    let canon = repo_path.canonicalize().expect("canonicalize");
+    let path_key = canon.display().to_string();
+    let gcd = git::resolve_git_common_dir(&canon)
+        .expect("gcd")
+        .display()
+        .to_string();
+
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'sample-repo', 42, ?2, ?3, 0)",
+        rusqlite::params![path_key, SOURCE_MANUAL, gcd],
+    )
+    .expect("seed row");
+
+    let record = catalog::get_repo_by_path(&conn, &path_key).expect("lookup");
+    assert_eq!(record.path, canon);
+    assert_eq!(record.name, "sample-repo");
+    assert_eq!(record.registered_at, 42);
+    assert_eq!(record.source, SOURCE_MANUAL);
+    assert_eq!(record.git_common_dir, gcd);
+
+    let err = catalog::get_repo_by_path(&conn, "/no/such/repo").expect_err("missing path");
+    assert!(matches!(err, WorkpotError::NotFound(_)));
+}
+
+#[test]
+fn missing_repo_paths_lists_only_gone_paths() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let conn = store::open_connection(&dir.path().join("workpot.db")).expect("open db");
+    let (_fixture_dir, repo_path) = git_fixture();
+    let present_key = repo_path
+        .canonicalize()
+        .expect("canonicalize")
+        .display()
+        .to_string();
+    let gone_key = "/tmp/workpot-missing-repo-path";
+
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'present', 0, 'manual', '', 0)",
+        rusqlite::params![present_key],
+    )
+    .expect("present row");
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'gone', 0, 'manual', '', 0)",
+        rusqlite::params![gone_key],
+    )
+    .expect("gone row");
+
+    let missing = catalog::missing_repo_paths(&conn).expect("missing paths");
+    assert_eq!(missing, vec![gone_key.to_string()]);
+}
+
+#[test]
 fn remove_repo_deletes_and_not_found() {
     let (dir, repo_path) = git_fixture();
     let config_path = dir.path().join("config.toml");

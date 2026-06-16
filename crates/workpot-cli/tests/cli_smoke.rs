@@ -194,6 +194,25 @@ fn repo_list_shows_git_state_after_index() {
 }
 
 #[test]
+fn repo_list_shows_error_prefix_on_git_failure() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = git_fixture(home.path());
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    set_repo_git_state_error(home.path(), &repo_path, "permission denied");
+
+    workpot_cmd(home.path())
+        .args(["repo", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ERROR: permission denied"));
+}
+
+#[test]
 fn cli_roots_remove_prunes_repos() {
     let home = tempfile::tempdir().expect("tempdir");
     let watch = home.path().join("watch");
@@ -878,6 +897,19 @@ fn set_repo_pin(home: &std::path::Path, repo_path: &std::path::Path) {
     let path_key = canon.to_string_lossy().into_owned();
     let conn = workpot_core::infra::store::open_connection(&db).expect("open test db");
     workpot_core::services::org::set_pin(&conn, &path_key, true, 100).expect("set pin");
+}
+
+fn set_repo_git_state_error(home: &std::path::Path, repo_path: &std::path::Path, message: &str) {
+    workpot_cmd(home).arg("paths").assert().success();
+    let db = database_path(home);
+    let canon = repo_path.canonicalize().expect("canonicalize");
+    let path_key = canon.to_string_lossy().into_owned();
+    let conn = workpot_core::infra::store::open_connection(&db).expect("open test db");
+    conn.execute(
+        "UPDATE repos SET git_refreshed_at = 1, git_state_error = ?1 WHERE path = ?2",
+        (message, path_key.as_str()),
+    )
+    .expect("set git_state_error");
 }
 
 fn write_launch_config(home: &std::path::Path, launch_cmd: &str) {
