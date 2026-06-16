@@ -64,6 +64,46 @@ mod tests {
     }
 
     #[test]
+    fn build_sync_command_rejects_template_without_path_placeholder() {
+        let err = build_sync_command("git -C push origin {branch}", Path::new("/tmp/foo"), "main")
+            .expect_err("missing path");
+        assert!(err.contains("{path}"));
+    }
+
+    #[test]
+    fn build_sync_command_rejects_unbalanced_quotes() {
+        let err = build_sync_command(
+            "git -C \"unclosed {path} push origin {branch}",
+            Path::new("/tmp/foo"),
+            "main",
+        )
+        .expect_err("unbalanced");
+        assert!(err.contains("invalid sync command"));
+    }
+
+    #[test]
+    fn build_sync_command_rejects_newline_in_repo_path() {
+        let err = build_sync_command(
+            "git -C {path} push origin {branch}",
+            Path::new("/tmp/foo\nbar"),
+            "main",
+        )
+        .expect_err("newline");
+        assert!(err.contains("newline"));
+    }
+
+    #[test]
+    fn build_sync_command_rejects_newline_in_branch() {
+        let err = build_sync_command(
+            "git -C {path} push origin {branch}",
+            Path::new("/tmp/foo"),
+            "main\ninjected",
+        )
+        .expect_err("newline in branch");
+        assert!(err.contains("newline"));
+    }
+
+    #[test]
     fn build_sync_command_rejects_missing_branch_placeholder() {
         let err = build_sync_command(
             "git -C {path} push origin main",

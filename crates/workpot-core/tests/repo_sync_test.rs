@@ -77,6 +77,68 @@ fn run_repo_sync_rejects_empty_branch() {
 }
 
 #[test]
+fn run_repo_sync_push_success_refreshes_state() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(
+        &config_path,
+        r#"
+watch_roots = []
+excludes = []
+push_cmd = "/usr/bin/true {path} {branch}"
+pull_cmd = "/usr/bin/true {path} {branch}"
+"#,
+    )
+    .expect("write config");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let (repo, path) = init_git_repo(dir.path(), "sync-push-ok");
+    make_commit(&repo, "init");
+    ctx.register_manual(&path).expect("register");
+    let path_str = path.canonicalize().expect("canon").display().to_string();
+    run_repo_sync(&ctx, &path_str, "main", SyncDirection::Push).expect("push sync");
+    let repos = ctx.list_repos().expect("list");
+    assert_eq!(repos.len(), 1);
+    assert!(
+        repos[0].branch.is_some(),
+        "branch should be refreshed after push"
+    );
+    assert!(repos[0].git_refreshed_at.is_some());
+}
+
+#[test]
+fn run_repo_sync_command_failure_returns_sync_failure() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    fs::write(
+        &config_path,
+        r#"
+watch_roots = []
+excludes = []
+push_cmd = "/usr/bin/false {path} {branch}"
+pull_cmd = "/usr/bin/true {path} {branch}"
+"#,
+    )
+    .expect("write config");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let (repo, path) = init_git_repo(dir.path(), "sync-fail");
+    make_commit(&repo, "init");
+    ctx.register_manual(&path).expect("register");
+    let path_str = path.canonicalize().expect("canon").display().to_string();
+    let err = run_repo_sync(&ctx, &path_str, "main", SyncDirection::Push).expect_err("push fail");
+    assert!(
+        err.summary.contains("exited with status"),
+        "expected exit status summary, got: {}",
+        err.summary
+    );
+    assert!(
+        !err.full_detail.is_empty() || err.summary.contains("false"),
+        "SyncFailure should carry detail or program name"
+    );
+}
+
+#[test]
 fn run_repo_sync_success_refreshes_state() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("config.toml");

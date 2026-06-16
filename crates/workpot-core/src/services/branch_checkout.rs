@@ -92,6 +92,30 @@ mod tests {
     }
 
     #[test]
+    fn checkout_rejects_empty_branch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        init_repo_with_commit(dir.path());
+        let err = checkout_repo_branch(dir.path(), "   ").expect_err("empty branch");
+        match err {
+            WorkpotError::InvalidInput(msg) => assert!(msg.contains("empty")),
+            other => panic!("expected InvalidInput, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn checkout_rejects_missing_remote_branch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        init_repo_with_commit(dir.path());
+        let err = checkout_repo_branch(dir.path(), "nonexistent").expect_err("missing remote");
+        match err {
+            WorkpotError::InvalidInput(msg) => {
+                assert!(msg.contains("origin/nonexistent"));
+            }
+            other => panic!("expected InvalidInput, got: {other:?}"),
+        }
+    }
+
+    #[test]
     fn checkout_local_branch_is_noop_when_already_checked_out() {
         let dir = tempfile::tempdir().expect("tempdir");
         init_repo_with_commit(dir.path());
