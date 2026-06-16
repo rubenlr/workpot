@@ -102,14 +102,16 @@ impl MigrationConfig {
         if self.temp_suffix.is_empty() {
             return Err("migration.temp_suffix must not be empty".into());
         }
-        if !self.bare_repo_template.contains("{project}") {
-            return Err("migration.bare_repo_template must contain {project}".into());
-        }
-        if !self.worktree_template.contains("{project}")
-            || !self.worktree_template.contains("{worktree}")
-        {
-            return Err("migration.worktree_template must contain {project} and {worktree}".into());
-        }
+        validate_shell_cmd(
+            "migration.bare_repo_template",
+            &self.bare_repo_template,
+            &["{project}"],
+        )?;
+        validate_shell_cmd(
+            "migration.worktree_template",
+            &self.worktree_template,
+            &["{project}", "{worktree}"],
+        )?;
         Ok(())
     }
 }

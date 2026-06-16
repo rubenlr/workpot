@@ -99,16 +99,12 @@ fn key_prefix_is_empty(key: &toml_edit::KeyMut<'_>, table_header: bool) -> bool 
     }
 }
 
-fn u32_value(n: u32) -> Item {
-    value(i64::from(n))
-}
-
 fn assign_string(item: &mut Item, text: &str) {
     *item = value(text);
 }
 
 fn assign_u32(item: &mut Item, n: u32) {
-    *item = u32_value(n);
+    *item = value(i64::from(n));
 }
 
 fn assign_bool(item: &mut Item, enabled: bool) {
@@ -351,8 +347,14 @@ fn set_string_array(item: &mut Item, values: &[String]) {
 }
 
 fn set_path_array(item: &mut Item, values: &[PathBuf]) {
-    let strings: Vec<String> = values.iter().map(|p| p.display().to_string()).collect();
-    set_string_array(item, &strings);
+    if !item.is_array() {
+        *item = value(toml_edit::Array::new());
+    }
+    let arr = item.as_array_mut().expect("array item");
+    arr.clear();
+    for p in values {
+        arr.push(p.display().to_string().as_str());
+    }
 }
 
 fn ensure_table<'a>(parent: &'a mut Table, key: &str) -> &'a mut Table {

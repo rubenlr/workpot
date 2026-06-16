@@ -7,31 +7,28 @@ use rusqlite::{Connection, Row, params};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-fn repo_record_from_row(row: &Row<'_>) -> rusqlite::Result<(String, RepoRecord)> {
+fn repo_record_from_row(row: &Row<'_>) -> rusqlite::Result<RepoRecord> {
     let path: String = row.get(0)?;
     let pinned: i64 = row.get(12)?;
-    Ok((
-        path.clone(),
-        RepoRecord {
-            path: PathBuf::from(path),
-            name: row.get(1)?,
-            registered_at: row.get(2)?,
-            source: row.get(3)?,
-            git_common_dir: row.get(4)?,
-            branch: row.get(5)?,
-            is_dirty: row.get::<_, Option<i64>>(6)?.map(|v| v != 0),
-            ahead: row.get(7)?,
-            behind: row.get(8)?,
-            git_refreshed_at: row.get(9)?,
-            git_state_error: row.get(10)?,
-            last_opened_at: row.get(11)?,
-            pinned: pinned != 0,
-            pin_order: row.get(13)?,
-            notes: row.get(14)?,
-            tags: vec![],
-            alias: row.get(15)?,
-        },
-    ))
+    Ok(RepoRecord {
+        path: PathBuf::from(&path),
+        name: row.get(1)?,
+        registered_at: row.get(2)?,
+        source: row.get(3)?,
+        git_common_dir: row.get(4)?,
+        branch: row.get(5)?,
+        is_dirty: row.get::<_, Option<i64>>(6)?.map(|v| v != 0),
+        ahead: row.get(7)?,
+        behind: row.get(8)?,
+        git_refreshed_at: row.get(9)?,
+        git_state_error: row.get(10)?,
+        last_opened_at: row.get(11)?,
+        pinned: pinned != 0,
+        pin_order: row.get(13)?,
+        notes: row.get(14)?,
+        tags: vec![],
+        alias: row.get(15)?,
+    })
 }
 
 pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Result<RepoRecord> {
@@ -127,7 +124,8 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
     let rows = stmt.query_map([], repo_record_from_row)?;
 
     for row in rows {
-        let (path, record) = row.map_err(WorkpotError::Database)?;
+        let record = row.map_err(WorkpotError::Database)?;
+        let path = record.path.display().to_string();
         order.push(path.clone());
         by_path.insert(path, record);
     }
@@ -165,7 +163,7 @@ pub fn get_repo_by_path(conn: &Connection, path_key: &str) -> Result<RepoRecord>
                 pinned, pin_order, notes, alias
          FROM repos WHERE path = ?1 AND excluded = 0",
         params![path_key],
-        |row| Ok(repo_record_from_row(row)?.1),
+        repo_record_from_row,
     )
     .map_err(|e| match e {
         rusqlite::Error::QueryReturnedNoRows => WorkpotError::NotFound(path_key.to_string()),
