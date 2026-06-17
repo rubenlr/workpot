@@ -18,7 +18,12 @@ use workpot_core::{
 use git_display::format_git_state;
 
 #[derive(Parser)]
-#[command(name = "workpot", about = "Local git repo workspace launcher", version)]
+#[command(
+    name = "workpot",
+    about = "Local git repo workspace launcher",
+    long_about = "Local git repo workspace launcher.\n\nPrimary workflow: `list` / `search` to find repos, `open` to launch in Cursor.",
+    version
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -28,14 +33,19 @@ struct Cli {
 enum Commands {
     /// Print resolved config and database paths (creates defaults on first run).
     Paths,
-    /// Full rescan of configured watch roots.
+    /// Full rescan of all configured watch roots.
+    ///
+    /// To scan a single new root immediately, use `workpot roots add` instead.
     Index,
     /// List repositories in priority order (Pinned > Dirty > Recent > Rest).
     List,
+    /// Register, remove, convert, or inspect repositories in the index.
     #[command(subcommand)]
     Repo(RepoCommands),
+    /// Add, list, or remove filesystem watch roots for automatic discovery.
     #[command(subcommand)]
     Roots(RootsCommands),
+    /// List or remove path-exclusion globs applied during index scans.
     #[command(subcommand)]
     Excludes(ExcludesCommands),
     /// Add, remove, or list tags on a repository.
@@ -55,8 +65,11 @@ enum Commands {
         query: String,
     },
     /// Open a repository in the configured IDE (default: Cursor).
+    ///
+    /// Accepts repo name, alias, path key, or canonical path. Ambiguous names
+    /// error with numbered matches. Exits 1 if not found, 2 if launch fails.
     Open {
-        /// Repository name, path key, or canonical path.
+        /// Repository name, alias, path key, or canonical path.
         repo: String,
     },
     /// Initialize or annotate the configuration file.
@@ -94,8 +107,12 @@ enum CliConvertTarget {
 #[derive(Subcommand)]
 enum RepoCommands {
     /// Register a git worktree or bare repository path.
+    ///
+    /// Manual registration bypasses scan exclude globs.
     Add { path: PathBuf },
-    /// List registered repositories.
+    /// Flat index dump with git-state columns (admin/debug).
+    ///
+    /// Unlike `workpot list`, does not apply tray priority order or icons.
     List,
     /// Remove a registered repository.
     Remove { path: PathBuf },
@@ -115,8 +132,12 @@ enum RepoCommands {
 #[derive(Subcommand)]
 enum ExcludesCommands {
     /// List configured exclude globs.
+    ///
+    /// Globs are also added automatically by `workpot repo remove`.
     List,
     /// Remove an exclude glob from config.
+    ///
+    /// Re-index may re-discover repos under matching paths unless the watch root is also removed.
     Remove { glob: String },
 }
 

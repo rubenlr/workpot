@@ -39,6 +39,21 @@ fn help_does_not_list_update_subcommand() {
 }
 
 #[test]
+fn help_lists_all_subcommand_descriptions() {
+    Command::cargo_bin("workpot")
+        .expect("workpot binary")
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("  repo      "))
+        .stdout(predicate::str::contains("Register"))
+        .stdout(predicate::str::contains("  roots     "))
+        .stdout(predicate::str::contains("watch root"))
+        .stdout(predicate::str::contains("  excludes  "))
+        .stdout(predicate::str::contains("exclude"));
+}
+
+#[test]
 fn update_subcommand_is_unrecognized() {
     Command::cargo_bin("workpot")
         .expect("workpot binary")
