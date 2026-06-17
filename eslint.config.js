@@ -61,6 +61,7 @@ export default ts.config(
   },
   {
     ignores: [
+      ".github/eslint-sarif/**",
       ".svelte-kit/**",
       "build/**",
       "src-tauri/gen/**",

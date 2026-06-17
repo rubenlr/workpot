@@ -18,7 +18,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint --fix .",
     "lint:check": "eslint .",
-    "lint:sarif": "eslint . --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif",
+    "lint:sarif": "eslint . --format .github/eslint-sarif/sarif.cjs --output-file eslint-results.sarif",
     "test": "vitest run --project=unit",
     "test:coverage": "vitest run --coverage --project=unit",
     "test:storybook": "vitest --project=storybook",
@@ -34,7 +34,8 @@
   "devDependencies": {
     "@chromatic-com/storybook": "^5.2.1",
     "@eslint/js": "^9.28.0",
-    "@microsoft/eslint-formatter-sarif": "^3.1.0",
+    "jschardet": "^3.1.4",
+    "lodash": "^4.17.21",
     "@storybook/addon-a11y": "^10.4.3",
     "@storybook/addon-docs": "^10.4.3",
     "@storybook/addon-svelte-csf": "^5.1.2",
@@ -67,8 +68,9 @@
     "tailwindcss": "^4.0.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.33.0",
+    "utf8": "^3.0.0",
     "vite": "^6.0.3",
     "vitest": "^3.0.0"
   },
-  "packageManager": "pnpm@9.15.9"
+  "packageManager": "pnpm@10.34.3"
 }

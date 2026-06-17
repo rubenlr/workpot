@@ -21,7 +21,6 @@ jobs:
       contents: read
       security-events: write
       actions: read
-      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -48,8 +47,8 @@ jobs:
           cargo clippy --workspace --all-targets --message-format=json 2>/dev/null \
             | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
       - name: Upload Clippy SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('rust-clippy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: rust-clippy-results.sarif
           wait-for-processing: true
@@ -61,16 +60,16 @@ jobs:
         continue-on-error: true
       - name: Upload OSSAR SARIF
         if: always() && steps.ossar.outputs.sarifFile != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: ${{ steps.ossar.outputs.sarifFile }}
           wait-for-processing: true
       - name: Run OpenSSF Scorecard
-        uses: ossf/scorecard-action@v2
+        uses: ossf/scorecard-action@v2.4.3
         with:
           results_file: results.sarif
           results_format: sarif
-          publish_results: true
+          publish_results: false
       - name: Upload Scorecard artifact
         uses: actions/upload-artifact@v7
         with:
@@ -78,7 +77,7 @@ jobs:
           path: results.sarif
           retention-days: 5
       - name: Upload Scorecard SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
           wait-for-processing: true
@@ -123,8 +122,8 @@ jobs:
           SARIF_ESLINT_IGNORE_SUPPRESSED: "true"
         run: pnpm run lint:sarif
       - name: Upload ESLint SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('eslint-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: eslint-results.sarif
           wait-for-processing: true
