@@ -200,8 +200,7 @@ pub struct RepoDto {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum BranchPresenceDto {
-    Checkout,
+pub enum BranchTrackingDto {
     LocalOnly,
     RemoteOnly,
     LocalRemote,
@@ -210,7 +209,8 @@ pub enum BranchPresenceDto {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct BranchListItemDto {
     pub name: String,
-    pub presence: BranchPresenceDto,
+    pub checked_out: bool,
+    pub tracking: BranchTrackingDto,
     pub ahead: Option<i64>,
     pub behind: Option<i64>,
 }
@@ -612,27 +612,25 @@ fn branch_list_item(
     let is_local = local.names.iter().any(|n| n == &name);
     let has_upstream = local.with_upstream.contains(&name);
     let is_remote_only = remote_short_names.contains(&name) && !is_local;
-    let is_checkout = local.current.as_ref() == Some(&name);
+    let checked_out = local.current.as_ref() == Some(&name);
 
-    let presence = if is_checkout {
-        BranchPresenceDto::Checkout
-    } else if is_remote_only {
-        BranchPresenceDto::RemoteOnly
+    let tracking = if is_remote_only {
+        BranchTrackingDto::RemoteOnly
     } else if has_upstream {
-        BranchPresenceDto::LocalRemote
+        BranchTrackingDto::LocalRemote
     } else {
-        BranchPresenceDto::LocalOnly
+        BranchTrackingDto::LocalOnly
     };
 
-    let (ahead, behind) = if is_local && has_upstream {
-        ahead_behind_for_local_branch(repo, &name)
-    } else {
-        (None, None)
+    let (ahead, behind) = match tracking {
+        BranchTrackingDto::LocalRemote => ahead_behind_for_local_branch(repo, &name),
+        _ => (None, None),
     };
 
     BranchListItemDto {
         name,
-        presence,
+        checked_out,
+        tracking,
         ahead,
         behind,
     }
@@ -653,10 +651,8 @@ fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String>
         .collect();
 
     items.sort_by(|a, b| {
-        let a_checkout = a.presence == BranchPresenceDto::Checkout;
-        let b_checkout = b.presence == BranchPresenceDto::Checkout;
-        b_checkout
-            .cmp(&a_checkout)
+        b.checked_out
+            .cmp(&a.checked_out)
             .then_with(|| a.name.cmp(&b.name))
     });
 
@@ -1488,7 +1484,8 @@ mod tests {
         let name = local.current.clone().expect("checkout branch");
         let item = branch_list_item(&repo, name.clone(), &local, &remote_short_names);
         assert_eq!(item.name, name);
-        assert_eq!(item.presence, BranchPresenceDto::Checkout);
+        assert!(item.checked_out);
+        assert_eq!(item.tracking, BranchTrackingDto::LocalOnly);
     }
 
     #[test]
@@ -1660,7 +1657,8 @@ mod tests {
 
         let items = list_branches_sync(repo_path.to_str().expect("utf8 path")).expect("sync");
         assert!(!items.is_empty());
-        assert_eq!(items[0].presence, BranchPresenceDto::Checkout);
+        assert!(items[0].checked_out);
+        assert_eq!(items[0].tracking, BranchTrackingDto::LocalOnly);
     }
 
     #[test]

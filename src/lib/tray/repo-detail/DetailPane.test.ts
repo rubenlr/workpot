@@ -39,7 +39,8 @@ const baseRepo: RepoDto = {
 
 const sampleBranch: BranchListItemDto = {
   name: "feature",
-  presence: "local_remote",
+  checked_out: false,
+  tracking: "local_remote",
   ahead: null,
   behind: null,
 };
@@ -268,12 +269,19 @@ describe("DetailPane", () => {
   it("branch_load_ignores_stale_response_after_repo_change", async () => {
     let resolveSlow!: (value: BranchListItemDto[]) => void;
     const slowBranches: BranchListItemDto[] = [
-      { name: "stale", presence: "local_remote", ahead: null, behind: null },
+      {
+        name: "stale",
+        checked_out: false,
+        tracking: "local_remote",
+        ahead: null,
+        behind: null,
+      },
     ];
     const fastBranches: BranchListItemDto[] = [
       {
         name: "fast-main",
-        presence: "local_remote",
+        checked_out: false,
+        tracking: "local_remote",
         ahead: null,
         behind: null,
       },

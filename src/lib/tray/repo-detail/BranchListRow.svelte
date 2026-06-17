@@ -1,7 +1,7 @@
 <script lang="ts">
   import MaterialIcon from "$lib/tray/commons/MaterialIcon.svelte";
   import SyncBadge from "$lib/tray/commons/SyncBadge.svelte";
-  import { branchPresenceLabel, isCheckoutable } from "$lib/branchStatus";
+  import { branchListItemLabel, isCheckoutable } from "$lib/branchStatus";
   import type {
     ActiveSync,
     BranchListItemDto,
@@ -28,10 +28,11 @@
     onSyncHoverChange?: (hovered: boolean) => void;
   } = $props();
 
-  const isCheckout = $derived(branch.presence === "checkout");
-  const isRemoteOnly = $derived(branch.presence === "remote_only");
-  const isLocalOnly = $derived(branch.presence === "local_only");
-  const isClickable = $derived(isCheckout || isCheckoutable(branch.presence));
+  const isRemoteOnly = $derived(branch.tracking === "remote_only");
+  const isLocalOnly = $derived(branch.tracking === "local_only");
+  const isClickable = $derived(
+    branch.checked_out || isCheckoutable(branch.checked_out),
+  );
 
   const syncingDirection = $derived(
     activeSync &&
@@ -46,7 +47,7 @@
   const nameButtonClass = $derived(
     [
       "flex min-w-0 flex-1 items-center gap-2 rounded-lg border-0 bg-transparent px-0 py-0 text-left shadow-none outline-none focus-visible:ring-1 focus-visible:ring-primary",
-      isCheckout
+      branch.checked_out
         ? "font-medium text-inverse-on-surface"
         : "text-inverse-on-surface-variant",
       isClickable ? "cursor-pointer" : "cursor-default",
@@ -55,12 +56,12 @@
 </script>
 
 <div
-  class="flex items-center gap-2 rounded-lg px-3 py-2 {isCheckout
+  class="flex items-center gap-2 rounded-lg px-3 py-2 {branch.checked_out
     ? 'bg-primary/15 ring-1 ring-primary/30'
     : 'bg-card-surface hover:bg-hover-overlay'}"
-  title={branchPresenceLabel(branch.presence)}
+  title={branchListItemLabel(branch)}
 >
-  {#if isCheckout}
+  {#if branch.checked_out}
     <MaterialIcon name="check" size={18} class="shrink-0 text-primary-accent" />
   {:else}
     <span class="w-[18px] shrink-0" aria-hidden="true"></span>

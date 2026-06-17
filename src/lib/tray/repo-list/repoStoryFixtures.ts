@@ -7,7 +7,7 @@ export const storyRepoBase: RepoDto = {
   path: `${STORY_REPO_PATH_PREFIX}/workpot-demo`,
   name: "workpot",
   alias: null,
-  branch: "main",
+  branch: "master",
   ahead: null,
   behind: null,
   is_dirty: null,
@@ -18,7 +18,7 @@ export const storyRepoBase: RepoDto = {
   pin_order: null,
   notes: null,
   tags: [],
-  branches: ["main", "develop"],
+  branches: ["master", "wip", "feat/ui"],
   is_bare: false,
   convert_to: null,
   convert_block_reason: null,
@@ -35,22 +35,42 @@ export function storyRepoWithSync(overrides: Partial<RepoDto> = {}): RepoDto {
 export function storyBranches(): BranchListItemDto[] {
   return [
     {
-      name: "main",
-      presence: "checkout",
-      ahead: 0,
-      behind: 0,
+      name: "master",
+      checked_out: true,
+      tracking: "local_remote",
+      ahead: 5,
+      behind: 3,
     },
     {
-      name: "origin/main",
-      presence: "remote_only",
+      name: "wip",
+      checked_out: true,
+      tracking: "local_only",
+      ahead: null,
+      behind: null,
+    },
+    {
+      name: "origin/feature/IP-5481-add-logs-and-observability",
+      checked_out: false,
+      tracking: "remote_only",
       ahead: null,
       behind: null,
     },
     {
       name: "feat/ui",
-      presence: "local_remote",
+      checked_out: false,
+      tracking: "local_remote",
       ahead: 2,
       behind: 1,
     },
   ];
+}
+
+export function storyCheckoutLocalOnlyBranch(): BranchListItemDto {
+  return {
+    name: "wip",
+    checked_out: true,
+    tracking: "local_only",
+    ahead: null,
+    behind: null,
+  };
 }

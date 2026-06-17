@@ -138,7 +138,7 @@
 
   async function activateBranch(b: BranchListItemDto) {
     checkoutError = null;
-    if (b.presence === "checkout") {
+    if (b.checked_out) {
       try {
         await invoke("open_in_cursor", { path: repo.path, background: false });
         await getCurrentWindow().hide();
@@ -147,7 +147,7 @@
       }
       return;
     }
-    if (!isCheckoutable(b.presence)) {
+    if (!isCheckoutable(b.checked_out)) {
       return;
     }
     try {

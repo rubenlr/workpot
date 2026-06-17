@@ -1,29 +1,33 @@
-import type { BranchListItemDto, BranchPresence } from "./types";
+import type { BranchListItemDto, BranchTracking } from "./types";
 
-/** Presence glyph (matches CLI/repo sync icon vocabulary). */
-export function branchPresenceIcon(presence: BranchPresence): string {
-  switch (presence) {
-    case "checkout":
-      return "●";
+/** Tracking glyph (matches CLI/repo sync icon vocabulary). */
+export function branchTrackingIcon(tracking: BranchTracking): string {
+  switch (tracking) {
     case "local_only":
       return "◆";
     case "remote_only":
       return "☁";
     case "local_remote":
       return "⎇";
+    default: {
+      const _exhaustive: never = tracking;
+      return _exhaustive;
+    }
   }
 }
 
-export function branchPresenceLabel(presence: BranchPresence): string {
-  switch (presence) {
-    case "checkout":
-      return "Checked out";
+export function branchTrackingLabel(tracking: BranchTracking): string {
+  switch (tracking) {
     case "local_only":
       return "Local only";
     case "remote_only":
       return "Remote only";
     case "local_remote":
       return "Local with remote";
+    default: {
+      const _exhaustive: never = tracking;
+      return _exhaustive;
+    }
   }
 }
 
@@ -45,26 +49,26 @@ export function formatBranchAheadBehind(
   return out;
 }
 
+export function branchListItemLabel(branch: BranchListItemDto): string {
+  const tracking = branchTrackingLabel(branch.tracking);
+  if (branch.checked_out) {
+    return `Checked out, ${tracking}`;
+  }
+  return tracking;
+}
+
 export function branchBadgeAriaLabel(branch: BranchListItemDto): string {
   const sync = formatBranchAheadBehind(branch.ahead, branch.behind);
   const syncPart = sync ? `, ${sync}` : "";
-  return `${branch.name}, ${branchPresenceLabel(branch.presence)}${syncPart}`;
+  return `${branch.name}, ${branchListItemLabel(branch)}${syncPart}`;
 }
 
 export function branchBadgeTitle(branch: BranchListItemDto): string {
   const sync = formatBranchAheadBehind(branch.ahead, branch.behind);
-  return sync
-    ? `${branchPresenceLabel(branch.presence)} ${sync}`
-    : branchPresenceLabel(branch.presence);
+  const label = branchListItemLabel(branch);
+  return sync ? `${label} ${sync}` : label;
 }
 
-export function isCheckoutable(presence: BranchPresence): boolean {
-  switch (presence) {
-    case "local_only":
-    case "local_remote":
-    case "remote_only":
-      return true;
-    case "checkout":
-      return false;
-  }
+export function isCheckoutable(checkedOut: boolean): boolean {
+  return !checkedOut;
 }

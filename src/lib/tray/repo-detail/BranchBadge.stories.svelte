@@ -1,14 +1,15 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
   import BranchBadge from "./BranchBadge.svelte";
-  import type { BranchListItemDto, BranchPresence } from "$lib/types";
+  import type { BranchListItemDto, BranchTracking } from "$lib/types";
 
   function branch(
-    presence: BranchPresence,
+    checkedOut: boolean,
+    tracking: BranchTracking,
     sync: { ahead: number | null; behind: number | null },
     name = "main",
   ): BranchListItemDto {
-    return { name, presence, ...sync };
+    return { name, checked_out: checkedOut, tracking, ...sync };
   }
 
   const none = { ahead: null, behind: null };
@@ -23,35 +24,75 @@
   });
 </script>
 
-<Story name="CheckoutNone" args={{ branch: branch("checkout", none) }} />
-<Story name="CheckoutAhead" args={{ branch: branch("checkout", ahead) }} />
-<Story name="CheckoutBehind" args={{ branch: branch("checkout", behind) }} />
-<Story name="CheckoutBoth" args={{ branch: branch("checkout", both) }} />
-<Story name="LocalOnlyNone" args={{ branch: branch("local_only", none) }} />
-<Story name="LocalOnlyAhead" args={{ branch: branch("local_only", ahead) }} />
-<Story name="LocalOnlyBehind" args={{ branch: branch("local_only", behind) }} />
-<Story name="LocalOnlyBoth" args={{ branch: branch("local_only", both) }} />
-<Story name="RemoteOnlyNone" args={{ branch: branch("remote_only", none) }} />
-<Story name="RemoteOnlyAhead" args={{ branch: branch("remote_only", ahead) }} />
+<Story
+  name="CheckedOutNone"
+  args={{ branch: branch(true, "local_remote", none) }}
+/>
+<Story
+  name="CheckedOutAhead"
+  args={{ branch: branch(true, "local_remote", ahead) }}
+/>
+<Story
+  name="CheckedOutBehind"
+  args={{ branch: branch(true, "local_remote", behind) }}
+/>
+<Story
+  name="CheckedOutBoth"
+  args={{ branch: branch(true, "local_remote", both) }}
+/>
+<Story
+  name="LocalOnlyNone"
+  args={{ branch: branch(false, "local_only", none) }}
+/>
+<Story
+  name="LocalOnlyAhead"
+  args={{ branch: branch(false, "local_only", ahead) }}
+/>
+<Story
+  name="LocalOnlyBehind"
+  args={{ branch: branch(false, "local_only", behind) }}
+/>
+<Story
+  name="LocalOnlyBoth"
+  args={{ branch: branch(false, "local_only", both) }}
+/>
+<Story
+  name="RemoteOnlyNone"
+  args={{ branch: branch(false, "remote_only", none) }}
+/>
+<Story
+  name="RemoteOnlyAhead"
+  args={{ branch: branch(false, "remote_only", ahead) }}
+/>
 <Story
   name="RemoteOnlyBehind"
-  args={{ branch: branch("remote_only", behind) }}
+  args={{ branch: branch(false, "remote_only", behind) }}
 />
-<Story name="RemoteOnlyBoth" args={{ branch: branch("remote_only", both) }} />
-<Story name="LocalRemoteNone" args={{ branch: branch("local_remote", none) }} />
+<Story
+  name="RemoteOnlyBoth"
+  args={{ branch: branch(false, "remote_only", both) }}
+/>
+<Story
+  name="LocalRemoteNone"
+  args={{ branch: branch(false, "local_remote", none) }}
+/>
 <Story
   name="LocalRemoteAhead"
-  args={{ branch: branch("local_remote", ahead) }}
+  args={{ branch: branch(false, "local_remote", ahead) }}
 />
 <Story
   name="LocalRemoteBehind"
-  args={{ branch: branch("local_remote", behind) }}
+  args={{ branch: branch(false, "local_remote", behind) }}
 />
-<Story name="LocalRemoteBoth" args={{ branch: branch("local_remote", both) }} />
+<Story
+  name="LocalRemoteBoth"
+  args={{ branch: branch(false, "local_remote", both) }}
+/>
 <Story
   name="LongNameTruncation"
   args={{
     branch: branch(
+      false,
       "local_remote",
       both,
       "feature/very-long-branch-name-that-should-truncate",

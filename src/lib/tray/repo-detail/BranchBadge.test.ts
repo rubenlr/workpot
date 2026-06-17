@@ -5,7 +5,7 @@ import type { BranchListItemDto } from "$lib/types";
 
 function branch(
   partial: Partial<BranchListItemDto> &
-    Pick<BranchListItemDto, "name" | "presence">,
+    Pick<BranchListItemDto, "name" | "checked_out" | "tracking">,
 ): BranchListItemDto {
   return { ahead: null, behind: null, ...partial };
 }
@@ -17,14 +17,26 @@ describe("BranchBadge", () => {
 
   it("renders branch name", () => {
     const { getByText } = render(BranchBadge, {
-      props: { branch: branch({ name: "main", presence: "checkout" }) },
+      props: {
+        branch: branch({
+          name: "main",
+          checked_out: true,
+          tracking: "local_remote",
+        }),
+      },
     });
     expect(getByText("main")).toBeTruthy();
   });
 
-  it("checkout_presence_uses_aria_label_with_checked_out", () => {
+  it("checked_out_uses_aria_label_with_checked_out", () => {
     const { container } = render(BranchBadge, {
-      props: { branch: branch({ name: "main", presence: "checkout" }) },
+      props: {
+        branch: branch({
+          name: "main",
+          checked_out: true,
+          tracking: "local_remote",
+        }),
+      },
     });
     const span = container.querySelector("span[aria-label]");
     expect(span?.getAttribute("aria-label")).toContain("main");
@@ -33,9 +45,15 @@ describe("BranchBadge", () => {
     );
   });
 
-  it("non_checkout_presence_aria_label_differs", () => {
+  it("non_checked_out_aria_label_differs", () => {
     const { container } = render(BranchBadge, {
-      props: { branch: branch({ name: "feat", presence: "local_only" }) },
+      props: {
+        branch: branch({
+          name: "feat",
+          checked_out: false,
+          tracking: "local_only",
+        }),
+      },
     });
     const span = container.querySelector("span[aria-label]");
     expect(span?.getAttribute("aria-label")).toContain("feat");
@@ -49,7 +67,8 @@ describe("BranchBadge", () => {
       props: {
         branch: branch({
           name: "main",
-          presence: "checkout",
+          checked_out: true,
+          tracking: "local_remote",
           ahead: 2,
           behind: 1,
         }),
@@ -64,7 +83,8 @@ describe("BranchBadge", () => {
       props: {
         branch: branch({
           name: "main",
-          presence: "checkout",
+          checked_out: true,
+          tracking: "local_remote",
           ahead: null,
           behind: null,
         }),
@@ -74,17 +94,29 @@ describe("BranchBadge", () => {
     expect(container.textContent).not.toContain("↓");
   });
 
-  it("checkout_presence_applies_blue_styling", () => {
+  it("checked_out_applies_blue_styling", () => {
     const { container } = render(BranchBadge, {
-      props: { branch: branch({ name: "main", presence: "checkout" }) },
+      props: {
+        branch: branch({
+          name: "main",
+          checked_out: true,
+          tracking: "local_remote",
+        }),
+      },
     });
     const span = container.querySelector("span[aria-label]");
     expect(span?.className).toContain("bg-tag-blue-bg");
   });
 
-  it("non_checkout_presence_applies_neutral_styling", () => {
+  it("non_checked_out_applies_neutral_styling", () => {
     const { container } = render(BranchBadge, {
-      props: { branch: branch({ name: "feat", presence: "remote_only" }) },
+      props: {
+        branch: branch({
+          name: "feat",
+          checked_out: false,
+          tracking: "remote_only",
+        }),
+      },
     });
     const span = container.querySelector("span[aria-label]");
     expect(span?.className).toContain("bg-card-surface");

@@ -45,15 +45,12 @@ export interface RepoConvertEvent {
   error?: string;
 }
 
-export type BranchPresence =
-  | "checkout"
-  | "local_only"
-  | "remote_only"
-  | "local_remote";
+export type BranchTracking = "local_only" | "remote_only" | "local_remote";
 
 export interface BranchListItemDto {
   name: string;
-  presence: BranchPresence;
+  checked_out: boolean;
+  tracking: BranchTracking;
   ahead: number | null;
   behind: number | null;
 }

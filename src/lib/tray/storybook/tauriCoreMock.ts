@@ -1,8 +1,8 @@
-import type { BranchListItemDto } from "$lib/types";
 import {
   storyTrayConfig,
   storyTrayRepos,
 } from "$lib/tray/storybook/trayPanelStoryFixtures";
+import { storyBranches } from "$lib/tray/repo-list/repoStoryFixtures";
 
 function storyAllTags(): string[] {
   const tags = new Set<string>();
@@ -14,33 +14,6 @@ function storyAllTags(): string[] {
   return [...tags].sort((a, b) => a.localeCompare(b));
 }
 
-const storyBranches: BranchListItemDto[] = [
-  {
-    name: "main",
-    presence: "checkout",
-    ahead: 0,
-    behind: 0,
-  },
-  {
-    name: "develop",
-    presence: "local_remote",
-    ahead: 2,
-    behind: 0,
-  },
-  {
-    name: "wip",
-    presence: "local_only",
-    ahead: null,
-    behind: null,
-  },
-  {
-    name: "origin-only",
-    presence: "remote_only",
-    ahead: null,
-    behind: null,
-  },
-];
-
 /** Storybook stub — no Tauri runtime. */
 export async function invoke(cmd: string, _args?: unknown): Promise<unknown> {
   switch (cmd) {
@@ -51,7 +24,7 @@ export async function invoke(cmd: string, _args?: unknown): Promise<unknown> {
     case "get_tray_config":
       return storyTrayConfig();
     case "list_branches":
-      return storyBranches;
+      return storyBranches();
     case "refresh_index":
     case "refresh_all_git_state":
     case "open_in_cursor":
