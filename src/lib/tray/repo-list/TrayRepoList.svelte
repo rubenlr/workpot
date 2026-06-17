@@ -133,13 +133,11 @@
               onRowContextMenu={(e) => {
                 e.preventDefault();
                 void invoke("show_repo_context_menu", {
-                  args: {
-                    repoPath: repo.path,
-                    isPinned: repo.pinned,
-                    tags: repo.tags,
-                    convertTo: repo.convert_to,
-                    convertBlockReason: repo.convert_block_reason,
-                  },
+                  repoPath: repo.path,
+                  isPinned: repo.pinned,
+                  tags: repo.tags,
+                  convertTo: repo.convert_to,
+                  convertBlockReason: repo.convert_block_reason,
                 });
               }}
               onRowDragStart={draggable

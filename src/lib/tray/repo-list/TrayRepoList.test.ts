@@ -1,5 +1,14 @@
 import { cleanup, fireEvent, render } from "@testing-library/svelte";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import TrayRepoList from "./TrayRepoList.svelte";
 import type { SectionedRepos } from "$lib/tray/logic/list/sort";
 import type { RepoDto } from "$lib/types";
@@ -91,6 +100,10 @@ describe("TrayRepoList", () => {
   beforeAll(() => {
     // jsdom does not implement scrollIntoView
     Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  beforeEach(() => {
+    vi.mocked(invoke).mockClear();
   });
 
   afterEach(() => {
@@ -187,5 +200,29 @@ describe("TrayRepoList", () => {
       expect(scrollSpy).toHaveBeenCalledWith({ block: "nearest" });
     });
     scrollSpy.mockRestore();
+  });
+
+  it("contextmenu invokes show_repo_context_menu with flat camelCase payload", async () => {
+    const workpot = repo("workpot", {
+      path: "/tmp/workpot",
+      pinned: false,
+      tags: ["backend"],
+      convert_to: "bare",
+      convert_block_reason: "dirty working tree",
+    });
+    const { container } = renderList({ ...empty, rest: [workpot] });
+    const row = container.querySelector('[data-row-index="0"]');
+    expect(row).toBeTruthy();
+
+    await fireEvent.contextMenu(row!);
+
+    expect(invoke).toHaveBeenCalledOnce();
+    expect(invoke).toHaveBeenCalledWith("show_repo_context_menu", {
+      repoPath: "/tmp/workpot",
+      isPinned: false,
+      tags: ["backend"],
+      convertTo: "bare",
+      convertBlockReason: "dirty working tree",
+    });
   });
 });

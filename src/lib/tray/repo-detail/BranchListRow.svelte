@@ -1,7 +1,7 @@
 <script lang="ts">
   import MaterialIcon from "$lib/tray/commons/MaterialIcon.svelte";
   import SyncBadge from "$lib/tray/commons/SyncBadge.svelte";
-  import { branchListItemLabel, isCheckoutable } from "$lib/branchStatus";
+  import { isCheckoutable } from "$lib/branchStatus";
   import type {
     ActiveSync,
     BranchListItemDto,
@@ -59,7 +59,6 @@
   class="flex items-center gap-2 rounded-lg px-3 py-2 {branch.checked_out
     ? 'bg-primary/15 ring-1 ring-primary/30'
     : 'bg-card-surface hover:bg-hover-overlay'}"
-  title={branchListItemLabel(branch)}
 >
   {#if branch.checked_out}
     <MaterialIcon name="check" size={18} class="shrink-0 text-primary-accent" />
