@@ -75,7 +75,7 @@
   }
 </script>
 
-{#if visible}
+{#if visible && filtered.length > 0}
   <div
     class="absolute z-10 mt-1 w-48 rounded-lg border border-card-border bg-inverse-surface py-1 shadow-lg"
   >

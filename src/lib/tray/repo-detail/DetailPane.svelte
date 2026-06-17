@@ -15,9 +15,11 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import BranchListRow from "./BranchListRow.svelte";
   import DetailPaneHeader from "./DetailPaneHeader.svelte";
+  import DetailSectionHeading from "./DetailSectionHeading.svelte";
   import TagAutocomplete from "$lib/tray/commons/TagAutocomplete.svelte";
   import TagChip from "$lib/tray/commons/TagChip.svelte";
   import MaterialIcon from "$lib/tray/commons/MaterialIcon.svelte";
+  import { filterTagsForAutocomplete } from "$lib/tagAutocomplete";
 
   let {
     repo,
@@ -75,6 +77,10 @@
   let notesValue = $state("");
   let aliasValue = $state("");
   let tagInput = $state("");
+  let tagAutocompleteVisible = $derived(
+    tagInput.trim().length > 0 &&
+      filterTagsForAutocomplete(tagSuggestTags, tagInput.trim(), "").length > 0,
+  );
   let tagError = $state<string | null>(null);
   let aliasError = $state<string | null>(null);
   let notesTextarea = $state<HTMLTextAreaElement | undefined>(undefined);
@@ -231,6 +237,14 @@
     if (e.key === "Enter") {
       e.preventDefault();
       void handleAddTag(tagInput);
+      return;
+    }
+    if (e.key === "Backspace" && !tagInput && repo.tags.length > 0) {
+      const lastTag = repo.tags.at(-1);
+      if (lastTag) {
+        e.preventDefault();
+        void handleRemoveTag(lastTag);
+      }
     }
   }
 
@@ -269,7 +283,7 @@
 
   <div class="flex flex-col gap-4 p-3">
     <div
-      class="flex items-center justify-between gap-1.5 rounded-lg border border-card-border bg-card-surface p-2.5 text-xs text-inverse-on-surface-variant font-mono"
+      class="flex items-center justify-between gap-1.5 rounded-lg bg-card-surface p-2.5 text-xs text-inverse-on-surface-variant font-mono"
     >
       <div class="flex items-center gap-1.5 min-w-0">
         <MaterialIcon name="folder" size={14} class="shrink-0" />
@@ -286,46 +300,35 @@
     </div>
 
     <section>
-      <h3
-        class="mb-2 text-xs font-semibold uppercase tracking-widest text-inverse-on-surface-variant"
-      >
-        Alias
-      </h3>
-      <div class="rounded-xl border border-card-border bg-card-surface p-2">
-        <input
-          type="text"
-          bind:this={aliasInputEl}
-          bind:value={aliasValue}
-          placeholder="Display name…"
-          maxlength="64"
-          autocomplete="off"
-          autocapitalize="off"
-          autocorrect="off"
-          spellcheck="false"
-          class="w-full rounded-lg border border-card-border bg-input-surface px-3 py-2 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
-          onblur={() => void handleAliasSave()}
-          onkeydown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              aliasInputEl?.blur();
-            }
-          }}
-        />
-        {#if aliasError}
-          <p class="mt-1 text-sm text-error">{aliasError}</p>
-        {/if}
-      </div>
+      <DetailSectionHeading>Alias</DetailSectionHeading>
+      <input
+        type="text"
+        bind:this={aliasInputEl}
+        bind:value={aliasValue}
+        placeholder="Display name…"
+        maxlength="64"
+        autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        class="w-full rounded-lg border border-card-border bg-input-surface px-3 py-2 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
+        onblur={() => void handleAliasSave()}
+        onkeydown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            aliasInputEl?.blur();
+          }
+        }}
+      />
+      {#if aliasError}
+        <p class="mt-1 text-sm text-error">{aliasError}</p>
+      {/if}
     </section>
 
     <section>
-      <h3
-        class="mb-2 text-xs font-semibold uppercase tracking-widest text-inverse-on-surface-variant"
-      >
-        Branches
-      </h3>
-      <div
-        class="rounded-xl border border-card-border bg-card-surface p-2 space-y-1"
-      >
+      <DetailSectionHeading>Branches</DetailSectionHeading>
+
+      <div class="space-y-1">
         {#if checkoutError}
           <p class="px-2 py-1 text-sm text-error">{checkoutError}</p>
         {/if}
@@ -350,12 +353,13 @@
     </section>
 
     <section>
-      <div class="mb-2 flex flex-wrap items-center gap-2">
-        <h3
-          class="text-xs font-semibold uppercase tracking-widest text-inverse-on-surface-variant"
-        >
-          Tags
-        </h3>
+      <DetailSectionHeading>Tags</DetailSectionHeading>
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="flex min-h-[2.5rem] flex-wrap items-center gap-1.5 rounded-lg border border-card-border bg-input-surface px-3 py-2 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary"
+        onclick={() => tagInputEl?.focus()}
+      >
         {#each repo.tags as tag (tag)}
           <TagChip
             {tag}
@@ -363,61 +367,53 @@
             onRemove={() => void handleRemoveTag(tag)}
           />
         {/each}
+        <div class="relative min-w-[5rem] flex-1">
+          <input
+            type="text"
+            bind:this={tagInputEl}
+            bind:value={tagInput}
+            placeholder="Add tag…"
+            autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            class="w-full border-0 bg-transparent p-0 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:ring-0"
+            onkeydown={onTagInputKeydown}
+            onblur={() => {
+              if (tagInput.trim()) {
+                void handleAddTag(tagInput);
+              }
+            }}
+          />
+          <TagAutocomplete
+            allTags={tagSuggestTags}
+            visible={tagAutocompleteVisible}
+            prefix={tagInput.trim()}
+            onSelect={(tag) => {
+              void handleAddTag(tag);
+            }}
+          />
+        </div>
       </div>
-      <div
-        class="relative rounded-xl border border-card-border bg-card-surface p-2"
-      >
-        <input
-          type="text"
-          bind:this={tagInputEl}
-          bind:value={tagInput}
-          placeholder="Add tag…"
-          autocomplete="off"
-          autocapitalize="off"
-          autocorrect="off"
-          spellcheck="false"
-          class="w-full rounded-lg border border-card-border bg-input-surface px-3 py-2 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
-          onkeydown={onTagInputKeydown}
-          onblur={() => {
-            if (tagInput.trim()) {
-              void handleAddTag(tagInput);
-            }
-          }}
-        />
-        <TagAutocomplete
-          allTags={tagSuggestTags}
-          visible={tagInput.trim().length > 0 && tagSuggestTags.length > 0}
-          prefix={tagInput.trim()}
-          onSelect={(tag) => {
-            void handleAddTag(tag);
-          }}
-        />
-        {#if tagError}
-          <p class="mt-1 text-sm text-error">{tagError}</p>
-        {/if}
-      </div>
+      {#if tagError}
+        <p class="mt-1 text-sm text-error">{tagError}</p>
+      {/if}
     </section>
 
     <section>
-      <h3
-        class="mb-2 text-xs font-semibold uppercase tracking-widest text-inverse-on-surface-variant"
-      >
-        Notes
-      </h3>
-      <div class="rounded-xl border border-card-border bg-card-surface p-2">
-        <textarea
-          bind:this={notesTextarea}
-          rows="3"
-          maxlength="500"
-          bind:value={notesValue}
-          placeholder="Add notes..."
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck="false"
-          class="max-h-[calc(5*1.5rem)] w-full resize-none rounded-lg border border-card-border bg-input-surface p-3 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
-          onblur={() => void handleNotesSave()}
-        ></textarea>
-      </div>
+      <DetailSectionHeading>Notes</DetailSectionHeading>
+      <textarea
+        bind:this={notesTextarea}
+        rows="3"
+        maxlength="500"
+        bind:value={notesValue}
+        placeholder="Add notes..."
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+        class="max-h-[calc(5*1.5rem)] w-full resize-none rounded-lg border border-card-border bg-input-surface p-3 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
+        onblur={() => void handleNotesSave()}
+      ></textarea>
     </section>
   </div>
 </div>

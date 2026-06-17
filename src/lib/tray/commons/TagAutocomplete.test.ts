@@ -109,18 +109,14 @@ describe("TagAutocomplete", () => {
     expect(options[0]?.getAttribute("aria-selected")).toBe("true");
   });
 
-  it("enter_with_no_highlight_submits_input_value", async () => {
-    const onSelect = vi.fn();
-    const { container, getByRole } = renderAutocomplete({
+  it("hides_when_filter_yields_no_options", async () => {
+    const { container, queryByRole } = renderAutocomplete({
       allTags: ["rust"],
       visible: true,
-      onSelect,
     });
     const input = container.querySelector("input") as HTMLInputElement;
-    await fireEvent.input(input, { target: { value: "newTag" } });
-    const combobox = getByRole("combobox");
-    await fireEvent.keyDown(combobox, { key: "Enter" });
-    expect(onSelect).toHaveBeenCalledWith("newTag");
+    await fireEvent.input(input, { target: { value: "nomatch" } });
+    expect(queryByRole("listbox")).toBeNull();
   });
 
   it("mouseenter sets highlighted option", async () => {

@@ -164,6 +164,16 @@ describe("DetailPane", () => {
     expect(options).not.toContain("#backend");
   });
 
+  it("tag_suggestions_hidden_when_no_prefix_match", async () => {
+    const { container } = renderPane(
+      { ...baseRepo, tags: [] },
+      { allTags: ["backend", "frontend"] },
+    );
+    const input = tagInput(container);
+    await fireEvent.input(input, { target: { value: "zzz" } });
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+  });
+
   it("notes_resyncs_from_repo_on_path_change", async () => {
     const { container, rerender, onClose, onMutated } = renderPane({
       ...baseRepo,
@@ -338,6 +348,24 @@ describe("DetailPane", () => {
     });
     expect(onMutated).toHaveBeenCalled();
     expect(tagInput(container).value).toBe("");
+  });
+
+  it("tag_backspace_on_empty_input_removes_last_tag", async () => {
+    const onMutated = vi.fn();
+    const { container } = renderPane(
+      { ...baseRepo, tags: ["alpha", "beta"] },
+      { onMutated },
+    );
+    const input = tagInput(container);
+    await fireEvent.keyDown(input, { key: "Backspace" });
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("remove_tag", {
+        repoPath: baseRepo.path,
+        tag: "beta",
+      });
+    });
+    expect(onMutated).toHaveBeenCalled();
   });
 
   it("tag_add_duplicate_shows_tagError_without_invoke", async () => {
