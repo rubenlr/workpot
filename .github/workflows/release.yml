@@ -30,6 +30,9 @@ env:
   CARGO_TERM_COLOR: always
   RELEASE_TAG: ${{ inputs.tag || github.event.inputs.tag }}
 
+permissions:
+  contents: read
+
 # Real releases serialize per tag; PR smoke uses a unique group so a stuck/queued
 # matrix leg does not block every other PR (smoke tag is always v0.0.0-smoke).
 concurrency:

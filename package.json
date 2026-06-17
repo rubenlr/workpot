@@ -18,6 +18,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint --fix .",
     "lint:check": "eslint .",
+    "lint:sarif": "eslint . --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif",
     "test": "vitest run --project=unit",
     "test:coverage": "vitest run --coverage --project=unit",
     "test:storybook": "vitest --project=storybook",
@@ -33,6 +34,7 @@
   "devDependencies": {
     "@chromatic-com/storybook": "^5.2.1",
     "@eslint/js": "^9.28.0",
+    "@microsoft/eslint-formatter-sarif": "^3.1.0",
     "@storybook/addon-a11y": "^10.4.3",
     "@storybook/addon-docs": "^10.4.3",
     "@storybook/addon-svelte-csf": "^5.1.2",

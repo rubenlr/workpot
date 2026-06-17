@@ -14,11 +14,18 @@ permissions:
   pull-requests: write
 
 jobs:
-  lint:
-    name: rustfmt + clippy (macos-latest)
+  code-quality:
+    name: code-quality (macos-latest)
     runs-on: macos-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
@@ -29,14 +36,61 @@ jobs:
         with:
           shared-key: ci
           key: macos-latest
+      - name: Install clippy-sarif tooling
+        uses: taiki-e/install-action@v2
+        with:
+          tool: clippy-sarif,sarif-fmt
       - name: rustfmt
         run: cargo fmt --all -- --check
-      - name: Clippy tray crate
-        run: cargo clippy -p workpot-tray --all-targets -- -D warnings
+      - name: Clippy SARIF
+        continue-on-error: true
+        run: |
+          cargo clippy --workspace --all-targets --message-format=json 2>/dev/null \
+            | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+      - name: Upload Clippy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: rust-clippy-results.sarif
+          wait-for-processing: true
+      - name: Clippy gate
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: OSSAR
+        uses: github/ossar-action@v1
+        id: ossar
+        continue-on-error: true
+      - name: Upload OSSAR SARIF
+        if: always() && steps.ossar.outputs.sarifFile != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.ossar.outputs.sarifFile }}
+          wait-for-processing: true
+      - name: Run OpenSSF Scorecard
+        uses: ossf/scorecard-action@v2
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - name: Upload Scorecard artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 5
+      - name: Upload Scorecard SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+          wait-for-processing: true
 
   test-macos:
     name: test (macos-latest)
     runs-on: macos-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      security-events: write
+      actions: read
     steps:
       - uses: actions/checkout@v6
       - name: Install Rust toolchain
@@ -63,6 +117,17 @@ jobs:
           pnpm run check
           pnpm run test:coverage
           cp coverage/lcov.info lcov-js.info
+      - name: ESLint SARIF
+        continue-on-error: true
+        env:
+          SARIF_ESLINT_IGNORE_SUPPRESSED: "true"
+        run: pnpm run lint:sarif
+      - name: Upload ESLint SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: eslint-results.sarif
+          wait-for-processing: true
       - name: Tauri bundle smoke
         run: pnpm run tauri:build
         env:
