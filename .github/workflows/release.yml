@@ -168,7 +168,7 @@ jobs:
           tar -C "${BUNDLE_MACOS_DIR}" -czf "$archive" Workpot.app
           shasum -a 256 "$archive" > "$checksum"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.prepare.outputs.dry_run == 'true' && 'smoke-workpot-bundle-aarch64' || 'workpot-bundle-aarch64' }}
           path: |

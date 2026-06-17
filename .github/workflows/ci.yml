@@ -68,7 +68,7 @@ jobs:
         env:
           CI: true
       - name: Upload JS coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lcov-js.info
           path: lcov-js.info
@@ -100,13 +100,13 @@ jobs:
           cargo llvm-cov test -p workpot-core -p workpot-cli --lcov --output-path lcov-core-cli.info
           cargo llvm-cov test -p workpot-tray --lcov --output-path lcov-tray.info
       - name: Upload core + cli coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lcov-core-cli.info
           path: lcov-core-cli.info
           retention-days: 7
       - name: Upload tray coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lcov-tray.info
           path: lcov-tray.info
