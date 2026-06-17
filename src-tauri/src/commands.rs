@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -166,6 +166,16 @@ fn log_emit_err(event: &str, err: tauri::Error) {
 
 /// Active repo path for the most recent `show_repo_context_menu` popup.
 pub struct ContextMenuRepo(pub Arc<Mutex<Option<String>>>);
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoContextMenuRequest {
+    pub repo_path: String,
+    pub is_pinned: bool,
+    pub tags: Vec<String>,
+    pub convert_to: Option<String>,
+    pub convert_block_reason: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct RepoDto {
@@ -674,14 +684,18 @@ fn convert_menu_label(target: &str, block_reason: Option<&str>) -> String {
 pub async fn show_repo_context_menu(
     window: Window,
     app: AppHandle,
-    repo_path: String,
-    is_pinned: bool,
-    tags: Vec<String>,
-    convert_to: Option<String>,
-    convert_block_reason: Option<String>,
+    request: RepoContextMenuRequest,
     menu_repo: State<'_, ContextMenuRepo>,
     convert_guard: State<'_, RepoConvertGuard>,
 ) -> Result<(), String> {
+    let RepoContextMenuRequest {
+        repo_path,
+        is_pinned,
+        tags,
+        convert_to,
+        convert_block_reason,
+    } = request;
+
     {
         let mut guard = menu_repo
             .0
