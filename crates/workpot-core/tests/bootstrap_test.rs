@@ -18,6 +18,14 @@ fn config_creates_defaults() {
     let contents = fs::read_to_string(&config_path).expect("config file exists");
     assert!(contents.contains("watch_roots"));
     assert!(contents.contains("excludes"));
+    assert!(
+        contents.contains('#'),
+        "default config should include documentation comments"
+    );
+    assert!(
+        contents.contains("{path}"),
+        "launch_cmd comment should document {{path}} placeholder"
+    );
 }
 
 #[test]
@@ -84,7 +92,7 @@ fn migrations_apply() {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("user_version");
-    assert_eq!(version, 7);
+    assert_eq!(version, 8);
 
     let table_exists: i32 = conn
         .query_row(

@@ -117,6 +117,7 @@ mod tests {
             notes: None,
             tags: vec![],
             alias: None,
+            convert_block_reason: None,
         }
     }
 
@@ -148,7 +149,28 @@ mod tests {
         assert_eq!(result, "~");
     }
 
+    // ---- priority_icon ----
+
+    #[test]
+    fn priority_icon_maps_sections() {
+        assert_eq!(priority_icon(PrioritySection::Pinned), "📌");
+        assert_eq!(priority_icon(PrioritySection::Dirty), "🟡");
+        assert_eq!(priority_icon(PrioritySection::Recent), "🔥");
+        assert_eq!(priority_icon(PrioritySection::Rest), "⬜");
+    }
+
     // ---- format_list_row ----
+
+    #[test]
+    fn format_list_row_no_branch_with_tags() {
+        let mut repo = make_repo("myrepo", "/Users/test/c/myrepo");
+        repo.branch = None;
+        repo.tags = vec!["infra".to_string()];
+        let row = format_list_row(&repo, "⬜");
+        assert!(row.contains("myrepo"), "name present: {row}");
+        assert!(row.contains("infra"), "tags present: {row}");
+        assert!(!row.contains("main"), "no branch segment: {row}");
+    }
 
     #[test]
     fn format_list_row_no_tags() {

@@ -1,0 +1,79 @@
+# Workpot configuration — edit freely; run `workpot settings --add-comments` to restore missing docs.
+
+# Directories scanned for git repositories.
+# On first run, ~/code and ~/dev are added when those directories exist.
+# Examples:
+#   watch_roots = []
+#   watch_roots = ["/Users/you/code", "/Users/you/projects"]
+watch_roots = []
+
+# Glob patterns excluded from indexing.
+# Examples:
+#   excludes = []
+#   excludes = ["**/node_modules/**", "/archive/old/**"]
+excludes = []
+
+# Shell command to open a repo in the IDE. Must include {path}.
+# Example: launch_cmd = "cursor --new-window {path}"
+launch_cmd = "cursor --new-window {path}"
+
+# Shell command to push a branch. Must include {path} and {branch}.
+# Example: push_cmd = "git -C {path} push origin {branch}"
+push_cmd = "git -C {path} push origin {branch}"
+
+# Shell command to pull a branch. Must include {path} and {branch}.
+# Example: pull_cmd = "git -C {path} pull origin {branch}"
+pull_cmd = "git -C {path} pull origin {branch}"
+
+# Maximum repo rows shown in the tray panel before scrolling (1–100).
+max_visible_rows = 15
+
+# Maximum pinned repositories in the tray (1–20).
+max_pinned = 5
+
+# Recency window (days) for the Recent section (1–365).
+max_recent_days = 14
+
+# Minimum repos shown in Recent via padding (must be <= max_pinned).
+min_recent_count = 3
+
+# Days before a dirty repo triggers the stale-dirty tray icon (1–365).
+stale_dirty_days = 7
+
+# Indexing caps (hard ceilings: 5000 roots, 20000 repos).
+[limits]
+# Maximum watch roots allowed in config.
+max_watch_roots = 100
+# Maximum indexed repositories across all roots.
+max_repos = 1000
+
+# Repo layout conversion (`workpot repo convert`). Templates are global only.
+[migration]
+# Suffix appended to the original directory name during conversion.
+temp_suffix = ".temp"
+
+# When true, delete the renamed .temp directory after successful conversion.
+delete_original = false
+
+# Path template for the bare git repository. Must contain {project}.
+# Example: bare_repo_template = "{project}/bare.git"
+bare_repo_template = "{project}/bare.git"
+
+# Path template for worktrees. Must contain {project} and {worktree}.
+# Example: worktree_template = "{project}/wtrees/{worktree}"
+worktree_template = "{project}/wtrees/{worktree}"
+
+# Source for {project}: folder_name | alias
+# folder_name uses the directory name; alias uses the workpot alias.
+project_name_source = "folder_name"
+
+# Tray convert UI (opt-in; defaults apply when commented out).
+# When true, show "Convert to bare" for normal repositories.
+# allow_conversion_to_bare_repo = false
+
+# When true, show "Convert to local" for bare repositories.
+# allow_conversion_to_local_repo = false
+
+# Default layout hint for tray convert: bare | local (default: local).
+# Enables convert actions when set to the target layout, even if allow_conversion_* is false.
+# default_repo_layout = "local"

@@ -24,4 +24,6 @@ pub struct RepoRecord {
     pub tags: Vec<String>,
     /// Display name override (06.2); None means use folder `name`.
     pub alias: Option<String>,
+    /// Structural convert blocker persisted during index (linked worktree, layout, path conflicts).
+    pub convert_block_reason: Option<String>,
 }

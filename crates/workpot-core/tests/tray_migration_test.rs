@@ -69,6 +69,70 @@ fn config_rejects_invalid_launch_cmd() {
 }
 
 #[test]
+fn config_rejects_invalid_push_and_pull_cmds() {
+    let config = Config {
+        push_cmd: "   ".to_string(),
+        ..Default::default()
+    };
+    assert_eq!(config.validate().unwrap_err(), "push_cmd must not be empty");
+
+    let config = Config {
+        push_cmd: "git push".to_string(),
+        ..Default::default()
+    };
+    assert_eq!(
+        config.validate().unwrap_err(),
+        "push_cmd must contain {path} and {branch} placeholders"
+    );
+
+    let config = Config {
+        pull_cmd: "git pull".to_string(),
+        ..Default::default()
+    };
+    assert_eq!(
+        config.validate().unwrap_err(),
+        "pull_cmd must contain {path} and {branch} placeholders"
+    );
+}
+
+#[test]
+fn config_rejects_min_recent_count_above_max_pinned() {
+    let config = Config {
+        max_pinned: 3,
+        min_recent_count: 5,
+        ..Default::default()
+    };
+    assert_eq!(
+        config.validate().unwrap_err(),
+        "min_recent_count 5 must be <= max_pinned 3"
+    );
+}
+
+#[test]
+fn config_rejects_invalid_migration_templates() {
+    let mut config = Config::default();
+    config.migration.temp_suffix = String::new();
+    assert_eq!(
+        config.validate().unwrap_err(),
+        "migration.temp_suffix must not be empty"
+    );
+
+    let mut config = Config::default();
+    config.migration.bare_repo_template = "bare.git".to_string();
+    assert_eq!(
+        config.validate().unwrap_err(),
+        "migration.bare_repo_template must contain {project} placeholder"
+    );
+
+    let mut config = Config::default();
+    config.migration.worktree_template = "{project}/wt".to_string();
+    assert_eq!(
+        config.validate().unwrap_err(),
+        "migration.worktree_template must contain {project} and {worktree} placeholders"
+    );
+}
+
+#[test]
 fn config_rejects_max_visible_rows_out_of_range() {
     let config = Config {
         max_visible_rows: 0,

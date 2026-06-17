@@ -6,21 +6,51 @@ export interface TrayConfigDto {
   stale_dirty_days: number;
 }
 
+export interface IndexSummary {
+  added: number;
+  removed: number;
+  skipped: number;
+  git_refreshed: number;
+  git_errors: number;
+}
+
 export interface GitRefreshSummary {
   refreshed: number;
   errors: number;
   any_dirty: boolean;
 }
 
-export type BranchPresence =
-  | "checkout"
-  | "local_only"
-  | "remote_only"
-  | "local_remote";
+export type SyncDirection = "push" | "pull";
+
+export interface RepoSyncEvent {
+  repo_path: string;
+  branch: string;
+  direction: SyncDirection;
+  error?: string;
+}
+
+export interface ActiveSync {
+  repoPath: string;
+  branch: string;
+  direction: SyncDirection;
+}
+
+export interface ActiveConvert {
+  repoPath: string;
+}
+
+export interface RepoConvertEvent {
+  repo_path: string;
+  new_path?: string;
+  error?: string;
+}
+
+export type BranchTracking = "local_only" | "remote_only" | "local_remote";
 
 export interface BranchListItemDto {
   name: string;
-  presence: BranchPresence;
+  checked_out: boolean;
+  tracking: BranchTracking;
   ahead: number | null;
   behind: number | null;
 }
@@ -30,6 +60,8 @@ export interface RepoDto {
   name: string;
   alias: string | null;
   branch: string | null;
+  ahead: number | null;
+  behind: number | null;
   is_dirty: boolean | null;
   parent_dir: string;
   last_opened_at: number | null;
@@ -39,4 +71,7 @@ export interface RepoDto {
   notes: string | null;
   tags: string[];
   branches: string[];
+  is_bare: boolean;
+  convert_to: "bare" | "local" | null;
+  convert_block_reason: string | null;
 }

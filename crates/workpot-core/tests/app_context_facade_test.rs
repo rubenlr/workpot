@@ -40,6 +40,7 @@ fn database_path_and_excludes_list_accessors() {
     assert_eq!(ctx.database_path(), db_path.as_path());
     assert!(
         ctx.excludes_list()
+            .expect("excludes")
             .iter()
             .any(|e| e.contains("workpot-exclude"))
     );
@@ -151,6 +152,35 @@ fn org_facade_delegates_through_app_context() {
     assert_eq!(row.notes.as_deref(), Some("notes"));
     assert_eq!(row.alias.as_deref(), Some("my-alias"));
     assert!(row.pinned);
+}
+
+#[test]
+fn run_index_phased_matches_run_index_for_manual_repo() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let db_path = dir.path().join("workpot.db");
+    let watch_root = dir.path().join("watch");
+    fs::create_dir_all(&watch_root).expect("watch root");
+    fs::write(
+        &config_path,
+        format!(
+            "watch_roots = [\"{}\"]\nexcludes = []\n",
+            watch_root.display()
+        ),
+    )
+    .expect("write config");
+
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let repo_path = git_worktree(&watch_root, "phased-index");
+    ctx.register_manual(&repo_path).expect("register");
+
+    ctx.run_index_phased().expect("run_index_phased");
+
+    let repos = ctx.list_repos().expect("list");
+    assert!(
+        repos.iter().any(|r| r.name == "phased-index"),
+        "indexed repo still present after phased run"
+    );
 }
 
 #[test]

@@ -1,12 +1,17 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::menu::{ContextMenu, Menu, MenuItem};
+use tauri::menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, Manager, State, Window};
-use workpot_core::{AppContext, GitRefreshSummary, RepoRecord};
+use workpot_core::domain::config::MigrationConfig;
+use workpot_core::services::repo_convert::{
+    ConvertResult, ConvertTarget, PreflightResult, convert_target_for_record, preflight_message,
+    run_volatile_preflight,
+};
+use workpot_core::{AppState, GitRefreshSummary, RepoRecord, SyncDirection, run_repo_sync};
 
 /// Prevents overlapping background git refresh jobs (panel open + Cmd+R).
 #[derive(Clone)]
@@ -29,6 +34,130 @@ impl GitRefreshGuard {
     }
 }
 
+/// Prevents overlapping per-branch push/pull sync jobs and tracks the active payload.
+#[derive(Clone)]
+pub struct RepoSyncGuard {
+    busy: Arc<AtomicBool>,
+    active: Arc<Mutex<Option<RepoSyncEventDto>>>,
+}
+
+impl RepoSyncGuard {
+    pub fn new() -> Self {
+        Self {
+            busy: Arc::new(AtomicBool::new(false)),
+            active: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn try_start(&self, payload: RepoSyncEventDto) -> bool {
+        if self
+            .busy
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return false;
+        }
+        if let Ok(mut active) = self.active.lock() {
+            *active = Some(payload);
+        }
+        true
+    }
+
+    pub fn finish(&self) {
+        if let Ok(mut active) = self.active.lock() {
+            *active = None;
+        }
+        self.busy.store(false, Ordering::Release);
+    }
+
+    pub fn status(&self) -> Option<RepoSyncEventDto> {
+        self.active.lock().ok().and_then(|active| active.clone())
+    }
+}
+
+struct RepoSyncGuardLease(RepoSyncGuard);
+
+impl Drop for RepoSyncGuardLease {
+    fn drop(&mut self) {
+        self.0.finish();
+    }
+}
+
+/// Prevents overlapping per-repo layout conversion jobs and tracks the active path.
+#[derive(Clone)]
+pub struct RepoConvertGuard {
+    busy: Arc<AtomicBool>,
+    active_path: Arc<Mutex<Option<String>>>,
+}
+
+impl RepoConvertGuard {
+    pub fn new() -> Self {
+        Self {
+            busy: Arc::new(AtomicBool::new(false)),
+            active_path: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn try_start(&self, repo_path: String) -> bool {
+        if self
+            .busy
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return false;
+        }
+        if let Ok(mut active) = self.active_path.lock() {
+            *active = Some(repo_path);
+        }
+        true
+    }
+
+    pub fn finish(&self) {
+        if let Ok(mut active) = self.active_path.lock() {
+            *active = None;
+        }
+        self.busy.store(false, Ordering::Release);
+    }
+
+    pub fn status(&self) -> Option<RepoConvertEventDto> {
+        self.active_path
+            .lock()
+            .ok()
+            .and_then(|active| active.clone())
+            .map(|repo_path| RepoConvertEventDto {
+                repo_path,
+                new_path: None,
+                error: None,
+            })
+    }
+}
+
+struct RepoConvertGuardLease(RepoConvertGuard);
+
+impl Drop for RepoConvertGuardLease {
+    fn drop(&mut self) {
+        self.0.finish();
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RepoConvertEventDto {
+    pub repo_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RepoSyncEventDto {
+    pub repo_path: String,
+    pub branch: String,
+    pub direction: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 struct TraySyncAnimationCancel(Arc<AtomicBool>);
 
 fn log_emit_err(event: &str, err: tauri::Error) {
@@ -38,12 +167,24 @@ fn log_emit_err(event: &str, err: tauri::Error) {
 /// Active repo path for the most recent `show_repo_context_menu` popup.
 pub struct ContextMenuRepo(pub Arc<Mutex<Option<String>>>);
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoContextMenuRequest {
+    pub repo_path: String,
+    pub is_pinned: bool,
+    pub tags: Vec<String>,
+    pub convert_to: Option<String>,
+    pub convert_block_reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct RepoDto {
     pub path: String,
     pub name: String,
     pub alias: Option<String>,
     pub branch: Option<String>,
+    pub ahead: Option<i64>,
+    pub behind: Option<i64>,
     pub is_dirty: Option<bool>,
     pub parent_dir: String,
     pub last_opened_at: Option<i64>,
@@ -53,12 +194,14 @@ pub struct RepoDto {
     pub notes: Option<String>,
     pub tags: Vec<String>,
     pub branches: Vec<String>,
+    pub is_bare: bool,
+    pub convert_to: Option<String>,
+    pub convert_block_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum BranchPresenceDto {
-    Checkout,
+pub enum BranchTrackingDto {
     LocalOnly,
     RemoteOnly,
     LocalRemote,
@@ -67,21 +210,45 @@ pub enum BranchPresenceDto {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct BranchListItemDto {
     pub name: String,
-    pub presence: BranchPresenceDto,
+    pub checked_out: bool,
+    pub tracking: BranchTrackingDto,
     pub ahead: Option<i64>,
     pub behind: Option<i64>,
 }
 
-pub fn repo_records_to_dtos(records: Vec<RepoRecord>) -> Vec<RepoDto> {
-    records.into_iter().map(record_to_dto).collect()
+pub fn repo_records_to_dtos(records: Vec<RepoRecord>, migration: &MigrationConfig) -> Vec<RepoDto> {
+    records
+        .into_iter()
+        .map(|record| record_to_dto(record, migration))
+        .collect()
 }
 
-fn record_to_dto(record: RepoRecord) -> RepoDto {
+fn path_is_bare(path: &Path) -> bool {
+    path.join("HEAD").is_file() && path.join("objects").is_dir()
+}
+
+fn convert_to_for_record(
+    record: &RepoRecord,
+    migration: &MigrationConfig,
+    is_bare: bool,
+) -> Option<String> {
+    let _ = record;
+    convert_target_for_record(migration, is_bare).map(|target| match target {
+        ConvertTarget::Bare => "bare".to_string(),
+        ConvertTarget::Local => "local".to_string(),
+    })
+}
+
+fn record_to_dto(record: RepoRecord, migration: &MigrationConfig) -> RepoDto {
+    let is_bare = path_is_bare(&record.path);
+    let convert_to = convert_to_for_record(&record, migration, is_bare);
     RepoDto {
         path: record.path.display().to_string(),
         name: record.name,
         alias: record.alias,
         branch: record.branch,
+        ahead: record.ahead,
+        behind: record.behind,
         is_dirty: record.is_dirty,
         parent_dir: parent_dir_display(&record.path),
         last_opened_at: record.last_opened_at,
@@ -91,6 +258,9 @@ fn record_to_dto(record: RepoRecord) -> RepoDto {
         notes: record.notes.clone(),
         tags: record.tags.clone(),
         branches: vec![],
+        is_bare,
+        convert_to,
+        convert_block_reason: record.convert_block_reason,
     }
 }
 
@@ -153,32 +323,25 @@ pub struct TrayConfigDto {
     pub stale_dirty_days: u32,
 }
 
-pub fn tray_config_from(ctx: &AppContext) -> TrayConfigDto {
-    let config = ctx.config();
-    TrayConfigDto {
+pub fn tray_config_from(state: &AppState) -> Result<TrayConfigDto, String> {
+    let config = state.config().map_err(|e| e.to_string())?;
+    Ok(TrayConfigDto {
         max_visible_rows: config.max_visible_rows,
         max_recent_days: config.max_recent_days,
         min_recent_count: config.min_recent_count,
         max_pinned: config.max_pinned,
         stale_dirty_days: config.stale_dirty_days,
-    }
+    })
 }
 
 #[tauri::command]
-pub async fn get_tray_config(
-    state: State<'_, Arc<Mutex<AppContext>>>,
-) -> Result<TrayConfigDto, String> {
+pub async fn get_tray_config(state: State<'_, Arc<AppState>>) -> Result<TrayConfigDto, String> {
     let started = Instant::now();
     log::debug!("get_tray_config: start");
     let state = state.inner().clone();
-    let cfg = tauri::async_runtime::spawn_blocking(move || {
-        let ctx = state
-            .lock()
-            .map_err(|_| "AppContext lock poisoned".to_string())?;
-        Ok::<TrayConfigDto, String>(tray_config_from(&ctx))
-    })
-    .await
-    .map_err(|e| e.to_string())??;
+    let cfg = tauri::async_runtime::spawn_blocking(move || tray_config_from(&state))
+        .await
+        .map_err(|e| e.to_string())??;
     log::debug!(
         "get_tray_config: complete elapsed_ms={}",
         started.elapsed().as_millis()
@@ -187,16 +350,14 @@ pub async fn get_tray_config(
 }
 
 #[tauri::command]
-pub async fn list_repos(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<Vec<RepoDto>, String> {
+pub async fn list_repos(state: State<'_, Arc<AppState>>) -> Result<Vec<RepoDto>, String> {
     let started = Instant::now();
     log::debug!("list_repos: start");
     let state = state.inner().clone();
     let repos = tauri::async_runtime::spawn_blocking(move || {
-        let ctx = state
-            .lock()
-            .map_err(|_| "AppContext lock poisoned".to_string())?;
-        let records = ctx.list_repos().map_err(|e| e.to_string())?;
-        Ok::<Vec<RepoDto>, String>(repo_records_to_dtos(records))
+        let records = state.list_repos().map_err(|e| e.to_string())?;
+        let migration = state.config().map_err(|e| e.to_string())?.migration.clone();
+        Ok::<Vec<RepoDto>, String>(repo_records_to_dtos(records, &migration))
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -212,14 +373,13 @@ pub async fn list_repos(state: State<'_, Arc<Mutex<AppContext>>>) -> Result<Vec<
 pub fn set_tags(
     repo_path: String,
     tags: Vec<String>,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     validate_tags(&tags)?;
     let tag_refs: Vec<&str> = tags.iter().map(|t| t.trim()).collect();
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.set_tags(&repo_path, &tag_refs)
+    state
+        .inner()
+        .set_tags(&repo_path, &tag_refs)
         .map_err(|e| e.to_string())
 }
 
@@ -227,13 +387,12 @@ pub fn set_tags(
 pub fn add_tag(
     repo_path: String,
     tag: String,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     validate_tag(&tag)?;
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.add_tag(&repo_path, tag.trim())
+    state
+        .inner()
+        .add_tag(&repo_path, tag.trim())
         .map_err(|e| e.to_string())
 }
 
@@ -241,26 +400,21 @@ pub fn add_tag(
 pub fn remove_tag(
     repo_path: String,
     tag: String,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.remove_tag(&repo_path, &tag).map_err(|e| e.to_string())
+    state
+        .inner()
+        .remove_tag(&repo_path, &tag)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn list_all_tags(
-    state: State<'_, Arc<Mutex<AppContext>>>,
-) -> Result<Vec<String>, String> {
+pub async fn list_all_tags(state: State<'_, Arc<AppState>>) -> Result<Vec<String>, String> {
     let started = Instant::now();
     log::debug!("list_all_tags: start");
     let state = state.inner().clone();
     let tags = tauri::async_runtime::spawn_blocking(move || {
-        let ctx = state
-            .lock()
-            .map_err(|_| "AppContext lock poisoned".to_string())?;
-        ctx.list_all_tags().map_err(|e| e.to_string())
+        state.list_all_tags().map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -296,15 +450,14 @@ fn validate_notes(notes: &Option<String>) -> Result<(), String> {
 pub fn set_alias(
     repo_path: String,
     alias: Option<String>,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     if let Some(ref value) = alias {
         validate_alias(value)?;
     }
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.set_alias(&repo_path, alias.as_deref().map(str::trim))
+    state
+        .inner()
+        .set_alias(&repo_path, alias.as_deref().map(str::trim))
         .map_err(|e| e.to_string())
 }
 
@@ -312,14 +465,13 @@ pub fn set_alias(
 pub fn set_notes(
     repo_path: String,
     notes: Option<String>,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     validate_notes(&notes)?;
     let notes = normalize_notes(notes);
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.set_notes(&repo_path, notes.as_deref())
+    state
+        .inner()
+        .set_notes(&repo_path, notes.as_deref())
         .map_err(|e| e.to_string())
 }
 
@@ -327,36 +479,35 @@ pub fn set_notes(
 pub fn set_pin(
     repo_path: String,
     pinned: bool,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.set_pin(&repo_path, pinned).map_err(|e| e.to_string())
+    state
+        .inner()
+        .set_pin(&repo_path, pinned)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn set_pin_order(
     items: Vec<(String, i64)>,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let refs: Vec<(&str, i64)> = items.iter().map(|(p, o)| (p.as_str(), *o)).collect();
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    ctx.set_pin_order(&refs).map_err(|e| e.to_string())
+    state
+        .inner()
+        .set_pin_order(&refs)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn list_branches(
     repo_path: String,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<BranchListItemDto>, String> {
     {
-        let ctx = state
-            .lock()
-            .map_err(|_| "AppContext lock poisoned".to_string())?;
-        ctx.indexed_launch_path(Path::new(&repo_path))
+        state
+            .inner()
+            .indexed_launch_path(Path::new(&repo_path))
             .map_err(|e| e.to_string())?;
     }
     tauri::async_runtime::spawn_blocking(move || list_branches_sync(&repo_path))
@@ -462,27 +613,25 @@ fn branch_list_item(
     let is_local = local.names.iter().any(|n| n == &name);
     let has_upstream = local.with_upstream.contains(&name);
     let is_remote_only = remote_short_names.contains(&name) && !is_local;
-    let is_checkout = local.current.as_ref() == Some(&name);
+    let checked_out = local.current.as_ref() == Some(&name);
 
-    let presence = if is_checkout {
-        BranchPresenceDto::Checkout
-    } else if is_remote_only {
-        BranchPresenceDto::RemoteOnly
+    let tracking = if is_remote_only {
+        BranchTrackingDto::RemoteOnly
     } else if has_upstream {
-        BranchPresenceDto::LocalRemote
+        BranchTrackingDto::LocalRemote
     } else {
-        BranchPresenceDto::LocalOnly
+        BranchTrackingDto::LocalOnly
     };
 
-    let (ahead, behind) = if is_local && has_upstream {
-        ahead_behind_for_local_branch(repo, &name)
-    } else {
-        (None, None)
+    let (ahead, behind) = match tracking {
+        BranchTrackingDto::LocalRemote => ahead_behind_for_local_branch(repo, &name),
+        _ => (None, None),
     };
 
     BranchListItemDto {
         name,
-        presence,
+        checked_out,
+        tracking,
         ahead,
         behind,
     }
@@ -503,25 +652,50 @@ fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String>
         .collect();
 
     items.sort_by(|a, b| {
-        let a_checkout = a.presence == BranchPresenceDto::Checkout;
-        let b_checkout = b.presence == BranchPresenceDto::Checkout;
-        b_checkout
-            .cmp(&a_checkout)
+        b.checked_out
+            .cmp(&a.checked_out)
             .then_with(|| a.name.cmp(&b.name))
     });
 
     Ok(items)
 }
 
+fn truncate_menu_reason(reason: &str, max_chars: usize) -> String {
+    if reason.chars().count() <= max_chars {
+        reason.to_string()
+    } else {
+        format!("{}…", reason.chars().take(max_chars).collect::<String>())
+    }
+}
+
+fn convert_menu_label(target: &str, block_reason: Option<&str>) -> String {
+    let base = match target {
+        "bare" => "Convert to bare",
+        "local" => "Convert to local",
+        _ => "Convert",
+    };
+    match block_reason {
+        Some(reason) => format!("{base} — {}", truncate_menu_reason(reason, 48)),
+        None => base.to_string(),
+    }
+}
+
 #[tauri::command]
 pub async fn show_repo_context_menu(
     window: Window,
     app: AppHandle,
-    repo_path: String,
-    is_pinned: bool,
-    tags: Vec<String>,
+    request: RepoContextMenuRequest,
     menu_repo: State<'_, ContextMenuRepo>,
+    convert_guard: State<'_, RepoConvertGuard>,
 ) -> Result<(), String> {
+    let RepoContextMenuRequest {
+        repo_path,
+        is_pinned,
+        tags,
+        convert_to,
+        convert_block_reason,
+    } = request;
+
     {
         let mut guard = menu_repo
             .0
@@ -529,6 +703,24 @@ pub async fn show_repo_context_menu(
             .map_err(|_| "context menu state lock poisoned".to_string())?;
         *guard = Some(repo_path.clone());
     }
+
+    let convert_menu_block = if convert_to.is_some() {
+        let repo_path_for_check = repo_path.clone();
+        let volatile_result = tauri::async_runtime::spawn_blocking(move || {
+            run_volatile_preflight(Path::new(&repo_path_for_check))
+        })
+        .await
+        .map_err(|e| format!("volatile preflight task failed: {e}"))?
+        .map_err(|e| e.to_string())?;
+
+        let volatile_reason = match volatile_result {
+            PreflightResult::Ready => None,
+            other => Some(preflight_message(&other)),
+        };
+        volatile_reason.or(convert_block_reason)
+    } else {
+        None
+    };
 
     let pin_label = if is_pinned { "Unpin" } else { "Pin" };
     let pin_item =
@@ -545,8 +737,37 @@ pub async fn show_repo_context_menu(
     )
     .map_err(|e| e.to_string())?;
 
-    let menu = Menu::with_items(&app, &[&pin_item, &add_tag_item, &remove_tag_item])
-        .map_err(|e| e.to_string())?;
+    let mut menu_items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+        vec![&pin_item, &add_tag_item, &remove_tag_item];
+
+    let separator = if convert_to.is_some() {
+        Some(PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+
+    let convert_item = convert_to
+        .map(|target| {
+            let enabled = convert_menu_block.is_none() && convert_guard.status().is_none();
+            MenuItem::with_id(
+                &app,
+                "convert",
+                convert_menu_label(&target, convert_menu_block.as_deref()),
+                enabled,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())
+        })
+        .transpose()?;
+
+    if let Some(ref sep) = separator {
+        menu_items.push(sep);
+    }
+    if let Some(ref item) = convert_item {
+        menu_items.push(item);
+    }
+
+    let menu = Menu::with_items(&app, &menu_items).map_err(|e| e.to_string())?;
     menu.popup(window).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -641,15 +862,20 @@ pub(crate) fn update_tray_icon_state(
 
 fn reset_tray_icon_after_git_refresh(
     app: &AppHandle,
-    state: &Arc<Mutex<AppContext>>,
+    state: &Arc<AppState>,
     stale_dirty_days: u32,
 ) {
-    if let Ok(ctx) = state.lock()
-        && let Ok(records) = ctx.list_repos()
-    {
-        let config = ctx.config();
-        let dtos = repo_records_to_dtos(records);
-        update_tray_icon_state(app, &dtos, config.stale_dirty_days, false);
+    if let Ok(records) = state.list_repos() {
+        let stale_days = state
+            .config()
+            .map(|c| c.stale_dirty_days)
+            .unwrap_or(stale_dirty_days);
+        let migration = state
+            .config()
+            .map(|c| c.migration.clone())
+            .unwrap_or_default();
+        let dtos = repo_records_to_dtos(records, &migration);
+        update_tray_icon_state(app, &dtos, stale_days, false);
         return;
     }
     update_tray_icon_state(app, &[], stale_dirty_days, false);
@@ -657,7 +883,7 @@ fn reset_tray_icon_after_git_refresh(
 
 /// Git refresh on a blocking pool so libgit2 cannot stall the async runtime.
 /// Always resets tray icon and emits completion/failure events.
-pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<Mutex<AppContext>>) {
+pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<AppState>) {
     let guard = app
         .try_state::<GitRefreshGuard>()
         .map(|g| g.inner().clone());
@@ -674,13 +900,10 @@ pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<Mutex<AppC
 
 fn spawn_background_git_refresh_inner(
     app: AppHandle,
-    state: Arc<Mutex<AppContext>>,
+    state: Arc<AppState>,
     guard: Option<GitRefreshGuard>,
 ) {
-    let stale_dirty_days = state
-        .lock()
-        .map(|ctx| ctx.config().stale_dirty_days)
-        .unwrap_or(7);
+    let stale_dirty_days = state.config().map(|c| c.stale_dirty_days).unwrap_or(7);
     update_tray_icon_state(&app, &[], stale_dirty_days, true);
     let animation_cancel = start_tray_sync_animation(&app);
     log::info!("background git refresh: started");
@@ -693,10 +916,9 @@ fn spawn_background_git_refresh_inner(
         let state_for_blocking = Arc::clone(&state);
 
         let blocking_result = tauri::async_runtime::spawn_blocking(move || {
-            let paths = match state_for_blocking.lock() {
-                Ok(ctx) => ctx.git_refresh_paths().map_err(|e| e.to_string()),
-                Err(_) => Err("AppContext lock poisoned".to_string()),
-            }?;
+            let paths = state_for_blocking
+                .git_refresh_paths()
+                .map_err(|e| e.to_string())?;
             let repo_count = paths.len();
             log::info!("background git refresh: refreshing {repo_count} repos");
             let paths_acquire_ms = started.elapsed().as_millis();
@@ -706,8 +928,6 @@ fn spawn_background_git_refresh_inner(
             let git_results = workpot_core::services::git_state::refresh_all(paths);
             log::debug!("background git refresh: persist lock acquire");
             let summary = state_for_blocking
-                .lock()
-                .map_err(|_| "AppContext lock poisoned".to_string())?
                 .persist_git_refresh_results(git_results)
                 .map_err(|e| e.to_string())?;
             log::debug!("background git refresh: persist complete");
@@ -769,11 +989,246 @@ fn spawn_background_git_refresh_inner(
 }
 
 #[tauri::command]
+pub async fn checkout_repo_branch(
+    repo_path: String,
+    branch: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let state_clone = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state_clone
+            .indexed_launch_path(Path::new(&repo_path))
+            .map_err(|e| e.to_string())?;
+        state_clone
+            .checkout_repo_branch(Path::new(&repo_path), &branch)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn refresh_index(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    crate::tray::spawn_background_index(app, state.inner().clone());
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn refresh_all_git_state(
     app: AppHandle,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     spawn_background_git_refresh(app, state.inner().clone());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_repo_sync_status(guard: State<'_, RepoSyncGuard>) -> Option<RepoSyncEventDto> {
+    guard.status()
+}
+
+#[tauri::command]
+pub async fn sync_repo_branch(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    guard: State<'_, RepoSyncGuard>,
+    repo_path: String,
+    branch: String,
+    direction: String,
+) -> Result<(), String> {
+    let sync_direction = SyncDirection::parse(&direction)?;
+    if branch.trim().is_empty() {
+        return Err("branch must not be empty".to_string());
+    }
+
+    let started_payload = RepoSyncEventDto {
+        repo_path: repo_path.clone(),
+        branch: branch.clone(),
+        direction: direction.clone(),
+        error: None,
+    };
+    if !guard.try_start(started_payload.clone()) {
+        return Err("a repo sync is already in progress".to_string());
+    }
+
+    log::info!("repo sync: started repo={repo_path} branch={branch} direction={direction}");
+
+    if let Err(e) = app.emit("repo-sync-started", &started_payload) {
+        log_emit_err("repo-sync-started", e);
+    }
+
+    let state_clone = state.inner().clone();
+    let guard_clone = guard.inner().clone();
+    let repo_path_task = repo_path.clone();
+    let branch_task = branch.clone();
+    let direction_str = direction.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let _lease = RepoSyncGuardLease(guard_clone);
+
+        let blocking_result = tauri::async_runtime::spawn_blocking(move || {
+            run_repo_sync(&state_clone, &repo_path_task, &branch_task, sync_direction)
+        })
+        .await;
+
+        match blocking_result {
+            Ok(Ok(())) => {
+                log::info!(
+                    "repo sync: complete repo={repo_path} branch={branch} direction={direction_str}"
+                );
+                let complete_payload = RepoSyncEventDto {
+                    repo_path,
+                    branch,
+                    direction: direction_str,
+                    error: None,
+                };
+                if let Err(e) = app.emit("repo-sync-complete", &complete_payload) {
+                    log_emit_err("repo-sync-complete", e);
+                }
+            }
+            Ok(Err(e)) => {
+                log::warn!(
+                    "repo sync: failed repo={repo_path} branch={branch} direction={direction_str}: {}",
+                    e.summary
+                );
+                if !e.full_detail.is_empty() {
+                    log::warn!("repo sync: stderr/stdout:\n{}", e.full_detail);
+                }
+                let summary = e.summary.clone();
+                let failed_payload = RepoSyncEventDto {
+                    repo_path: repo_path.clone(),
+                    branch: branch.clone(),
+                    direction: direction_str.clone(),
+                    error: Some(summary),
+                };
+                if let Err(err) = app.emit("repo-sync-failed", &failed_payload) {
+                    log_emit_err("repo-sync-failed", err);
+                }
+            }
+            Err(join_err) => {
+                let msg = format!("repo sync task panicked or was cancelled: {join_err}");
+                let failed_payload = RepoSyncEventDto {
+                    repo_path,
+                    branch,
+                    direction: direction_str,
+                    error: Some(msg),
+                };
+                if let Err(err) = app.emit("repo-sync-failed", &failed_payload) {
+                    log_emit_err("repo-sync-failed", err);
+                }
+            }
+        }
+    });
+
+    Ok(())
+}
+
+fn parse_convert_target(s: &str) -> Result<ConvertTarget, String> {
+    match s {
+        "bare" => Ok(ConvertTarget::Bare),
+        "local" => Ok(ConvertTarget::Local),
+        other => Err(format!("invalid convert target: {other}")),
+    }
+}
+
+#[tauri::command]
+pub fn get_repo_convert_status(guard: State<'_, RepoConvertGuard>) -> Option<RepoConvertEventDto> {
+    guard.status()
+}
+
+#[tauri::command]
+pub async fn convert_repo(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    guard: State<'_, RepoConvertGuard>,
+    repo_path: String,
+    target: String,
+) -> Result<(), String> {
+    let convert_target = parse_convert_target(&target)?;
+
+    if !guard.try_start(repo_path.clone()) {
+        return Err("a repo convert is already in progress".to_string());
+    }
+
+    log::info!("repo convert: started repo={repo_path} target={target}");
+
+    let started_payload = RepoConvertEventDto {
+        repo_path: repo_path.clone(),
+        new_path: None,
+        error: None,
+    };
+    if let Err(e) = app.emit("repo-convert-started", &started_payload) {
+        log_emit_err("repo-convert-started", e);
+    }
+
+    let state_clone = state.inner().clone();
+    let guard_clone = guard.inner().clone();
+    let repo_path_task = repo_path.clone();
+    let target_str = target.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let _lease = RepoConvertGuardLease(guard_clone);
+
+        let blocking_result = tauri::async_runtime::spawn_blocking(move || {
+            state_clone.convert_repo(Path::new(&repo_path_task), convert_target, false)
+        })
+        .await;
+
+        match blocking_result {
+            Ok(Ok(ConvertResult::Converted { from: _, to })) => {
+                let new_path = to.display().to_string();
+                log::info!(
+                    "repo convert: complete repo={repo_path} target={target_str} new_path={new_path}"
+                );
+                let complete_payload = RepoConvertEventDto {
+                    repo_path,
+                    new_path: Some(new_path),
+                    error: None,
+                };
+                if let Err(e) = app.emit("repo-convert-complete", &complete_payload) {
+                    log_emit_err("repo-convert-complete", e);
+                }
+            }
+            Ok(Ok(ConvertResult::DryRun { .. })) => {
+                let failed_payload = RepoConvertEventDto {
+                    repo_path: repo_path.clone(),
+                    new_path: None,
+                    error: Some("unexpected dry-run result".to_string()),
+                };
+                log::warn!(
+                    "repo convert: unexpected dry-run result repo={repo_path} target={target_str}"
+                );
+                if let Err(err) = app.emit("repo-convert-failed", &failed_payload) {
+                    log_emit_err("repo-convert-failed", err);
+                }
+            }
+            Ok(Err(e)) => {
+                let summary = e.to_string();
+                log::warn!("repo convert: failed repo={repo_path} target={target_str}: {summary}");
+                let failed_payload = RepoConvertEventDto {
+                    repo_path: repo_path.clone(),
+                    new_path: None,
+                    error: Some(summary),
+                };
+                if let Err(err) = app.emit("repo-convert-failed", &failed_payload) {
+                    log_emit_err("repo-convert-failed", err);
+                }
+            }
+            Err(join_err) => {
+                let msg = format!("repo convert task panicked or was cancelled: {join_err}");
+                log::error!("repo convert: failed repo={repo_path} target={target_str}: {msg}");
+                let failed_payload = RepoConvertEventDto {
+                    repo_path,
+                    new_path: None,
+                    error: Some(msg),
+                };
+                if let Err(err) = app.emit("repo-convert-failed", &failed_payload) {
+                    log_emit_err("repo-convert-failed", err);
+                }
+            }
+        }
+    });
+
     Ok(())
 }
 
@@ -781,12 +1236,35 @@ pub async fn refresh_all_git_state(
 pub fn open_in_cursor(
     path: String,
     _background: bool,
-    state: State<'_, Arc<Mutex<AppContext>>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let ctx = state
-        .lock()
-        .map_err(|_| "AppContext lock poisoned".to_string())?;
-    crate::launch::launch_repo(&ctx, &path)
+    crate::launch::launch_repo(state.inner(), &path)
+}
+
+#[tauri::command]
+pub fn open_in_finder(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("failed to open finder: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        #[cfg(target_os = "windows")]
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("failed to open explorer: {e}"))?;
+        #[cfg(target_os = "linux")]
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("failed to open directory: {e}"))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -795,6 +1273,10 @@ mod tests {
     use std::path::PathBuf;
     use workpot_core::RepoRecord;
     use workpot_core::domain::SOURCE_MANUAL;
+
+    fn default_migration() -> MigrationConfig {
+        MigrationConfig::default()
+    }
 
     fn sample_record(path: PathBuf) -> RepoRecord {
         RepoRecord {
@@ -815,6 +1297,7 @@ mod tests {
             notes: None,
             tags: vec![],
             alias: None,
+            convert_block_reason: None,
         }
     }
 
@@ -823,7 +1306,7 @@ mod tests {
         let home = std::env::var("HOME").expect("HOME");
         let path = PathBuf::from(format!("{home}/c/workpot/sample"));
         let record = sample_record(path);
-        let dto = record_to_dto(record);
+        let dto = record_to_dto(record, &default_migration());
         assert_eq!(dto.parent_dir, "~/c/workpot");
         assert_eq!(dto.branch, Some("main".to_string()));
         assert_eq!(dto.is_dirty, Some(false));
@@ -835,8 +1318,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let config_path = dir.path().join("config.toml");
         let db_path = dir.path().join("workpot.db");
-        let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
-        let cfg = tray_config_from(&ctx);
+        let ctx = AppState::open_with_paths(config_path, db_path).expect("open");
+        let cfg = tray_config_from(&ctx).expect("tray config");
         assert_eq!(cfg.max_visible_rows, 15);
         assert_eq!(cfg.max_recent_days, 14);
         assert_eq!(cfg.min_recent_count, 3);
@@ -849,7 +1332,7 @@ mod tests {
         let path = PathBuf::from("/tmp/alias-dto");
         let mut record = sample_record(path);
         record.alias = Some("Display Name".to_string());
-        let dto = record_to_dto(record);
+        let dto = record_to_dto(record, &default_migration());
         assert_eq!(dto.alias.as_deref(), Some("Display Name"));
     }
 
@@ -869,15 +1352,25 @@ mod tests {
         record.name = "myrepo".to_string();
         record.branch = None;
         record.registered_at = 0;
-        let dto = record_to_dto(record);
+        let dto = record_to_dto(record, &default_migration());
         assert_eq!(dto.parent_dir, "~");
     }
 
     #[test]
     fn repo_dto_parent_dir_outside_home_uses_absolute_path() {
         let record = sample_record(PathBuf::from("/var/tmp/myrepo"));
-        let dto = record_to_dto(record);
+        let dto = record_to_dto(record, &default_migration());
         assert_eq!(dto.parent_dir, "/var/tmp");
+    }
+
+    #[test]
+    fn record_to_dto_maps_ahead_behind() {
+        let mut record = sample_record(PathBuf::from("/var/tmp/sync-repo"));
+        record.ahead = Some(2);
+        record.behind = Some(1);
+        let dto = record_to_dto(record, &default_migration());
+        assert_eq!(dto.ahead, Some(2));
+        assert_eq!(dto.behind, Some(1));
     }
 
     #[test]
@@ -887,7 +1380,7 @@ mod tests {
         record.pin_order = Some(1);
         record.notes = Some("note".to_string());
         record.tags = vec!["rust".to_string()];
-        let dto = record_to_dto(record);
+        let dto = record_to_dto(record, &default_migration());
         assert!(dto.pinned);
         assert_eq!(dto.pin_order, Some(1));
         assert_eq!(dto.notes.as_deref(), Some("note"));
@@ -913,6 +1406,8 @@ mod tests {
             name: "x".to_string(),
             alias: None,
             branch: None,
+            ahead: None,
+            behind: None,
             is_dirty: Some(true),
             parent_dir: String::new(),
             last_opened_at,
@@ -922,6 +1417,9 @@ mod tests {
             notes: None,
             tags: vec![],
             branches: vec![],
+            is_bare: false,
+            convert_to: None,
+            convert_block_reason: None,
         }
     }
 
@@ -944,6 +1442,36 @@ mod tests {
     }
 
     #[test]
+    fn convert_to_for_record_is_settings_only() {
+        let mut migration = default_migration();
+        migration.allow_conversion_to_bare_repo = true;
+        let mut record = sample_record(PathBuf::from("/tmp/dirty-convert"));
+        record.is_dirty = Some(true);
+        record.ahead = Some(3);
+        record.git_state_error = Some("sync failed".into());
+        let dto = record_to_dto(record, &migration);
+        assert_eq!(dto.convert_to.as_deref(), Some("bare"));
+    }
+
+    #[test]
+    fn convert_menu_label_embeds_block_reason() {
+        let label = convert_menu_label("bare", Some("dirty worktree at /tmp/repo"));
+        assert!(label.contains("Convert to bare"));
+        assert!(label.contains("dirty worktree"));
+    }
+
+    #[test]
+    fn repo_dto_maps_convert_block_reason() {
+        let mut record = sample_record(PathBuf::from("/tmp/blocked"));
+        record.convert_block_reason = Some("already bare, cannot convert to bare".into());
+        let dto = record_to_dto(record, &default_migration());
+        assert_eq!(
+            dto.convert_block_reason.as_deref(),
+            Some("already bare, cannot convert to bare")
+        );
+    }
+
+    #[test]
     fn branch_list_item_marks_checkout_branch() {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = git2::Repository::init(dir.path()).expect("init");
@@ -957,7 +1485,8 @@ mod tests {
         let name = local.current.clone().expect("checkout branch");
         let item = branch_list_item(&repo, name.clone(), &local, &remote_short_names);
         assert_eq!(item.name, name);
-        assert_eq!(item.presence, BranchPresenceDto::Checkout);
+        assert!(item.checked_out);
+        assert_eq!(item.tracking, BranchTrackingDto::LocalOnly);
     }
 
     #[test]
@@ -980,8 +1509,9 @@ mod tests {
             notes: None,
             tags: vec![],
             alias: None,
+            convert_block_reason: None,
         };
-        let dtos = repo_records_to_dtos(vec![record]);
+        let dtos = repo_records_to_dtos(vec![record], &default_migration());
         assert_eq!(dtos[0].git_state_error, Some("bare".to_string()));
         assert_eq!(dtos[0].last_opened_at, Some(42));
     }
@@ -1019,6 +1549,48 @@ mod tests {
     }
 
     #[test]
+    fn repo_sync_guard_tracks_active_payload() {
+        let guard = RepoSyncGuard::new();
+        let payload = RepoSyncEventDto {
+            repo_path: "/tmp/r".to_string(),
+            branch: "main".to_string(),
+            direction: "push".to_string(),
+            error: None,
+        };
+        assert!(guard.try_start(payload.clone()));
+        assert_eq!(guard.status(), Some(payload.clone()));
+        assert!(!guard.try_start(payload));
+        guard.finish();
+        assert_eq!(guard.status(), None);
+        assert!(guard.try_start(RepoSyncEventDto {
+            repo_path: "/tmp/r".to_string(),
+            branch: "main".to_string(),
+            direction: "pull".to_string(),
+            error: None,
+        }));
+        guard.finish();
+    }
+
+    #[test]
+    fn repo_convert_guard_tracks_active_path() {
+        let guard = RepoConvertGuard::new();
+        assert!(guard.try_start("/tmp/r".to_string()));
+        assert_eq!(
+            guard.status(),
+            Some(RepoConvertEventDto {
+                repo_path: "/tmp/r".to_string(),
+                new_path: None,
+                error: None,
+            })
+        );
+        assert!(!guard.try_start("/tmp/other".to_string()));
+        guard.finish();
+        assert_eq!(guard.status(), None);
+        assert!(guard.try_start("/tmp/other".to_string()));
+        guard.finish();
+    }
+
+    #[test]
     fn git_refresh_guard_skips_second_concurrent_start() {
         let guard = GitRefreshGuard::new();
         assert!(guard.try_start());
@@ -1037,6 +1609,42 @@ mod tests {
     }
 
     #[test]
+    fn checkout_repo_branch_switches_local_branch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("config.toml");
+        let db_path = dir.path().join("workpot.db");
+        std::fs::write(&config_path, "watch_roots = []\nexcludes = []\n").expect("config");
+        let ctx = AppState::open_with_paths(config_path, db_path).expect("open");
+        let repo_path = dir.path().join("sample");
+        std::fs::create_dir_all(&repo_path).expect("mkdir");
+        let repo = git2::Repository::init(&repo_path).expect("git init");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        let tree_id = repo.index().expect("index").write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+        let tree_id2 = repo.index().expect("index").write_tree().expect("tree");
+        let tree2 = repo.find_tree(tree_id2).expect("tree");
+        repo.commit(
+            Some("refs/heads/feature"),
+            &sig,
+            &sig,
+            "feature",
+            &tree2,
+            &[],
+        )
+        .expect("feature");
+        ctx.register_manual(&repo_path).expect("register");
+
+        ctx.checkout_repo_branch(&repo_path, "feature")
+            .expect("checkout");
+
+        let opened = git2::Repository::open(&repo_path).expect("open");
+        let head = opened.head().expect("head");
+        assert_eq!(head.shorthand().ok(), Some("feature"));
+    }
+
+    #[test]
     fn list_branches_sync_returns_checkout_for_init_repo() {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo_path = dir.path().join("repo");
@@ -1050,7 +1658,8 @@ mod tests {
 
         let items = list_branches_sync(repo_path.to_str().expect("utf8 path")).expect("sync");
         assert!(!items.is_empty());
-        assert_eq!(items[0].presence, BranchPresenceDto::Checkout);
+        assert!(items[0].checked_out);
+        assert_eq!(items[0].tracking, BranchTrackingDto::LocalOnly);
     }
 
     #[test]
@@ -1059,13 +1668,13 @@ mod tests {
         let config_path = dir.path().join("config.toml");
         let db_path = dir.path().join("workpot.db");
         std::fs::write(&config_path, "watch_roots = []\nexcludes = []\n").expect("config");
-        let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+        let ctx = AppState::open_with_paths(config_path, db_path).expect("open");
         let repo_path = dir.path().join("sample");
         std::fs::create_dir_all(&repo_path).expect("mkdir");
         git2::Repository::init(&repo_path).expect("git init");
         ctx.register_manual(&repo_path).expect("register");
         let records = ctx.list_repos().expect("list");
-        let dtos = repo_records_to_dtos(records);
+        let dtos = repo_records_to_dtos(records, &default_migration());
         assert_eq!(dtos.len(), 1);
         assert_eq!(dtos[0].name, "sample");
         assert!(dtos[0].path.ends_with("/sample"));

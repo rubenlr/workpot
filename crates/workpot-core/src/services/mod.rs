@@ -1,3 +1,4 @@
+pub mod branch_checkout;
 pub mod catalog;
 pub mod discovery;
 pub mod excludes;
@@ -6,7 +7,10 @@ pub mod index;
 pub mod launch;
 pub mod org;
 pub mod paths;
+pub mod repo_convert;
 pub mod repo_fuzzy;
 pub mod repo_priority;
+pub mod repo_sync;
 pub mod roots;
 pub mod stale_dirty;
+pub mod sync_cmd;

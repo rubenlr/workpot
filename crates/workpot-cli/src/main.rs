@@ -7,14 +7,23 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use workpot_core::infra::paths;
 use workpot_core::services::launch::launch_repo;
+use workpot_core::services::repo_convert::{ConvertResult, ConvertTarget};
 use workpot_core::services::repo_fuzzy::fuzzy_match;
-use workpot_core::{AppContext, RepoRecord, WorkpotError};
+use workpot_core::{
+    AppContext, RepoRecord, WorkpotError, annotate_config_comments, init_config_file,
+};
 
 use git_display::format_git_state;
 
 #[derive(Parser)]
-#[command(name = "workpot", about = "Local git repo workspace launcher", version)]
+#[command(
+    name = "workpot",
+    about = "Local git repo workspace launcher",
+    long_about = "Local git repo workspace launcher.\n\nPrimary workflow: `list` / `search` to find repos, `open` to launch in Cursor.",
+    version
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -24,14 +33,19 @@ struct Cli {
 enum Commands {
     /// Print resolved config and database paths (creates defaults on first run).
     Paths,
-    /// Full rescan of configured watch roots.
+    /// Full rescan of all configured watch roots.
+    ///
+    /// To scan a single new root immediately, use `workpot roots add` instead.
     Index,
     /// List repositories in priority order (Pinned > Dirty > Recent > Rest).
     List,
+    /// Register, remove, convert, or inspect repositories in the index.
     #[command(subcommand)]
     Repo(RepoCommands),
+    /// Add, list, or remove filesystem watch roots for automatic discovery.
     #[command(subcommand)]
     Roots(RootsCommands),
+    /// List or remove path-exclusion globs applied during index scans.
     #[command(subcommand)]
     Excludes(ExcludesCommands),
     /// Add, remove, or list tags on a repository.
@@ -51,27 +65,79 @@ enum Commands {
         query: String,
     },
     /// Open a repository in the configured IDE (default: Cursor).
+    ///
+    /// Accepts repo name, alias, path key, or canonical path. Ambiguous names
+    /// error with numbered matches. Exits 1 if not found, 2 if launch fails.
     Open {
-        /// Repository name, path key, or canonical path.
+        /// Repository name, alias, path key, or canonical path.
         repo: String,
     },
+    /// Initialize or annotate the configuration file.
+    Settings {
+        #[command(flatten)]
+        args: SettingsArgs,
+    },
+}
+
+#[derive(Parser)]
+struct SettingsArgs {
+    #[command(subcommand)]
+    command: Option<SettingsCommands>,
+    /// Add missing documentation comments to each setting in config.toml.
+    #[arg(long)]
+    add_comments: bool,
+}
+
+#[derive(Subcommand)]
+enum SettingsCommands {
+    /// Write a documented default config.toml.
+    Init {
+        /// Overwrite existing config.toml.
+        #[arg(long)]
+        force: bool,
+    },
+}
+
+#[derive(Clone, Debug, clap::ValueEnum)]
+enum CliConvertTarget {
+    Bare,
+    Local,
 }
 
 #[derive(Subcommand)]
 enum RepoCommands {
     /// Register a git worktree or bare repository path.
+    ///
+    /// Manual registration bypasses scan exclude globs.
     Add { path: PathBuf },
-    /// List registered repositories.
+    /// Flat index dump with git-state columns (admin/debug).
+    ///
+    /// Unlike `workpot list`, does not apply tray priority order or icons.
     List,
     /// Remove a registered repository.
     Remove { path: PathBuf },
+    /// Migrate a repository between local checkout and bare+worktree layouts.
+    Convert {
+        /// Absolute or relative path to the repository to convert.
+        path: PathBuf,
+        /// Target layout: bare or local.
+        #[arg(long)]
+        to: CliConvertTarget,
+        /// Print resolved target paths and preflight gate results without making any changes.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
 enum ExcludesCommands {
     /// List configured exclude globs.
+    ///
+    /// Globs are also added automatically by `workpot repo remove`.
     List,
     /// Remove an exclude glob from config.
+    ///
+    /// Re-index may re-discover repos under matching paths unless the watch root is also removed.
     Remove { glob: String },
 }
 
@@ -150,6 +216,22 @@ fn main() -> ExitCode {
     }
 }
 
+fn unix_now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn print_ordered_repos(ctx: &AppContext, repos: Vec<RepoRecord>) -> anyhow::Result<()> {
+    let now_secs = unix_now_secs();
+    let ordered = list_display::flat_tray_ordered_with_icons(repos, &*ctx.config()?, now_secs);
+    for (repo, icon) in &ordered {
+        println!("{}", list_display::format_list_row(repo, icon));
+    }
+    Ok(())
+}
+
 fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -162,14 +244,57 @@ fn run() -> anyhow::Result<()> {
         Commands::Tag(action) => run_tag(action),
         Commands::Search { query } => run_search(&query),
         Commands::Open { repo } => run_open(&repo),
+        Commands::Settings { args } => run_settings(args),
     }
+}
+
+fn run_settings(args: SettingsArgs) -> anyhow::Result<()> {
+    if args.add_comments && args.command.is_some() {
+        return Err(anyhow::anyhow!(
+            "settings: use either a subcommand or --add-comments, not both"
+        ));
+    }
+    match args.command {
+        Some(SettingsCommands::Init { force }) => run_settings_init(force),
+        None if args.add_comments => run_settings_add_comments(),
+        None => Err(anyhow::anyhow!(
+            "settings requires a subcommand or --add-comments (try `workpot settings init` or `workpot settings --help`)"
+        )),
+    }
+}
+
+fn run_settings_init(force: bool) -> anyhow::Result<()> {
+    let config_path = paths::config_file().context("failed to resolve config path")?;
+    let home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .ok_or_else(|| anyhow::anyhow!("could not resolve home directory"))?;
+    init_config_file(&config_path, &home, force).map_err(|e| match e {
+        WorkpotError::Config(msg) => anyhow::anyhow!(msg),
+        other => other.into(),
+    })?;
+    println!("wrote {}", config_path.display());
+    Ok(())
+}
+
+fn run_settings_add_comments() -> anyhow::Result<()> {
+    let config_path = paths::config_file().context("failed to resolve config path")?;
+    let added = annotate_config_comments(&config_path)?;
+    if added == 0 {
+        println!("no missing comments");
+    } else {
+        println!(
+            "added {added} comment block(s) to {}",
+            config_path.display()
+        );
+    }
+    Ok(())
 }
 
 fn run_paths() -> anyhow::Result<()> {
     let ctx = AppContext::open().context("failed to open workpot")?;
     println!("config: {}", ctx.config_path().display());
     println!("database: {}", ctx.database_path().display());
-    let roots = ctx.roots_list();
+    let roots = ctx.roots_list()?;
     if roots.is_empty() {
         println!("watch_roots: (none)");
     } else {
@@ -194,15 +319,7 @@ fn run_index() -> anyhow::Result<()> {
 fn run_list() -> anyhow::Result<()> {
     let ctx = AppContext::open().context("failed to open workpot")?;
     let repos = ctx.list_repos().context("list failed")?;
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
-    let ordered = list_display::flat_tray_ordered_with_icons(repos, ctx.config(), now_secs);
-    for (repo, icon) in &ordered {
-        println!("{}", list_display::format_list_row(repo, icon));
-    }
-    Ok(())
+    print_ordered_repos(&ctx, repos)
 }
 
 fn run_search(query: &str) -> anyhow::Result<()> {
@@ -215,15 +332,7 @@ fn run_search(query: &str) -> anyhow::Result<()> {
     if !trimmed.is_empty() {
         repos.retain(|r| fuzzy_match(trimmed, r));
     }
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
-    let ordered = list_display::flat_tray_ordered_with_icons(repos, ctx.config(), now_secs);
-    for (repo, icon) in &ordered {
-        println!("{}", list_display::format_list_row(repo, icon));
-    }
-    Ok(())
+    print_ordered_repos(&ctx, repos)
 }
 
 fn run_repo(sub: RepoCommands) -> anyhow::Result<()> {
@@ -247,19 +356,43 @@ fn run_repo(sub: RepoCommands) -> anyhow::Result<()> {
             }
         }
         RepoCommands::Remove { path } => {
-            let mut ctx = AppContext::open().context("failed to open workpot")?;
+            let ctx = AppContext::open().context("failed to open workpot")?;
             ctx.remove_repo(&path).context("repo remove failed")?;
             println!("removed: {}", path.display());
+        }
+        RepoCommands::Convert { path, to, dry_run } => {
+            let ctx = AppContext::open().context("failed to open workpot")?;
+            let core_target = match to {
+                CliConvertTarget::Bare => ConvertTarget::Bare,
+                CliConvertTarget::Local => ConvertTarget::Local,
+            };
+            match ctx
+                .convert_repo(&path, core_target, dry_run)
+                .map_err(map_convert_error)?
+            {
+                ConvertResult::Converted { from, to } => {
+                    println!("converted: {} -> {}", from.display(), to.display());
+                }
+                ConvertResult::DryRun {
+                    preflight,
+                    resolved_paths,
+                } => {
+                    for (label, resolved) in resolved_paths {
+                        println!("  {}: {}", label, resolved.display());
+                    }
+                    println!("preflight: {preflight:?}");
+                }
+            }
         }
     }
     Ok(())
 }
 
 fn run_excludes(sub: ExcludesCommands) -> anyhow::Result<()> {
-    let mut ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = AppContext::open().context("failed to open workpot")?;
     match sub {
         ExcludesCommands::List => {
-            for glob in ctx.excludes_list() {
+            for glob in ctx.excludes_list()? {
                 println!("{glob}");
             }
         }
@@ -273,14 +406,14 @@ fn run_excludes(sub: ExcludesCommands) -> anyhow::Result<()> {
 }
 
 fn run_roots(sub: RootsCommands) -> anyhow::Result<()> {
-    let mut ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = AppContext::open().context("failed to open workpot")?;
     match sub {
         RootsCommands::Add { path } => {
             ctx.roots_add(&path).map_err(map_roots_error)?;
             println!("watch root added: {}", path.display());
         }
         RootsCommands::List => {
-            for root in ctx.roots_list() {
+            for root in ctx.roots_list()? {
                 println!("{}", root.display());
             }
         }
@@ -410,6 +543,14 @@ fn map_tag_error(err: WorkpotError) -> anyhow::Error {
     }
 }
 
+fn map_convert_error(err: WorkpotError) -> anyhow::Error {
+    match err {
+        WorkpotError::ConversionPreflight(msg) => anyhow::anyhow!("preflight failed: {msg}"),
+        WorkpotError::ConversionFailed(msg) => anyhow::anyhow!("conversion failed: {msg}"),
+        other => other.into(),
+    }
+}
+
 fn map_roots_error(err: WorkpotError) -> anyhow::Error {
     match err {
         WorkpotError::LimitsExceeded(msg) | WorkpotError::WatchRootNotFound(msg) => {
@@ -486,6 +627,79 @@ mod cli_parse_tests {
                 .unwrap()
                 .command,
             Commands::Tag(TagAction::List { .. })
+        ));
+    }
+
+    #[test]
+    fn parses_repo_convert_bare() {
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "repo", "convert", "/tmp/r", "--to", "bare"])
+                .unwrap()
+                .command,
+            Commands::Repo(RepoCommands::Convert { dry_run: false, .. })
+        ));
+    }
+
+    #[test]
+    fn parses_repo_convert_dry_run() {
+        assert!(matches!(
+            Cli::try_parse_from([
+                "workpot",
+                "repo",
+                "convert",
+                "/tmp/r",
+                "--to",
+                "local",
+                "--dry-run"
+            ])
+            .unwrap()
+            .command,
+            Commands::Repo(RepoCommands::Convert { dry_run: true, .. })
+        ));
+    }
+
+    #[test]
+    fn parses_settings_init() {
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "settings", "init"])
+                .unwrap()
+                .command,
+            Commands::Settings {
+                args: SettingsArgs {
+                    command: Some(SettingsCommands::Init { force: false }),
+                    add_comments: false,
+                },
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_settings_init_force() {
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "settings", "init", "--force"])
+                .unwrap()
+                .command,
+            Commands::Settings {
+                args: SettingsArgs {
+                    command: Some(SettingsCommands::Init { force: true }),
+                    add_comments: false,
+                },
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_settings_add_comments() {
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "settings", "--add-comments"])
+                .unwrap()
+                .command,
+            Commands::Settings {
+                args: SettingsArgs {
+                    command: None,
+                    add_comments: true,
+                },
+            }
         ));
     }
 }

@@ -1,5 +1,24 @@
 @import "tailwindcss";
 
+/* App follows OS appearance; Storybook sets data-theme to match preview background. */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) & {
+      @slot;
+    }
+  }
+
+  html[data-theme="dark"] & {
+    @slot;
+  }
+}
+
+@import "./lib/styles/stitch-tokens.css";
+
+html {
+  color-scheme: light dark;
+}
+
 html,
 body,
 body > div {

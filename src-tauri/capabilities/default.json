@@ -7,12 +7,20 @@
     "core:default",
     "core:window:default",
     "core:window:allow-hide",
+    "core:window:allow-set-size",
     "core:tray:default",
     "core:event:default",
     "allow-list-repos",
     "allow-get-tray-config",
     "allow-refresh-all-git-state",
+    "allow-refresh-index",
+    "allow-checkout-repo-branch",
     "allow-open-in-cursor",
-    "allow-org-commands"
+    "allow-open-in-finder",
+    "allow-org-commands",
+    "allow-get-repo-sync-status",
+    "allow-sync-repo-branch",
+    "allow-get-repo-convert-status",
+    "allow-convert-repo"
   ]
 }

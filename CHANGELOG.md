@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable recipes (shell steps, Cursor launch, multi-step workflows) — Phase 7
 - macOS `.app` / DMG distribution and install/update UX
 
+## [0.0.3] - 2026-06-15
+
+Tray detail UX, branch operations, and bare↔normal repo migration.
+
+- Tray UI refresh: repo detail components, unified error banner, and panel height sync with the webview
+- Branch checkout and sync from the tray detail pane (switch branch, pull/push against upstream when configured)
+- Migrate repositories between normal checkout and bare+worktree layouts via `workpot repo convert` and tray settings
+- Branch list with presence indicators (checkout, worktree, remote-only) and improved git state refresh
+- Tag autocomplete and repo list mouse/keyboard interaction polish
+- `SETTINGS.md` reference for user-facing config, including migration templates
+- Storybook build recipes (`just sbook`) for isolated tray component development
+
 ## [0.0.2] - 2026-06-09
 
 Maintenance release: tray error handling cleanup and release pipeline fixes for Homebrew distribution.
@@ -44,6 +56,7 @@ First public preview: local-only repo index, git-aware menu bar finder, and Curs
 - Bare and worktree paths canonicalized consistently during discovery
 - Unified CLI message when the repository index cap is exceeded
 
+[0.0.3]: https://github.com/rubenlr/workpot/releases/tag/v0.0.3
 [0.0.2]: https://github.com/rubenlr/workpot/releases/tag/v0.0.2
 [0.0.1]: https://github.com/rubenlr/workpot/releases/tag/v0.0.1
-[Unreleased]: https://github.com/rubenlr/workpot/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/rubenlr/workpot/compare/v0.0.3...HEAD

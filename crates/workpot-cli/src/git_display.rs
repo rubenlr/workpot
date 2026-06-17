@@ -60,7 +60,20 @@ mod tests {
             notes: None,
             tags: vec![],
             alias: None,
+            convert_block_reason: None,
         }
+    }
+
+    #[test]
+    fn format_age_recent_timestamp() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_secs() as i64;
+        let age = format_age(now - 30);
+        assert_ne!(age, "unknown");
+        assert!(!age.is_empty(), "recent refresh should format age");
     }
 
     #[test]

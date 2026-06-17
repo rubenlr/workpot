@@ -7,8 +7,8 @@
 export const nonTestableCoverageGlobs = [
   "src/lib/types.ts",
   "src/lib/tray/constants.ts",
-  "src/lib/components/repoStoryFixtures.ts",
-  "src/lib/tray/trayPanelStoryFixtures.ts",
+  "src/lib/tray/storybook/**",
+  "src/lib/tray/repo-list/repoStoryFixtures.ts",
   "src/lib/storybook/**",
   "**/*.stories.svelte",
   "src/lib/tray/trayTrace.ts",

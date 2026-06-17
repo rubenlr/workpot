@@ -98,7 +98,7 @@ fn list_repos_returns_git_state_after_index() {
     fs::create_dir_all(&repo_path).expect("repo dir");
     git_init(&repo_path);
 
-    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
     ctx.roots_add(&watch).expect("roots_add");
     ctx.run_index().expect("index");
 
@@ -343,8 +343,7 @@ fn remove_repo_succeeds_when_directory_deleted() {
     let relative_remove = dir.path().join(&repo_name);
 
     {
-        let mut ctx =
-            AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("open");
+        let ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("open");
         ctx.register_manual(&repo_path).expect("register");
         fs::remove_dir_all(&repo_path).expect("delete repo dir");
         ctx.remove_repo(&relative_remove)
@@ -358,7 +357,7 @@ fn remove_repo_with_exclude_persists_excludes_before_row_removed() {
     let (dir, repo_path) = git_fixture();
     let config_path = dir.path().join("config.toml");
     let db_path = dir.path().join("workpot.db");
-    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("open");
+    let ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("open");
 
     ctx.register_manual(&repo_path).expect("register");
     ctx.remove_repo(&repo_path).expect("remove");
@@ -391,7 +390,7 @@ fn remove_repo_with_exclude_does_not_persist_excludes_when_remove_fails() {
 
     let config_path = dir.path().join("config.toml");
     let db_path = dir.path().join("workpot.db");
-    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
 
     ctx.register_manual(&first).expect("register first foo");
     ctx.register_manual(&second).expect("register second foo");
@@ -401,7 +400,7 @@ fn remove_repo_with_exclude_does_not_persist_excludes_when_remove_fails() {
         .expect_err("ambiguous basename remove should fail");
     assert!(matches!(err, WorkpotError::InvalidPath(_)));
     assert!(
-        ctx.config().excludes.is_empty(),
+        ctx.config().expect("config").excludes.is_empty(),
         "exclude globs must not be saved when repo row deletion fails"
     );
     assert_eq!(ctx.list_repos().expect("list").len(), 2);
@@ -416,7 +415,7 @@ fn remove_repo_with_exclude_escapes_glob_metacharacters_in_path() {
 
     let config_path = dir.path().join("config.toml");
     let db_path = dir.path().join("workpot.db");
-    let mut ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
 
     ctx.register_manual(&repo).expect("register");
     ctx.remove_repo(&repo).expect("remove");
@@ -448,7 +447,7 @@ fn remove_repo_by_basename_does_not_match_similar_directory_name() {
 
     let config_path = dir.path().join("config.toml");
     let db_path = dir.path().join("workpot.db");
-    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
 
     ctx.register_manual(&foo).expect("register foo");
     ctx.register_manual(&foo_extra).expect("register foo-extra");
@@ -482,8 +481,7 @@ fn remove_repo_by_basename_with_like_metacharacters_in_name() {
     let relative_remove = dir.path().join(&repo_name);
 
     {
-        let mut ctx =
-            AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("open");
+        let ctx = AppContext::open_with_paths(config_path.clone(), db_path.clone()).expect("open");
         ctx.register_manual(&repo).expect("register");
         fs::remove_dir_all(&repo).expect("delete repo dir");
         ctx.remove_repo(&relative_remove)
@@ -591,11 +589,69 @@ fn upsert_scan_updates_git_common_dir_for_scan_rows() {
 }
 
 #[test]
+fn get_repo_by_path_returns_record_and_not_found() {
+    let (dir, repo_path) = git_fixture();
+    let conn = store::open_connection(&dir.path().join("workpot.db")).expect("open db");
+    let canon = repo_path.canonicalize().expect("canonicalize");
+    let path_key = canon.display().to_string();
+    let gcd = git::resolve_git_common_dir(&canon)
+        .expect("gcd")
+        .display()
+        .to_string();
+
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'sample-repo', 42, ?2, ?3, 0)",
+        rusqlite::params![path_key, SOURCE_MANUAL, gcd],
+    )
+    .expect("seed row");
+
+    let record = catalog::get_repo_by_path(&conn, &path_key).expect("lookup");
+    assert_eq!(record.path, canon);
+    assert_eq!(record.name, "sample-repo");
+    assert_eq!(record.registered_at, 42);
+    assert_eq!(record.source, SOURCE_MANUAL);
+    assert_eq!(record.git_common_dir, gcd);
+
+    let err = catalog::get_repo_by_path(&conn, "/no/such/repo").expect_err("missing path");
+    assert!(matches!(err, WorkpotError::NotFound(_)));
+}
+
+#[test]
+fn missing_repo_paths_lists_only_gone_paths() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let conn = store::open_connection(&dir.path().join("workpot.db")).expect("open db");
+    let (_fixture_dir, repo_path) = git_fixture();
+    let present_key = repo_path
+        .canonicalize()
+        .expect("canonicalize")
+        .display()
+        .to_string();
+    let gone_key = "/tmp/workpot-missing-repo-path";
+
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'present', 0, 'manual', '', 0)",
+        rusqlite::params![present_key],
+    )
+    .expect("present row");
+    conn.execute(
+        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+         VALUES (?1, 'gone', 0, 'manual', '', 0)",
+        rusqlite::params![gone_key],
+    )
+    .expect("gone row");
+
+    let missing = catalog::missing_repo_paths(&conn).expect("missing paths");
+    assert_eq!(missing, vec![gone_key.to_string()]);
+}
+
+#[test]
 fn remove_repo_deletes_and_not_found() {
     let (dir, repo_path) = git_fixture();
     let config_path = dir.path().join("config.toml");
     let db_path = dir.path().join("workpot.db");
-    let mut ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
+    let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
 
     ctx.register_manual(&repo_path).expect("register");
     ctx.remove_repo(&repo_path).expect("remove");

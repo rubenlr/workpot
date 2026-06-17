@@ -194,6 +194,25 @@ fn repo_list_shows_git_state_after_index() {
 }
 
 #[test]
+fn repo_list_shows_error_prefix_on_git_failure() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = git_fixture(home.path());
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8 path")])
+        .assert()
+        .success();
+
+    set_repo_git_state_error(home.path(), &repo_path, "permission denied");
+
+    workpot_cmd(home.path())
+        .args(["repo", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ERROR: permission denied"));
+}
+
+#[test]
 fn cli_roots_remove_prunes_repos() {
     let home = tempfile::tempdir().expect("tempdir");
     let watch = home.path().join("watch");
@@ -880,6 +899,19 @@ fn set_repo_pin(home: &std::path::Path, repo_path: &std::path::Path) {
     workpot_core::services::org::set_pin(&conn, &path_key, true, 100).expect("set pin");
 }
 
+fn set_repo_git_state_error(home: &std::path::Path, repo_path: &std::path::Path, message: &str) {
+    workpot_cmd(home).arg("paths").assert().success();
+    let db = database_path(home);
+    let canon = repo_path.canonicalize().expect("canonicalize");
+    let path_key = canon.to_string_lossy().into_owned();
+    let conn = workpot_core::infra::store::open_connection(&db).expect("open test db");
+    conn.execute(
+        "UPDATE repos SET git_refreshed_at = 1, git_state_error = ?1 WHERE path = ?2",
+        (message, path_key.as_str()),
+    )
+    .expect("set git_state_error");
+}
+
 fn write_launch_config(home: &std::path::Path, launch_cmd: &str) {
     let config_dir = home.join(".config").join("workpot");
     fs::create_dir_all(&config_dir).expect("config dir");
@@ -1033,4 +1065,276 @@ fn workpot_search_matches_by_alias() {
         .assert()
         .success()
         .stdout(predicate::str::contains("myalias"));
+}
+
+fn seed_bare_repo(bare: &std::path::Path) {
+    let seed = bare
+        .parent()
+        .expect("bare parent")
+        .join(".seed-bare-workpot");
+    let status = git_cmd()
+        .args(["init", "-q", "-b", "main"])
+        .arg(&seed)
+        .status()
+        .expect("seed init");
+    assert!(status.success(), "seed init failed");
+    for (key, val) in [("user.email", "t@example.com"), ("user.name", "Test")] {
+        let status = git_cmd()
+            .args(["config", key, val])
+            .current_dir(&seed)
+            .status()
+            .expect("seed config");
+        assert!(status.success(), "seed config {key} failed");
+    }
+    let status = git_cmd()
+        .args(["commit", "--allow-empty", "-m", "seed", "-q"])
+        .current_dir(&seed)
+        .status()
+        .expect("seed commit");
+    assert!(status.success(), "seed commit failed");
+    let status = git_cmd()
+        .args(["remote", "add", "origin"])
+        .arg(bare)
+        .current_dir(&seed)
+        .status()
+        .expect("seed remote");
+    assert!(status.success(), "seed remote failed");
+    let status = git_cmd()
+        .args(["push", "-q", "-u", "origin", "main"])
+        .current_dir(&seed)
+        .status()
+        .expect("seed push");
+    assert!(status.success(), "seed push failed");
+    std::fs::remove_dir_all(&seed).expect("seed cleanup");
+}
+
+fn normal_repo_clean_synced(parent: &std::path::Path) -> PathBuf {
+    let bare_path = parent.join("remote.git");
+    std::fs::create_dir_all(&bare_path).expect("bare dir");
+    let status = git_cmd()
+        .args(["init", "--bare", "-q", "-b", "main"])
+        .current_dir(&bare_path)
+        .status()
+        .expect("bare init");
+    assert!(status.success());
+    seed_bare_repo(&bare_path);
+
+    let clone_path = parent.join("repo");
+    let status = git_cmd()
+        .args([
+            "clone",
+            "-q",
+            bare_path.to_str().expect("utf8"),
+            clone_path.to_str().expect("utf8"),
+        ])
+        .status()
+        .expect("clone");
+    assert!(status.success());
+    for (key, val) in [("user.email", "t@example.com"), ("user.name", "Test")] {
+        let status = git_cmd()
+            .args(["config", key, val])
+            .current_dir(&clone_path)
+            .status()
+            .expect("config");
+        assert!(status.success());
+    }
+    clone_path
+}
+
+fn dirty_normal_repo(parent: &std::path::Path) -> PathBuf {
+    let path = normal_repo_clean_synced(parent);
+    let marker = path.join("README");
+    std::fs::write(&marker, "tracked\n").expect("write");
+    let status = git_cmd()
+        .args(["add", "README"])
+        .current_dir(&path)
+        .status()
+        .expect("add");
+    assert!(status.success());
+    let status = git_cmd()
+        .args(["commit", "-m", "add readme", "-q"])
+        .current_dir(&path)
+        .status()
+        .expect("commit");
+    assert!(status.success());
+    std::fs::write(&marker, "dirty\n").expect("dirty");
+    path
+}
+
+#[test]
+fn convert_dry_run() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = normal_repo_clean_synced(home.path());
+    let canon = repo_path.canonicalize().expect("canonicalize");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args([
+            "repo",
+            "convert",
+            repo_path.to_str().expect("utf8"),
+            "--to",
+            "bare",
+            "--dry-run",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(": "));
+
+    assert!(canon.exists(), "original repo must remain after dry-run");
+}
+
+#[test]
+fn convert_preflight_rejects_dirty() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = dirty_normal_repo(home.path());
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args([
+            "repo",
+            "convert",
+            repo_path.to_str().expect("utf8"),
+            "--to",
+            "bare",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("preflight failed"));
+
+    assert!(repo_path.exists());
+}
+
+#[test]
+fn cli_parse_convert_help() {
+    workpot_cmd(tempfile::tempdir().expect("tempdir").path())
+        .args(["repo", "convert", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bare").and(predicate::str::contains("local")));
+}
+
+#[test]
+fn convert_dry_run_rejects_existing_temp() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo_path = normal_repo_clean_synced(home.path());
+    let temp_path = repo_path.with_file_name(format!(
+        "{}{}",
+        repo_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("name"),
+        ".temp"
+    ));
+    std::fs::create_dir_all(&temp_path).expect("temp dir");
+
+    workpot_cmd(home.path())
+        .args(["repo", "add", repo_path.to_str().expect("utf8")])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .args([
+            "repo",
+            "convert",
+            repo_path.to_str().expect("utf8"),
+            "--to",
+            "bare",
+            "--dry-run",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("temp path already exists"));
+
+    assert!(repo_path.exists(), "dry-run must not rename source");
+}
+
+#[test]
+fn settings_init_creates_commented_config() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config_path = home
+        .path()
+        .join(".config")
+        .join("workpot")
+        .join("config.toml");
+
+    workpot_cmd(home.path())
+        .args(["settings", "init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("wrote"));
+
+    let contents = fs::read_to_string(&config_path).expect("config exists");
+    assert!(
+        contents.contains('#'),
+        "settings init should write commented config:\n{contents}"
+    );
+    assert!(contents.contains("launch_cmd"));
+}
+
+#[test]
+fn settings_init_fails_when_config_exists() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config_dir = home.path().join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    fs::write(config_dir.join("config.toml"), "watch_roots = []\n").expect("seed config");
+
+    workpot_cmd(home.path())
+        .args(["settings", "init"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("config already exists"));
+}
+
+#[test]
+fn settings_init_force_overwrites_existing_config() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config_dir = home.path().join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    let config_path = config_dir.join("config.toml");
+    fs::write(&config_path, "watch_roots = []\nexcludes = [\"/old\"]\n").expect("seed config");
+
+    workpot_cmd(home.path())
+        .args(["settings", "init", "--force"])
+        .assert()
+        .success();
+
+    let contents = fs::read_to_string(&config_path).expect("read config");
+    assert!(
+        !contents.contains("excludes = [\"/old\"]"),
+        "force init should replace prior exclude values"
+    );
+    assert!(contents.contains('#'), "forced init should write comments");
+}
+
+#[test]
+fn settings_add_comments_backfills_minimal_config() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config_dir = home.path().join(".config").join("workpot");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    fs::write(
+        config_dir.join("config.toml"),
+        "watch_roots = []\nexcludes = []\n",
+    )
+    .expect("minimal config");
+
+    workpot_cmd(home.path())
+        .args(["settings", "--add-comments"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added").or(predicate::str::contains("comment")));
+
+    let contents = fs::read_to_string(config_dir.join("config.toml")).expect("read config");
+    assert!(
+        contents.contains('#'),
+        "add-comments should inject documentation:\n{contents}"
+    );
 }

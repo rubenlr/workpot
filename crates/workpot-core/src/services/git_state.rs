@@ -20,7 +20,7 @@ pub struct GitRefreshResult {
     pub state: GitState,
 }
 
-fn now_secs() -> i64 {
+pub(crate) fn unix_now_secs() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -36,7 +36,7 @@ pub fn is_hard_refresh_failure(state: &GitState) -> bool {
 pub fn persist_git_state_error_only(conn: &Connection, path_key: &str, error: &str) -> Result<()> {
     conn.execute(
         "UPDATE repos SET git_state_error=?1, git_refreshed_at=?2 WHERE path=?3",
-        params![error, now_secs(), path_key],
+        params![error, unix_now_secs(), path_key],
     )?;
     Ok(())
 }
@@ -52,7 +52,7 @@ pub fn persist_git_state(conn: &Connection, path_key: &str, state: &GitState) ->
             state.is_dirty.map(i64::from),
             state.ahead,
             state.behind,
-            now_secs(),
+            unix_now_secs(),
             state.error,
             path_key,
         ],
@@ -60,13 +60,26 @@ pub fn persist_git_state(conn: &Connection, path_key: &str, state: &GitState) ->
     Ok(())
 }
 
+/// Refresh git state from `query_path` and persist under the catalog `persist_path` key.
+pub fn refresh_and_persist_catalog_entry(
+    conn: &Connection,
+    persist_path: &Path,
+    query_path: &Path,
+) -> Result<GitState> {
+    let path_key = crate::services::catalog::repo_path_key(conn, persist_path)?;
+    let state = refresh_git_state(query_path)?;
+    persist_git_state(conn, &path_key, &state)?;
+    Ok(state)
+}
+
 /// Refresh git state for a single repo and persist the result to SQLite.
 pub fn refresh_and_persist(conn: &Connection, path: &Path) -> Result<GitState> {
-    let canonical = path
+    let path_key = path
         .canonicalize()
-        .map_err(|_| crate::error::WorkpotError::GitUnavailable(path.to_path_buf()))?;
-    let path_key = canonical.display().to_string();
-    let state = crate::infra::git::open_and_query(&canonical)?;
+        .map_err(|_| crate::error::WorkpotError::GitUnavailable(path.to_path_buf()))?
+        .display()
+        .to_string();
+    let state = refresh_git_state(path)?;
     persist_git_state(conn, &path_key, &state)?;
     Ok(state)
 }

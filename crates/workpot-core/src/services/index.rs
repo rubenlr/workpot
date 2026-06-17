@@ -5,7 +5,6 @@ use crate::services::{catalog, discovery, git_state, paths};
 use rusqlite::{Connection, Transaction, params};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct IndexSummary {
@@ -16,53 +15,27 @@ pub struct IndexSummary {
     pub git_errors: u32,
 }
 
+#[derive(Debug)]
 struct ChangeEntry {
     path: String,
     action: &'static str,
 }
 
-fn now_secs() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+/// Discovery output for phased indexing (filesystem scan + read-only catalog queries).
+#[derive(Debug)]
+pub struct DiscoveryPlan {
+    pub started_at: i64,
+    pub upserts: Vec<(PathBuf, String)>,
+    pub removes: Vec<String>,
+    pub pre_skipped: u32,
+    changelog: Vec<ChangeEntry>,
+    pub scan_candidate_count: usize,
 }
 
-/// Full watch-root rescan with transactional merge, caps, and audit history (D-07, D-14–D-18).
-pub fn run_full(conn: &Connection, config: &Config) -> Result<IndexSummary> {
-    let started_at = now_secs();
-    log::debug!("index run_full: start");
-    match run_full_inner(conn, config, started_at) {
-        Ok(summary) => {
-            log::debug!(
-                "index run_full: complete added={} removed={} skipped={} git_refreshed={} git_errors={}",
-                summary.added,
-                summary.removed,
-                summary.skipped,
-                summary.git_refreshed,
-                summary.git_errors
-            );
-            Ok(summary)
-        }
-        Err(WorkpotError::IndexCapExceeded { projected, max }) => {
-            if let Err(e) = record_cap_exceeded_run(conn, started_at, i64::from(projected), max) {
-                log::warn!("failed to record cap-exceeded audit row: {e}");
-            }
-            Err(WorkpotError::IndexCapExceeded { projected, max })
-        }
-        Err(e) => {
-            if let Err(audit_err) = record_error_run(conn, started_at, &e) {
-                log::warn!("failed to record error audit row: {audit_err}");
-            }
-            Err(e)
-        }
-    }
-}
-
-fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result<IndexSummary> {
+/// Phase 1: scan watch roots and plan catalog changes (read connection only).
+pub fn discover_phase(conn: &Connection, config: &Config) -> Result<DiscoveryPlan> {
+    let started_at = crate::services::git_state::unix_now_secs();
     let exclude_set = discovery::build_exclude_set(config)?;
-    let max_repos = config.limits.max_repos;
-
     let watch_roots = canonical_watch_roots(config);
     let configured_roots = &config.watch_roots;
     let mut changelog: Vec<ChangeEntry> = Vec::new();
@@ -85,12 +58,9 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
     let mut upserts: Vec<(PathBuf, String)> = Vec::new();
     for path in scan_candidates {
         let path_key = path.display().to_string();
-        match resolve_git_common_dir(&path) {
-            Ok(common) => {
-                upserts.push((path, common.display().to_string()));
-            }
-            Err(_) => {
-                log::warn!("skip {}: git unavailable", path_key);
+        match try_resolve_git_common_dir(&path, &path_key) {
+            Ok(common) => upserts.push((path, common)),
+            Err(()) => {
                 pre_skipped += 1;
                 changelog.push(ChangeEntry {
                     path: path_key,
@@ -114,9 +84,29 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
         removes.len()
     );
 
-    let projected = projected_repo_count(conn, &removes, &upserts)?;
+    Ok(DiscoveryPlan {
+        started_at,
+        upserts,
+        removes,
+        pre_skipped,
+        changelog,
+        scan_candidate_count,
+    })
+}
+
+/// Phase 2: merge discovery plan into the catalog (write connection, one transaction).
+pub fn merge_catalog_phase(
+    conn: &Connection,
+    config: &Config,
+    plan: DiscoveryPlan,
+) -> Result<IndexSummary> {
+    let max_repos = config.limits.max_repos;
+    let projected = projected_repo_count(conn, &plan.removes, &plan.upserts)?;
     if projected > i64::from(max_repos) {
         let projected_u32 = u32::try_from(projected).unwrap_or(u32::MAX);
+        if let Err(e) = record_cap_exceeded_run(conn, plan.started_at, projected, max_repos) {
+            log::warn!("failed to record cap-exceeded audit row: {e}");
+        }
         return Err(WorkpotError::IndexCapExceeded {
             projected: projected_u32,
             max: max_repos,
@@ -124,17 +114,19 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
     }
 
     let mut summary = IndexSummary {
-        skipped: pre_skipped,
+        skipped: plan.pre_skipped,
         ..IndexSummary::default()
     };
 
+    let mut changelog = plan.changelog;
+
     let tx = conn.unchecked_transaction()?;
-    let run_id = insert_index_run(&tx, started_at)?;
+    let run_id = insert_index_run(&tx, plan.started_at)?;
 
     let backfill_skipped_tx = backfill_empty_git_common_dir(&tx, &mut changelog)?;
     summary.skipped += backfill_skipped_tx;
 
-    for (path, git_common_dir) in &upserts {
+    for (path, git_common_dir) in &plan.upserts {
         let path_key = path.display().to_string();
         if catalog::upsert_scan(&tx, path, git_common_dir)? {
             summary.added += 1;
@@ -145,7 +137,7 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
         }
     }
 
-    for path_key in &removes {
+    for path_key in &plan.removes {
         let deleted = tx.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
         if deleted > 0 {
             summary.removed += 1;
@@ -165,25 +157,26 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
 
     finish_index_run(&tx, run_id, "ok", &summary, None)?;
     tx.commit()?;
+    Ok(summary)
+}
 
-    // Second pass: git state refresh (separate transaction per Pitfall 6)
-    let all_paths: Vec<PathBuf> = {
-        let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
-        stmt.query_map([], |row| row.get::<_, String>(0))?
-            .filter_map(|r| r.ok())
-            .map(PathBuf::from)
-            .collect()
-    };
+/// Phase 3 prep: paths for git refresh (read connection).
+pub fn index_git_paths(conn: &Connection) -> Result<Vec<PathBuf>> {
+    let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
+    Ok(stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .map(PathBuf::from)
+        .collect())
+}
 
-    log::debug!("index git second pass: start repos={}", all_paths.len());
-    // rayon parallel refresh must complete before opening any DB transaction
-    let git_pass_started = std::time::Instant::now();
-    let git_results = git_state::refresh_all(all_paths);
-    log::debug!(
-        "index git second pass: refresh_all elapsed_ms={}",
-        git_pass_started.elapsed().as_millis()
-    );
-
+/// Phase 4: persist rayon git refresh results (write connection, one transaction).
+pub fn persist_index_git_phase(
+    conn: &Connection,
+    config: &Config,
+    summary: &mut IndexSummary,
+    git_results: Vec<crate::services::git_state::GitRefreshResult>,
+) -> Result<()> {
     for r in &git_results {
         if r.state.error.is_some() {
             summary.git_errors += 1;
@@ -193,7 +186,7 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
     }
 
     let git_tx = conn.unchecked_transaction()?;
-    let refresh_time = now_secs();
+    let refresh_time = crate::services::git_state::unix_now_secs();
     for r in &git_results {
         let updated = git_tx.execute(
             "UPDATE repos SET branch=?1, is_dirty=?2, ahead=?3, behind=?4,
@@ -217,13 +210,139 @@ fn run_full_inner(conn: &Connection, config: &Config, started_at: i64) -> Result
             }
         }
     }
+    crate::services::repo_convert::persist_all_structural_preflight(&git_tx, config)?;
     if let Err(e) = git_tx.commit() {
         log::warn!("git refresh commit failed after successful index merge: {e}");
         summary.git_errors = summary.git_errors.saturating_add(summary.git_refreshed);
         summary.git_refreshed = 0;
     }
+    Ok(())
+}
 
+/// Phased index: release locks between discovery, merge, git refresh, and persist.
+pub fn run_phased(pool: &crate::infra::db::DbPool, config: &Config) -> Result<IndexSummary> {
+    let started_at = crate::services::git_state::unix_now_secs();
+    run_index_with_audit(
+        "run_phased",
+        started_at,
+        || {
+            run_index_pipeline(
+                || pool.with_read(|conn| discover_phase(conn, config)),
+                |plan| pool.with_write(|conn| merge_catalog_phase(conn, config, plan)),
+                || pool.with_read(index_git_paths),
+                |summary, git_results| {
+                    pool.with_write(|conn| {
+                        persist_index_git_phase(conn, config, summary, git_results)
+                    })
+                },
+            )
+        },
+        |e| pool.with_write(|conn| record_error_run(conn, started_at, e)),
+    )
+}
+
+fn test_index_delay() {
+    if let Ok(ms) = std::env::var("WORKPOT_TEST_INDEX_DELAY_MS")
+        && let Ok(ms) = ms.parse::<u64>()
+    {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+}
+
+/// Full watch-root rescan with transactional merge, caps, and audit history (D-07, D-14–D-18).
+pub fn run_full(pool: &crate::infra::db::DbPool, config: &Config) -> Result<IndexSummary> {
+    run_phased(pool, config)
+}
+
+/// Single-connection variant for unit tests.
+pub fn run_full_connection(conn: &Connection, config: &Config) -> Result<IndexSummary> {
+    let started_at = crate::services::git_state::unix_now_secs();
+    run_index_with_audit(
+        "run_full",
+        started_at,
+        || {
+            run_index_pipeline(
+                || discover_phase(conn, config),
+                |plan| merge_catalog_phase(conn, config, plan),
+                || index_git_paths(conn),
+                |summary, git_results| persist_index_git_phase(conn, config, summary, git_results),
+            )
+        },
+        |e| record_error_run(conn, started_at, e),
+    )
+}
+
+fn run_index_with_audit(
+    label: &str,
+    _started_at: i64,
+    run: impl FnOnce() -> Result<IndexSummary>,
+    record_error: impl FnOnce(&WorkpotError) -> Result<()>,
+) -> Result<IndexSummary> {
+    log::debug!("index {label}: start");
+    match run() {
+        Ok(summary) => {
+            log::debug!(
+                "index {label}: complete added={} removed={} skipped={} git_refreshed={} git_errors={}",
+                summary.added,
+                summary.removed,
+                summary.skipped,
+                summary.git_refreshed,
+                summary.git_errors
+            );
+            Ok(summary)
+        }
+        Err(WorkpotError::IndexCapExceeded { projected, max }) => {
+            Err(WorkpotError::IndexCapExceeded { projected, max })
+        }
+        Err(e) => {
+            if let Err(audit_err) = record_error(&e) {
+                log::warn!("failed to record error audit row: {audit_err}");
+            }
+            Err(e)
+        }
+    }
+}
+
+fn run_index_pipeline(
+    discover: impl FnOnce() -> Result<DiscoveryPlan>,
+    merge: impl FnOnce(DiscoveryPlan) -> Result<IndexSummary>,
+    git_paths: impl FnOnce() -> Result<Vec<PathBuf>>,
+    persist: impl FnOnce(
+        &mut IndexSummary,
+        Vec<crate::services::git_state::GitRefreshResult>,
+    ) -> Result<()>,
+) -> Result<IndexSummary> {
+    test_index_delay();
+    let plan = discover()?;
+    let mut summary = merge(plan)?;
+    let all_paths = git_paths()?;
+    let git_results = refresh_git_states(all_paths);
+    test_index_delay();
+    persist(&mut summary, git_results)?;
     Ok(summary)
+}
+
+fn refresh_git_states(
+    all_paths: Vec<PathBuf>,
+) -> Vec<crate::services::git_state::GitRefreshResult> {
+    log::debug!("index git second pass: start repos={}", all_paths.len());
+    let git_pass_started = std::time::Instant::now();
+    let git_results = git_state::refresh_all(all_paths);
+    log::debug!(
+        "index git second pass: refresh_all elapsed_ms={}",
+        git_pass_started.elapsed().as_millis()
+    );
+    git_results
+}
+
+fn try_resolve_git_common_dir(path: &Path, path_key: &str) -> std::result::Result<String, ()> {
+    match resolve_git_common_dir(path) {
+        Ok(common) => Ok(common.display().to_string()),
+        Err(_) => {
+            log::warn!("skip {path_key}: git unavailable");
+            Err(())
+        }
+    }
 }
 
 fn canonical_watch_roots(config: &Config) -> Vec<PathBuf> {
@@ -259,16 +378,14 @@ fn backfill_empty_git_common_dir(
         if !catalog::is_git_worktree(path) && !catalog::is_bare_repo(path) {
             continue;
         }
-        match resolve_git_common_dir(path) {
-            Ok(common) => {
-                let common_str = common.display().to_string();
+        match try_resolve_git_common_dir(path, &path_key) {
+            Ok(common_str) => {
                 conn.execute(
                     "UPDATE repos SET git_common_dir = ?1 WHERE path = ?2",
                     params![common_str, path_key],
                 )?;
             }
-            Err(_) => {
-                log::warn!("skip backfill {}: git unavailable", path.display());
+            Err(()) => {
                 skipped += 1;
                 changelog.push(ChangeEntry {
                     path: path_key,
@@ -280,16 +397,20 @@ fn backfill_empty_git_common_dir(
     Ok(skipped)
 }
 
+fn scan_paths_by_source(conn: &Connection, source: &str) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1 AND excluded = 0")?;
+    stmt.query_map(params![source], |row| row.get(0))?
+        .collect::<std::result::Result<_, _>>()
+        .map_err(WorkpotError::Database)
+}
+
 fn collect_stale_scan_paths(
     conn: &Connection,
     configured_roots: &[PathBuf],
     scan_roots: &[PathBuf],
     seen: &HashSet<String>,
 ) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1 AND excluded = 0")?;
-    let paths: Vec<String> = stmt
-        .query_map(params![SOURCE_SCAN], |row| row.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
+    let paths = scan_paths_by_source(conn, SOURCE_SCAN)?;
 
     let mut stale = Vec::new();
     for path_key in paths {
@@ -319,10 +440,7 @@ fn collect_orphan_scan_paths(
     conn: &Connection,
     configured_roots: &[PathBuf],
 ) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1 AND excluded = 0")?;
-    let paths: Vec<String> = stmt
-        .query_map(params![SOURCE_SCAN], |row| row.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
+    let paths = scan_paths_by_source(conn, SOURCE_SCAN)?;
 
     Ok(paths
         .into_iter()
@@ -340,10 +458,7 @@ fn validate_manual_outside_roots(
     configured_roots: &[PathBuf],
     removes: &mut Vec<String>,
 ) -> Result<()> {
-    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1 AND excluded = 0")?;
-    let paths: Vec<String> = stmt
-        .query_map(params![SOURCE_MANUAL], |row| row.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
+    let paths = scan_paths_by_source(conn, SOURCE_MANUAL)?;
 
     for path_key in paths {
         let path = Path::new(&path_key);
@@ -381,7 +496,7 @@ fn projected_repo_count(
 }
 
 fn record_error_run(conn: &Connection, started_at: i64, err: &WorkpotError) -> Result<()> {
-    let finished_at = now_secs();
+    let finished_at = crate::services::git_state::unix_now_secs();
     let message = err.to_string();
     conn.execute(
         "INSERT INTO index_runs (started_at, finished_at, status, added_count, removed_count, skipped_count, message)
@@ -397,7 +512,7 @@ fn record_cap_exceeded_run(
     projected: i64,
     max: u32,
 ) -> Result<()> {
-    let finished_at = now_secs();
+    let finished_at = crate::services::git_state::unix_now_secs();
     let message = format!("projected {projected} repos exceeds max {max}");
     conn.execute(
         "INSERT INTO index_runs (started_at, finished_at, status, added_count, removed_count, skipped_count, message)
@@ -422,7 +537,7 @@ fn finish_index_run(
     summary: &IndexSummary,
     message: Option<&str>,
 ) -> Result<()> {
-    let finished_at = now_secs();
+    let finished_at = crate::services::git_state::unix_now_secs();
     tx.execute(
         "UPDATE index_runs SET finished_at = ?1, status = ?2, added_count = ?3, removed_count = ?4, skipped_count = ?5, message = ?6
          WHERE id = ?7",

@@ -39,6 +39,21 @@ fn help_does_not_list_update_subcommand() {
 }
 
 #[test]
+fn help_lists_all_subcommand_descriptions() {
+    Command::cargo_bin("workpot")
+        .expect("workpot binary")
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("  repo      "))
+        .stdout(predicate::str::contains("Register"))
+        .stdout(predicate::str::contains("  roots     "))
+        .stdout(predicate::str::contains("watch root"))
+        .stdout(predicate::str::contains("  excludes  "))
+        .stdout(predicate::str::contains("exclude"));
+}
+
+#[test]
 fn update_subcommand_is_unrecognized() {
     Command::cargo_bin("workpot")
         .expect("workpot binary")
@@ -73,6 +88,20 @@ fn tauri_bundle_targets_app_only() {
     assert!(
         !conf.contains("\"dmg\""),
         "tauri.conf.json must not reference dmg bundle target"
+    );
+}
+
+#[test]
+fn tauri_bundle_hides_macos_dock_icon() {
+    let conf = read_repo_file("src-tauri/tauri.conf.json");
+    assert!(
+        conf.contains("\"infoPlist\"") && conf.contains("Info.plist"),
+        "bundle.macOS.infoPlist must reference Info.plist for dock-less tray launches"
+    );
+    let plist = read_repo_file("src-tauri/Info.plist");
+    assert!(
+        plist.contains("LSUIElement") && plist.contains("<true/>"),
+        "Info.plist must set LSUIElement so tray .app launches without a Dock icon"
     );
 }
 

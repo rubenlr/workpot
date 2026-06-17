@@ -1,4 +1,4 @@
-use crate::AppContext;
+use crate::AppState;
 use crate::domain::SOURCE_SCAN;
 use crate::error::{Result, WorkpotError};
 use crate::save_config;
@@ -6,61 +6,85 @@ use crate::services::{index, paths};
 use rusqlite::{Connection, params};
 use std::path::{Path, PathBuf};
 
-pub fn add_root(ctx: &mut AppContext, path: &Path) -> Result<()> {
+pub fn add_root(state: &AppState, path: &Path) -> Result<()> {
     let canonical = canonicalize_watch_root(path)?;
 
-    if ctx
-        .config()
-        .watch_roots
-        .iter()
-        .any(|r| roots_equal(r, &canonical))
     {
-        return Err(WorkpotError::WatchRootAlreadyExists(
-            canonical.display().to_string(),
-        ));
+        let config = state.config()?;
+        if config
+            .watch_roots
+            .iter()
+            .any(|r| roots_equal(r, &canonical))
+        {
+            return Err(WorkpotError::WatchRootAlreadyExists(
+                canonical.display().to_string(),
+            ));
+        }
+
+        if config.watch_roots.len() >= config.limits.max_watch_roots as usize {
+            return Err(WorkpotError::LimitsExceeded(format!(
+                "watch root count would exceed max_watch_roots {}",
+                config.limits.max_watch_roots
+            )));
+        }
     }
 
-    if ctx.config().watch_roots.len() >= ctx.config().limits.max_watch_roots as usize {
-        return Err(WorkpotError::LimitsExceeded(format!(
-            "watch root count would exceed max_watch_roots {}",
-            ctx.config().limits.max_watch_roots
-        )));
+    {
+        let mut config = state.config_mut()?;
+        config.watch_roots.push(canonical.clone());
+        if let Err(e) = save_config(state.config_path(), &config) {
+            config.watch_roots.pop();
+            return Err(e);
+        }
     }
 
-    ctx.config_mut().watch_roots.push(canonical.clone());
-    if let Err(e) = save_config(ctx.config_path(), ctx.config()) {
-        ctx.config_mut().watch_roots.pop();
-        return Err(e);
-    }
-
-    match index::run_full(ctx.connection(), ctx.config()) {
+    let index_result = {
+        let config = state.config()?;
+        index::run_full(&state.db, &config)
+    };
+    match index_result {
         Ok(_) => Ok(()),
         Err(e) => {
-            ctx.config_mut().watch_roots.pop();
-            save_config(ctx.config_path(), ctx.config())?;
-            prune_scan_repos_under_root(ctx.connection(), &canonical)?;
+            let mut config = state.config_mut()?;
+            config.watch_roots.pop();
+            save_config(state.config_path(), &config)?;
+            prune_scan_repos_under_root(state, &canonical)?;
             Err(e)
         }
     }
 }
 
-pub fn list_roots(ctx: &AppContext) -> Vec<PathBuf> {
-    ctx.config().watch_roots.clone()
+pub fn list_roots(state: &AppState) -> Vec<PathBuf> {
+    state
+        .config()
+        .map(|config| config.watch_roots.clone())
+        .unwrap_or_default()
 }
 
-pub fn remove_root(ctx: &mut AppContext, path: &Path, skip_prune: bool) -> Result<()> {
+pub fn remove_root(state: &AppState, path: &Path, skip_prune: bool) -> Result<()> {
     let canonical = canonicalize_watch_root(path)?;
-    let config_path = ctx.config_path().to_path_buf();
-    let pos = ctx
-        .config()
-        .watch_roots
-        .iter()
-        .position(|r| roots_equal(r, &canonical))
-        .ok_or_else(|| WorkpotError::WatchRootNotFound(canonical.display().to_string()))?;
-    let removed = ctx.config_mut().watch_roots.remove(pos);
+    let config_path = state.config_path().to_path_buf();
+    let pos = {
+        let config = state.config()?;
+        config
+            .watch_roots
+            .iter()
+            .position(|r| roots_equal(r, &canonical))
+            .ok_or_else(|| WorkpotError::WatchRootNotFound(canonical.display().to_string()))?
+    };
 
-    if let Err(e) = save_config(&config_path, ctx.config()) {
-        ctx.config_mut().watch_roots.insert(pos, removed);
+    let removed = {
+        let mut config = state.config_mut()?;
+        config.watch_roots.remove(pos)
+    };
+
+    let save_result = {
+        let config = state.config()?;
+        save_config(&config_path, &config)
+    };
+    if let Err(e) = save_result {
+        let mut config = state.config_mut()?;
+        config.watch_roots.insert(pos, removed);
         return Err(e);
     }
 
@@ -68,25 +92,30 @@ pub fn remove_root(ctx: &mut AppContext, path: &Path, skip_prune: bool) -> Resul
         return Ok(());
     }
 
-    match prune_scan_repos_under_root(ctx.connection(), &canonical) {
+    match state.with_write_connection(|conn| prune_scan_repos_under_root_conn(conn, &canonical)) {
         Ok(_) => Ok(()),
         Err(e) => {
-            ctx.config_mut().watch_roots.insert(pos, removed);
-            save_config(&config_path, ctx.config())?;
+            let mut config = state.config_mut()?;
+            config.watch_roots.insert(pos, removed);
+            save_config(&config_path, &config)?;
             Err(e)
         }
     }
 }
 
 /// Reload config from disk (D-19).
-pub fn reload_config(ctx: &mut AppContext) -> Result<()> {
-    let config = crate::load_config(ctx.config_path())?;
-    *ctx.config_mut() = config;
+pub fn reload_config(state: &AppState) -> Result<()> {
+    let config = crate::load_config(state.config_path())?;
+    *state.config_mut()? = config;
     Ok(())
 }
 
+fn prune_scan_repos_under_root(state: &AppState, root: &Path) -> Result<u32> {
+    state.with_write_connection(|conn| prune_scan_repos_under_root_conn(conn, root))
+}
+
 /// Delete scan-sourced repos whose canonical path is under `root` (D-21). Prefix match in Rust only.
-fn prune_scan_repos_under_root(conn: &Connection, root: &Path) -> Result<u32> {
+fn prune_scan_repos_under_root_conn(conn: &Connection, root: &Path) -> Result<u32> {
     let root_canon = root
         .canonicalize()
         .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", root.display())))?;
@@ -99,16 +128,12 @@ fn prune_scan_repos_under_root(conn: &Connection, root: &Path) -> Result<u32> {
     let mut removed = 0u32;
     for path_key in paths {
         let repo_path = Path::new(&path_key);
-        if repo_under_root(repo_path, &root_canon)? {
+        if paths::path_under_root(repo_path, &root_canon) {
             conn.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
             removed += 1;
         }
     }
     Ok(removed)
-}
-
-fn repo_under_root(repo_path: &Path, root_canon: &Path) -> Result<bool> {
-    Ok(paths::path_under_root(repo_path, root_canon))
 }
 
 fn canonicalize_watch_root(path: &Path) -> Result<PathBuf> {

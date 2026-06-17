@@ -8,6 +8,8 @@ function repo(partial: Partial<RepoDto> & Pick<RepoDto, "name">): RepoDto {
     name: partial.name,
     alias: partial.alias ?? null,
     branch: partial.branch ?? "main",
+    ahead: null,
+    behind: null,
     is_dirty: partial.is_dirty ?? null,
     parent_dir: "",
     last_opened_at: partial.last_opened_at ?? null,
@@ -17,6 +19,9 @@ function repo(partial: Partial<RepoDto> & Pick<RepoDto, "name">): RepoDto {
     notes: partial.notes ?? null,
     tags: partial.tags ?? [],
     branches: partial.branches ?? [],
+    is_bare: partial.is_bare ?? false,
+    convert_to: partial.convert_to ?? null,
+    convert_block_reason: partial.convert_block_reason ?? null,
   };
 }
 

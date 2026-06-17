@@ -2,15 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Phase 07 shipped — PR #7
-last_updated: 2026-06-04
+status: Ready to plan
+last_updated: "2026-06-10T20:44:42.091Z"
 progress:
-  total_phases: 10
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 46
-  percent: 10
-stopped_at: Phase 07 shipped — PR https://github.com/rubenlr/workpot/pull/7
+  total_phases: 11
+  completed_phases: 10
+  total_plans: 51
+  completed_plans: 51
+  percent: 91
 ---
 
 # Project State
@@ -21,7 +20,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 
 **Core value:** Know which repo you need and open it in Cursor in seconds, with git context visible first.
 
-**Current focus:** Phase 999.1 — recipes
+**Current focus:** Phase 07.1 — repo type migration (UAT 10/10 auto, 2026-06-10)
 
 ## Phase Status
 
@@ -35,6 +34,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 | 6 | CLI parity | Complete — 5/5 plans, UAT 5/6 auto (2026-05-31) |
 | 06.1 | Release & distribution | Not started — inserted 2026-05-31 |
 | 06.2 | Tray UX polish | Complete — 9/9 plans (2026-05-31) |
+| 07.1 | Repo type migration | Complete — 5/5 plans, UAT 10/10 auto (2026-06-10) |
 | 7 | Distribution strategy review | Shipped — PR https://github.com/rubenlr/workpot/pull/7 (2026-06-04) |
 
 ## Session Notes
@@ -91,6 +91,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-28)
 - Phase 06.2 inserted after Phase 6: Tray UX polish — icons, panel chrome, alias, list/detail interaction, Storybook (2026-05-31 explore)
 - Phase 7 (Recipes) deferred to backlog as 999.1 (2026-05-31) — prioritize 06.1 release path first
 - Phase 7 added (2026-06-03): Review distribution strategy — Homebrew tap + cask, no signed DMG; single package for CLI + tray; brew install/uninstall together
+- Phase 07.1 inserted after Phase 7: Repo type migration bare↔normal with SETTINGS.md and configurable path templates (URGENT)
 
 ### Pending Todos
 

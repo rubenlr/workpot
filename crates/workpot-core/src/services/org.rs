@@ -128,6 +128,7 @@ pub fn set_alias(conn: &Connection, repo_path: &str, alias: Option<&str>) -> Res
 }
 
 pub fn set_notes(conn: &Connection, repo_path: &str, notes: Option<&str>) -> Result<()> {
+    ensure_repo_exists(conn, repo_path)?;
     if let Some(text) = notes
         && text.chars().count() > MAX_NOTES_CHARS
     {
@@ -146,11 +147,11 @@ pub fn set_notes(conn: &Connection, repo_path: &str, notes: Option<&str>) -> Res
 }
 
 pub fn set_pin(conn: &Connection, repo_path: &str, pinned: bool, max_pinned: u32) -> Result<()> {
-    let (current_pinned, _current_pin_order): (i64, Option<i64>) = conn
+    let current_pinned: i64 = conn
         .query_row(
-            "SELECT pinned, pin_order FROM repos WHERE path = ?1",
+            "SELECT pinned FROM repos WHERE path = ?1",
             params![repo_path],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| row.get(0),
         )
         .optional()?
         .ok_or_else(|| WorkpotError::NotFound(repo_path.to_string()))?;

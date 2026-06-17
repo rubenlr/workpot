@@ -1,9 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { createTrayPanel } from "./createTrayPanel.svelte";
-  import TrayPanelChrome from "./TrayPanelChrome.svelte";
+  import { syncPanelWindowHeight } from "$lib/tray/logic/layout/panelWindow";
+  import { createTrayPanel } from "$lib/tray/state/createTrayPanel.svelte";
+  import TrayPanelChrome from "./chrome/TrayPanelChrome.svelte";
 
   const panel = createTrayPanel();
+
+  function onPanelHeightChange(heightPx: number) {
+    void syncPanelWindowHeight(heightPx);
+  }
 
   onMount(() => {
     void panel.mount();
@@ -15,8 +20,11 @@
 
 <TrayPanelChrome
   listMaxHeightPx={panel.listMaxHeightPx}
+  {onPanelHeightChange}
   launchError={panel.launchError}
   onDismissLaunchError={panel.dismissLaunchError}
+  listError={panel.listError}
+  onDismissListError={panel.dismissListError}
   bind:filterQuery={panel.filterQuery}
   allTags={panel.allTags}
   tagAutocompletePrefix={panel.tagAutocompletePrefix}
@@ -36,8 +44,13 @@
     panel.selectedIndex = idx;
     panel.openDetail(repo);
   }}
-  onTagRemove={panel.removeTagFromRepo}
-  onTagFilter={panel.appendTagFilter}
+  onRefresh={() => void panel.startIndexRefresh()}
+  refreshing={panel.indexing}
+  refreshSuccess={panel.indexRefreshSuccess}
+  activeSync={panel.activeSync}
+  onSync={panel.handleSync}
+  activeConvert={panel.activeConvert}
+  branchRevision={panel.branchRevision}
   detailRepo={panel.detailRepo}
   focusTagOnDetailOpen={panel.focusTagOnDetailOpen}
   onTagFocusDone={panel.clearTagFocusRequest}

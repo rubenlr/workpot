@@ -1,8 +1,5 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { StorybookConfig } from "@storybook/sveltekit";
-
-const dirname = path.dirname(fileURLToPath(import.meta.url));
+import { applyStorybookTauriAliases } from "./storybook-aliases.ts";
 
 const config: StorybookConfig = {
   stories: ["../src/**/*.stories.svelte"],
@@ -10,26 +7,14 @@ const config: StorybookConfig = {
     "@storybook/addon-svelte-csf",
     "@storybook/addon-a11y",
     "@storybook/addon-docs",
+    "@storybook/addon-vitest",
+    "@chromatic-com/storybook",
   ],
   framework: "@storybook/sveltekit",
   async viteFinal(viteConfig) {
     viteConfig.resolve ??= {};
     viteConfig.resolve.alias ??= {};
-    const alias = viteConfig.resolve.alias;
-    if (Array.isArray(alias)) {
-      alias.push({
-        find: "@tauri-apps/api/core",
-        replacement: path.join(
-          dirname,
-          "../src/lib/storybook/tauriCoreMock.ts",
-        ),
-      });
-    } else {
-      alias["@tauri-apps/api/core"] = path.join(
-        dirname,
-        "../src/lib/storybook/tauriCoreMock.ts",
-      );
-    }
+    applyStorybookTauriAliases(viteConfig.resolve.alias);
     return viteConfig;
   },
 };
