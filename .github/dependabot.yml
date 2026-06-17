@@ -5,8 +5,8 @@
 
 version: 2
 updates:
-  # Update the Tauri ecosystem pnpm + cargo
-  - package-ecosystem: "pnpm" # See documentation for possible values
+  # Update JS deps (pnpm-lock.yaml via npm ecosystem) + Rust cargo
+  - package-ecosystem: "npm"
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
