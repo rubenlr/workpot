@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable recipes (shell steps, Cursor launch, multi-step workflows) — Phase 7
 - macOS `.app` / DMG distribution and install/update UX
 
+## [0.0.4] - 2026-06-17
+
+Maintenance release: grouped dependency updates across Rust, frontend tooling, and CI.
+
+- **Tauri** — tauri 2.11.3, tauri-build 2.6.3, `@tauri-apps/api` 2.11.1
+- **Rust** — `toml_edit` 0.25, `window-vibrancy` 0.6
+- **Frontend** — TypeScript 6.0, `@tailwindcss/vite` 4.3.1, prettier-plugin-svelte 4.1, prettier-plugin-tailwindcss 0.8
+- **CI** — actions/checkout v6, upload-artifact v7, download-artifact v8
+
 ## [0.0.3] - 2026-06-15
 
 Tray detail UX, branch operations, and bare↔normal repo migration.
@@ -56,7 +65,8 @@ First public preview: local-only repo index, git-aware menu bar finder, and Curs
 - Bare and worktree paths canonicalized consistently during discovery
 - Unified CLI message when the repository index cap is exceeded
 
+[0.0.4]: https://github.com/rubenlr/workpot/releases/tag/v0.0.4
 [0.0.3]: https://github.com/rubenlr/workpot/releases/tag/v0.0.3
 [0.0.2]: https://github.com/rubenlr/workpot/releases/tag/v0.0.2
 [0.0.1]: https://github.com/rubenlr/workpot/releases/tag/v0.0.1
-[Unreleased]: https://github.com/rubenlr/workpot/compare/v0.0.3...HEAD
+[Unreleased]: https://github.com/rubenlr/workpot/compare/v0.0.4...HEAD
