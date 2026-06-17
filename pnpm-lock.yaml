@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@tauri-apps/api':
-        specifier: ^2
-        version: 2.11.0
+        specifier: ^2.11.1
+        version: 2.11.1
     devDependencies:
       '@chromatic-com/storybook':
         specifier: ^5.2.1
@@ -1252,8 +1252,8 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
-  '@tauri-apps/api@2.11.0':
-    resolution: {integrity: sha512-7CinYODhky9lmO23xHnUFv0Xt43fbtWMyxZcLcRBlFkcgXKuEirBvHpmtJ89YMhyeGcq20Wuc47Fa4XjyniywA==}
+  '@tauri-apps/api@2.11.1':
+    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
 
   '@tauri-apps/cli-darwin-arm64@2.11.2':
     resolution: {integrity: sha512-+4UZzLt+eOAEQCwgd+TqKgyUJMrvx+BgdXLLaqJYmPqzP+nE6YZr/hY6CWLYGQb8jFn99jEkmC6uA3tNvamA1w==}
@@ -3735,7 +3735,7 @@ snapshots:
       tailwindcss: 4.3.1
       vite: 6.4.3(@types/node@25.9.2)(jiti@2.7.0)(lightningcss@1.32.0)
 
-  '@tauri-apps/api@2.11.0': {}
+  '@tauri-apps/api@2.11.1': {}
 
   '@tauri-apps/cli-darwin-arm64@2.11.2':
     optional: true
