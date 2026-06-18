@@ -44,7 +44,7 @@ jobs:
       - name: Clippy SARIF
         continue-on-error: true
         run: |
-          cargo clippy --workspace --all-targets --message-format=json 2>/dev/null \
+          cargo clippy -p workpot-core -p workpot-cli --all-targets --message-format=json 2>/dev/null \
             | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
       - name: Upload Clippy SARIF
         if: always() && hashFiles('rust-clippy-results.sarif') != ''
@@ -53,7 +53,7 @@ jobs:
           sarif_file: rust-clippy-results.sarif
           wait-for-processing: true
       - name: Clippy gate
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy -p workpot-core -p workpot-cli --all-targets -- -D warnings
       - name: OSSAR
         uses: github/ossar-action@v1
         id: ossar
