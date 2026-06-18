@@ -16,7 +16,7 @@ permissions:
 jobs:
   code-quality:
     name: code-quality (macos-latest)
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       security-events: write
