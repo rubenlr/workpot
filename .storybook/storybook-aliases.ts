@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { AliasOptions } from "vite";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,16 +20,12 @@ export const storybookTauriAliases = {
   ),
 } as const;
 
-export function applyStorybookTauriAliases(
-  alias:
-    | Record<string, string>
-    | Array<{ find: string | RegExp; replacement: string }>,
-): void {
+export function applyStorybookTauriAliases(alias: AliasOptions): AliasOptions {
+  const additions = Object.entries(storybookTauriAliases).map(
+    ([find, replacement]) => ({ find, replacement }),
+  );
   if (Array.isArray(alias)) {
-    for (const [find, replacement] of Object.entries(storybookTauriAliases)) {
-      alias.push({ find, replacement });
-    }
-  } else {
-    Object.assign(alias, storybookTauriAliases);
+    return [...alias, ...additions];
   }
+  return { ...alias, ...storybookTauriAliases };
 }

@@ -16,7 +16,7 @@ build:
     CI=true {{pnpm}} run tauri:build
 
 install: build
-    cargo install --path crates/workpot-cli -q
+    {{cargo}} install --path crates/workpot-cli -q
 
 # Tray dev only (no release DMG — use `just build` for bundles).
 # Git refresh loading is tray-icon only (no panel spinner).
@@ -25,12 +25,12 @@ install: build
 # Trace CLI: RUST_LOG=workpot_core=debug,workpot_cli=debug workpot index
 # Webview: right-click panel → Inspect → Console ([workpot-tray] lines)
 launch:
-    cargo build -p workpot-tray
-    RUST_LOG=workpot_tray_lib=debug,workpot_core=debug pnpm run tauri dev
+    {{cargo}} build -p workpot-tray
+    RUST_LOG=workpot_tray_lib=debug,workpot_core=debug {{pnpm}} run tauri dev
 
 sbook:
-    pnpm run build:storybook
-    pnpm run storybook
+    {{pnpm}} run build:storybook
+    {{pnpm}} run storybook
 
 # Rewrite formatting (run before clippy / tests)
 fmt-fix:
@@ -52,7 +52,7 @@ fmt-check:
 test:
     {{cargo}} fetch
     {{pnpm}} install --frozen-lockfile
-    cargo test -p workpot-core -p workpot-cli -p workpot-tray --all-targets -q
+    {{cargo}} test -p workpot-core -p workpot-cli -p workpot-tray --all-targets -q
     {{pnpm}} run test:coverage -- --reporter=dot
     CI=true {{pnpm}} run tauri:build
 
@@ -63,11 +63,11 @@ alias fmt := fmt-fix
 # One-time: `just coverage-tools` (crate is cargo-llvm-cov; needs llvm-tools-preview)
 coverage-tools:
     rustup component add llvm-tools-preview -q
-    cargo install cargo-llvm-cov --locked -q
+    {{cargo}} install cargo-llvm-cov --locked -q
 
 coverage:
-    cargo llvm-cov test -q -p workpot-core -p workpot-cli --all-targets --lcov --output-path lcov-core-cli.info
-    cargo llvm-cov test -q -p workpot-tray --all-targets --lcov --output-path lcov-tray.info
+    {{cargo}} llvm-cov test -q -p workpot-core -p workpot-cli --all-targets --lcov --output-path lcov-core-cli.info
+    {{cargo}} llvm-cov test -q -p workpot-tray --all-targets --lcov --output-path lcov-tray.info
 
 # Pre-push: release build + fmt/clippy (CI `fmt` job on macOS). Tests: `just test` (CI `test-macos`).
 # No cargo deny/audit until Tauri 3 — see CONTRIBUTING.md.

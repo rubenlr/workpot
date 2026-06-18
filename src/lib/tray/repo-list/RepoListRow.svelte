@@ -188,6 +188,6 @@
   }
 
   .detail-btn:hover {
-    background-color: color-mix(in srgb, currentColor 12%, transparent);
+    background-color: color-mix(in sRGB, currentColor 12%, transparent);
   }
 </style>

@@ -13,7 +13,7 @@
   }
 }
 
-@import "./lib/styles/stitch-tokens.css";
+@import "./lib/styles/tokens.css";
 
 html {
   color-scheme: light dark;
