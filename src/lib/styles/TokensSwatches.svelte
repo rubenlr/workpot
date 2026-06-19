@@ -92,7 +92,7 @@
     <h2 class="mb-3 text-lg font-semibold">Theming</h2>
     <p class="text-sm text-inverse-on-surface-variant">
       Use the Storybook background toolbar (dark / light) to preview
-      <code class="text-inverse-on-surface">data-theme</code> overrides from stitch-tokens.css.
+      <code class="text-inverse-on-surface">data-theme</code> overrides from tokens.css.
     </p>
   </section>
 </div>

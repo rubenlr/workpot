@@ -412,8 +412,7 @@
         autocapitalize="off"
         spellcheck="false"
         class="max-h-[calc(5*1.5rem)] w-full resize-none rounded-lg border border-card-border bg-input-surface p-3 text-sm text-inverse-on-surface outline-none placeholder:text-inverse-on-surface-variant focus:border-primary/50 focus:ring-1 focus:ring-primary"
-        onblur={() => void handleNotesSave()}
-      ></textarea>
+        onblur={() => void handleNotesSave()}></textarea>
     </section>
   </div>
 </div>

@@ -1,4 +1,5 @@
 import type { StorybookConfig } from "@storybook/sveltekit";
+import { applyEsbuildTarget } from "../vite-esbuild-target.ts";
 import { applyStorybookTauriAliases } from "./storybook-aliases.ts";
 
 const config: StorybookConfig = {
@@ -12,9 +13,11 @@ const config: StorybookConfig = {
   ],
   framework: "@storybook/sveltekit",
   async viteFinal(viteConfig) {
+    applyEsbuildTarget(viteConfig);
     viteConfig.resolve ??= {};
-    viteConfig.resolve.alias ??= {};
-    applyStorybookTauriAliases(viteConfig.resolve.alias);
+    viteConfig.resolve.alias = applyStorybookTauriAliases(
+      viteConfig.resolve.alias ?? {},
+    );
     return viteConfig;
   },
 };

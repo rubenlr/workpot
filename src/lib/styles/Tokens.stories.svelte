@@ -11,7 +11,7 @@
       docs: {
         description: {
           component:
-            "Semantic design tokens from stitch-tokens.css — colors, status shadows, typography, and theme switching via data-theme.",
+            "Semantic design tokens from tokens.css — colors, status shadows, typography, and theme switching via data-theme.",
         },
       },
     },

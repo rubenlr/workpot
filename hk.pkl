@@ -20,6 +20,7 @@ hooks {
       ["cargo-clippy"] = (Builtins.cargo_clippy) {
         glob = "*.rs"
       }
+      // Serialize cargo steps — clippy + test contend on package cache / target dir.
       ["svelte-check"] {
         glob = List("*.svelte", "*.ts")
         check = "pnpm run check"
@@ -30,6 +31,7 @@ hooks {
       }
       ["cargo-test"] {
         glob = "*.rs"
+        depends = "cargo-clippy"
         check = "cargo test --workspace --all-targets"
       }
     }
@@ -48,6 +50,7 @@ hooks {
         check = "cargo fmt --all -- --check"
       }
       ["cargo-clippy-check"] {
+        depends = "cargo-fmt-check"
         check = "cargo clippy --workspace --all-targets -- -D warnings"
       }
       ["svelte-check"] {
@@ -57,6 +60,7 @@ hooks {
         check = "pnpm run test"
       }
       ["cargo-test-run"] {
+        depends = "cargo-clippy-check"
         check = "cargo test --workspace --all-targets"
       }
     }

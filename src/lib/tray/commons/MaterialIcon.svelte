@@ -28,7 +28,7 @@
     letter-spacing: normal;
     text-transform: none;
     white-space: nowrap;
-    word-wrap: normal;
+    overflow-wrap: normal;
     direction: ltr;
     -webkit-font-smoothing: antialiased;
   }

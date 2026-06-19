@@ -1,6 +1,6 @@
 [package]
 name = "workpot-cli"
-version = "0.0.3"
+version = "0.0.4"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -16,7 +16,7 @@ directories = { workspace = true }
 env_logger = "0.11.10"
 humantime = "2.3"
 serde = { version = "1.0.228", features = ["derive"] }
-workpot-core = { path = "../workpot-core", version = "0.0.3" }
+workpot-core = { path = "../workpot-core", version = "0.0.4" }
 
 [dev-dependencies]
 assert_cmd = "2"
