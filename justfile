@@ -69,7 +69,7 @@ coverage:
     {{cargo}} llvm-cov test -q -p workpot-core -p workpot-cli --all-targets --lcov --output-path lcov-core-cli.info
     {{cargo}} llvm-cov test -q -p workpot-tray --all-targets --lcov --output-path lcov-tray.info
 
-# Pre-push: release build + fmt/clippy (CI `fmt` job on macOS). Tests: `just test` (CI `test-macos`).
+# Pre-push: release build + fmt/clippy (CI `code-quality` on Ubuntu). Tests: `just test` (CI `test-macos` on macOS).
 # No cargo deny/audit until Tauri 3 — see CONTRIBUTING.md.
 pre: build fix fmt-check
     ./target/release/workpot --version
