@@ -331,7 +331,7 @@ fn preflight_blocks_detached_head() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = local_repo_clean_synced(dir.path());
     let status = common::git_cmd()
-        .args(["checkout", "--detach", "HEAD"])
+        .args(["checkout", "-q", "--detach", "HEAD"])
         .current_dir(&path)
         .status()
         .expect("detach");
