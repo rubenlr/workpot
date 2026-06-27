@@ -1,5 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { onMount } from "svelte";
+  import { SvelteMap } from "svelte/reactivity";
   import RepoListRow from "./RepoListRow.svelte";
   import SectionHeader from "./SectionHeader.svelte";
   import {
@@ -49,6 +51,14 @@
 
   let dragSourceIdx = $state<number | null>(null);
 
+  let repoByPath = $derived(
+    new SvelteMap(
+      SECTION_META.flatMap(({ key }) =>
+        sectionedRepos[key].map((repo) => [repo.path, repo] as const),
+      ),
+    ),
+  );
+
   function rowFlatIndex(path: string): number {
     const idx = flatIndexByPath.get(path);
     if (idx === undefined) {
@@ -56,6 +66,50 @@
     }
     return idx;
   }
+
+  function showRepoContextMenu(repo: RepoDto, e: MouseEvent) {
+    e.preventDefault();
+    const payload = {
+      repoPath: repo.path,
+      isPinned: repo.pinned,
+      tags: repo.tags,
+      convertTo: repo.convert_to,
+      convertBlockReason: repo.convert_block_reason,
+      clientX: e.clientX,
+      clientY: e.clientY,
+    };
+    void invoke("show_repo_context_menu", payload);
+  }
+
+  onMount(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      if ((e.target as Element)?.closest("[data-sync-action]")) {
+        return;
+      }
+      const rowEl = (e.target as Element)?.closest("[data-row-index]");
+      if (!rowEl) {
+        return;
+      }
+      const repoPath = rowEl.getAttribute("data-repo-path");
+      if (!repoPath) {
+        return;
+      }
+      const repo = repoByPath.get(repoPath);
+      if (!repo) {
+        return;
+      }
+      showRepoContextMenu(repo, e);
+    };
+
+    document.addEventListener("contextmenu", handleContextMenu, {
+      capture: true,
+    });
+    return () => {
+      document.removeEventListener("contextmenu", handleContextMenu, {
+        capture: true,
+      });
+    };
+  });
 
   $effect(() => {
     const idx = selectedIndex;
@@ -129,16 +183,6 @@
                 if (hoveredRowIndex === idx) {
                   hoveredRowIndex = null;
                 }
-              }}
-              onRowContextMenu={(e) => {
-                e.preventDefault();
-                void invoke("show_repo_context_menu", {
-                  repoPath: repo.path,
-                  isPinned: repo.pinned,
-                  tags: repo.tags,
-                  convertTo: repo.convert_to,
-                  convertBlockReason: repo.convert_block_reason,
-                });
               }}
               onRowDragStart={draggable
                 ? (e) => handleDragStart(e, i)

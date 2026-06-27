@@ -127,7 +127,7 @@ describe("RepoListRow", () => {
     expect(openBtn.contains(pushBtn)).toBe(false);
   });
 
-  it("selected row wrapper gets bg-primary and child buttons stay transparent", () => {
+  it("selected row wrapper gets bg-primary and child controls stay transparent", () => {
     const { container, getByRole } = render(RepoListRow, {
       props: {
         repo: mockRepo,
@@ -144,6 +144,14 @@ describe("RepoListRow", () => {
     });
     expect(openBtn.className).toContain("bg-transparent");
     expect(chevronBtn.className).toContain("bg-transparent");
+  });
+
+  it("open_button_activates_on_enter", async () => {
+    const onOpen = vi.fn();
+    const { getByRole } = renderRow(mockRepo, { onOpen });
+    const openBtn = getByRole("button", { name: "Open testrepo" });
+    await fireEvent.keyDown(openBtn, { key: "Enter" });
+    expect(onOpen).toHaveBeenCalledOnce();
   });
 
   it("push chip click does not call onOpen", async () => {

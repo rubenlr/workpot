@@ -1,11 +1,11 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem};
-use tauri::{AppHandle, Emitter, Manager, State, Window};
+use tauri::{AppHandle, Emitter, LogicalPosition, Manager, State, Window};
 use workpot_core::domain::config::MigrationConfig;
 use workpot_core::services::repo_convert::{
     ConvertResult, ConvertTarget, PreflightResult, convert_target_for_record, preflight_message,
@@ -166,16 +166,6 @@ fn log_emit_err(event: &str, err: tauri::Error) {
 
 /// Active repo path for the most recent `show_repo_context_menu` popup.
 pub struct ContextMenuRepo(pub Arc<Mutex<Option<String>>>);
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RepoContextMenuRequest {
-    pub repo_path: String,
-    pub is_pinned: bool,
-    pub tags: Vec<String>,
-    pub convert_to: Option<String>,
-    pub convert_block_reason: Option<String>,
-}
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct RepoDto {
@@ -684,17 +674,21 @@ fn convert_menu_label(target: &str, block_reason: Option<&str>) -> String {
 pub async fn show_repo_context_menu(
     window: Window,
     app: AppHandle,
-    request: RepoContextMenuRequest,
+    repo_path: String,
+    is_pinned: bool,
+    tags: Vec<String>,
+    convert_to: Option<String>,
+    convert_block_reason: Option<String>,
+    client_x: Option<f64>,
+    client_y: Option<f64>,
     menu_repo: State<'_, ContextMenuRepo>,
     convert_guard: State<'_, RepoConvertGuard>,
 ) -> Result<(), String> {
-    let RepoContextMenuRequest {
+    log::debug!(
+        "show_repo_context_menu: repo_path={} pinned={}",
         repo_path,
-        is_pinned,
-        tags,
-        convert_to,
-        convert_block_reason,
-    } = request;
+        is_pinned
+    );
 
     {
         let mut guard = menu_repo
@@ -768,7 +762,17 @@ pub async fn show_repo_context_menu(
     }
 
     let menu = Menu::with_items(&app, &menu_items).map_err(|e| e.to_string())?;
-    menu.popup(window).map_err(|e| e.to_string())?;
+    let popup_result = match (client_x, client_y) {
+        (Some(x), Some(y)) => menu.popup_at(window, LogicalPosition::new(x, y)),
+        _ => menu.popup(window),
+    };
+    if let Err(e) = popup_result {
+        log::warn!("show_repo_context_menu: menu.popup failed: {e}");
+        if let Ok(mut guard) = menu_repo.0.lock() {
+            *guard = None;
+        }
+        return Err(e.to_string());
+    }
     Ok(())
 }
 

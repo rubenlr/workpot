@@ -863,12 +863,6 @@ fn resolve_conversion_layout(
     match target {
         ConvertTarget::Bare => {
             let layout = resolve_bare_layout(config, &project, canonical, parent_dir)?;
-            let new_name = layout
-                .bare_git_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("bare.git")
-                .to_string();
             Ok(ResolvedConversion {
                 paths: vec![
                     ("temp".into(), temp_path),
@@ -876,7 +870,7 @@ fn resolve_conversion_layout(
                     ("worktree".into(), layout.worktree_path),
                 ],
                 new_path: layout.bare_git_path,
-                new_name,
+                new_name: record.name.clone(),
                 branch_for_bare: Some(layout.branch),
             })
         }

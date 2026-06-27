@@ -477,6 +477,13 @@ fn convert_normal_to_bare() {
     let old_key = path.canonicalize().expect("canon").display().to_string();
     ctx.register_manual(&path).expect("register");
     ctx.set_tags(&old_key, &["migrated"]).expect("tag");
+    let repos_before = ctx.list_repos().expect("list");
+    let original_name = repos_before
+        .iter()
+        .find(|r| r.path.display().to_string() == old_key)
+        .expect("registered")
+        .name
+        .clone();
 
     let result = ctx
         .convert_repo(&path, ConvertTarget::Bare, false)
@@ -504,9 +511,53 @@ fn convert_normal_to_bare() {
             .any(|r| r.path.display().to_string() == old_key)
     );
     assert!(repos.iter().any(|r| r.path == to));
+    let converted = repos.iter().find(|r| r.path == to).expect("converted");
+    assert_eq!(converted.name, original_name);
     let new_key = to.display().to_string();
     let tags = ctx.list_tags_for_repo(&new_key).expect("tags");
     assert_eq!(tags, vec!["migrated".to_string()]);
+}
+
+#[test]
+fn convert_normal_to_bare_preserves_catalog_name_over_project_alias() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ctx = test_ctx_with_migration(
+        dir.path(),
+        r#"[migration]
+project_name_source = "alias"
+allow_conversion_to_bare_repo = true
+"#,
+    );
+    let path = local_repo_clean_synced(dir.path());
+    let old_key = path.canonicalize().expect("canon").display().to_string();
+    ctx.register_manual(&path).expect("register");
+    ctx.set_alias(&old_key, Some("display-alias"))
+        .expect("set_alias");
+
+    let repos_before = ctx.list_repos().expect("list");
+    let original_name = repos_before
+        .iter()
+        .find(|r| r.path.display().to_string() == old_key)
+        .expect("registered")
+        .name
+        .clone();
+    assert_ne!(original_name, "display-alias");
+
+    let result = ctx
+        .convert_repo(&path, ConvertTarget::Bare, false)
+        .expect("convert");
+    let ConvertResult::Converted { to, .. } = result else {
+        panic!("expected Converted, got {result:?}");
+    };
+
+    let converted = ctx
+        .list_repos()
+        .expect("list")
+        .into_iter()
+        .find(|r| r.path == to)
+        .expect("converted");
+    assert_eq!(converted.name, original_name);
+    assert_ne!(converted.name, "bare.git");
 }
 
 #[test]

@@ -99,6 +99,7 @@
 {#if showAhead || showBehind}
   <div
     class="flex shrink-0 items-center gap-1"
+    data-sync-action
     aria-hidden={interactive ? undefined : "true"}
     onmouseenter={onHoverChange ? handleMouseEnter : undefined}
     onmouseleave={onHoverChange ? handleMouseLeave : undefined}

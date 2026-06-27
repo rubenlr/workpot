@@ -14,6 +14,7 @@
     onDetail,
     activeSync = null,
     onSync,
+    contextMenuFeedback = null,
   }: {
     sectionedRepos: SectionedRepos;
     flatIndexByPath: Map<string, number>;
@@ -30,12 +31,21 @@
       branch: string,
       direction: SyncDirection,
     ) => void;
+    contextMenuFeedback?: string | null;
   } = $props();
 </script>
 
 <div
   class="w-full max-w-md rounded-xl bg-inverse-surface text-inverse-on-surface"
 >
+  {#if contextMenuFeedback}
+    <p
+      data-testid="context-menu-feedback"
+      class="mx-2 mt-2 rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground"
+    >
+      {contextMenuFeedback}
+    </p>
+  {/if}
   <TrayRepoList
     {sectionedRepos}
     {flatIndexByPath}

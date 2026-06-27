@@ -20,7 +20,6 @@
     onOpen,
     onDetail,
     onSync,
-    onRowContextMenu,
     onRowDragStart,
     onRowDragOver,
     onRowDrop,
@@ -42,7 +41,6 @@
       branch: string,
       direction: SyncDirection,
     ) => void;
-    onRowContextMenu?: (e: MouseEvent) => void;
     onRowDragStart?: (e: DragEvent) => void;
     onRowDragOver?: (e: DragEvent) => void;
     onRowDrop?: (e: DragEvent) => void;
@@ -90,14 +88,40 @@
       onOpen();
     }
   }
+
+  function handleRoleButtonClick(e: MouseEvent) {
+    activateRow(e.metaKey);
+  }
+
+  function handleRoleButtonKeydown(e: KeyboardEvent) {
+    if (e.key !== "Enter" && e.key !== " ") {
+      return;
+    }
+    e.preventDefault();
+    activateRow(e.metaKey);
+  }
+
+  function handleDetailClick(e: MouseEvent) {
+    e.stopPropagation();
+    onDetail();
+  }
+
+  function handleDetailKeydown(e: KeyboardEvent) {
+    if (e.key !== "Enter" && e.key !== " ") {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    onDetail();
+  }
 </script>
 
 <li
   role="listitem"
   aria-current={selected ? "true" : undefined}
   data-row-index={rowIndex}
+  data-repo-path={repo.path}
   draggable={listRowDraggable ? "true" : undefined}
-  oncontextmenu={onRowContextMenu}
   ondragstart={onRowDragStart}
   ondragover={onRowDragOver}
   ondrop={onRowDrop}
@@ -108,12 +132,18 @@
     ? 'scale-[1.01] shadow-[var(--shadow-row-selected)]'
     : ''}"
 >
-  <div class="flex w-full items-center rounded-lg {rowSurfaceClass}">
-    <button
-      type="button"
+  <div
+    role="group"
+    aria-label={rowLabel}
+    class="flex w-full items-center rounded-lg {rowSurfaceClass}"
+  >
+    <div
+      role="button"
+      tabindex="0"
       class={openButtonClass}
       aria-label="Open {rowLabel}"
-      onclick={(e) => activateRow(e.metaKey)}
+      onclick={handleRoleButtonClick}
+      onkeydown={handleRoleButtonKeydown}
     >
       <span
         class="h-2 w-2 shrink-0 rounded-full {dirtyDotClass(repo)}"
@@ -133,8 +163,8 @@
           </span>
         {/if}
       </span>
-    </button>
-    <div class="flex shrink-0 items-center self-center pr-1">
+    </div>
+    <div class="flex shrink-0 items-center self-center pr-1" data-sync-action>
       <SyncBadge
         ahead={repo.ahead}
         behind={repo.behind}
@@ -163,17 +193,16 @@
       aria-orientation="vertical"
       class="h-6 w-px shrink-0 self-center bg-current opacity-20"
     ></div>
-    <button
-      type="button"
+    <div
+      role="button"
+      tabindex="0"
       class={chevronClass}
       aria-label="Open detail for {rowLabel}"
-      onclick={(e) => {
-        e.stopPropagation();
-        onDetail();
-      }}
+      onclick={handleDetailClick}
+      onkeydown={handleDetailKeydown}
     >
       <MaterialIcon name="chevron_right" size={20} />
-    </button>
+    </div>
   </div>
 </li>
 

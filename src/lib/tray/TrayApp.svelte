@@ -12,7 +12,21 @@
 
   onMount(() => {
     void panel.mount();
-    return () => panel.destroy();
+
+    const onContextMenu = (e: MouseEvent) => {
+      const row = (e.target as Element)?.closest("[data-row-index]");
+      if (row) {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("contextmenu", onContextMenu, { capture: true });
+
+    return () => {
+      document.removeEventListener("contextmenu", onContextMenu, {
+        capture: true,
+      });
+      panel.destroy();
+    };
   });
 </script>
 

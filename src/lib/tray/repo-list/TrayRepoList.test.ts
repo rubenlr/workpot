@@ -178,7 +178,9 @@ describe("TrayRepoList", () => {
     expect(row0).toBeTruthy();
     await fireEvent.mouseEnter(row0!);
     await rerenderWithSelection(1);
-    const row0Button = container.querySelector('[data-row-index="0"] button');
+    const row0Button = container.querySelector(
+      '[data-row-index="0"] [role="button"]',
+    );
     expect(row0Button?.classList.contains("bg-hover-overlay")).toBe(false);
     const row1Selected = container.querySelector(
       '[data-row-index="1"] .bg-primary',
@@ -202,7 +204,7 @@ describe("TrayRepoList", () => {
     scrollSpy.mockRestore();
   });
 
-  it("contextmenu invokes show_repo_context_menu with flat camelCase payload", async () => {
+  it("contextmenu on open control invokes show_repo_context_menu", async () => {
     const workpot = repo("workpot", {
       path: "/tmp/workpot",
       pinned: false,
@@ -210,11 +212,12 @@ describe("TrayRepoList", () => {
       convert_to: "bare",
       convert_block_reason: "dirty working tree",
     });
-    const { container } = renderList({ ...empty, rest: [workpot] });
-    const row = container.querySelector('[data-row-index="0"]');
-    expect(row).toBeTruthy();
+    const { getByRole } = renderList({ ...empty, rest: [workpot] });
 
-    await fireEvent.contextMenu(row!);
+    await fireEvent.contextMenu(getByRole("button", { name: "Open workpot" }), {
+      clientX: 120,
+      clientY: 48,
+    });
 
     expect(invoke).toHaveBeenCalledOnce();
     expect(invoke).toHaveBeenCalledWith("show_repo_context_menu", {
@@ -223,6 +226,63 @@ describe("TrayRepoList", () => {
       tags: ["backend"],
       convertTo: "bare",
       convertBlockReason: "dirty working tree",
+      clientX: 120,
+      clientY: 48,
     });
+  });
+
+  it("contextmenu on row surface invokes show_repo_context_menu with flat camelCase payload", async () => {
+    const workpot = repo("workpot", {
+      path: "/tmp/workpot",
+      pinned: false,
+      tags: ["backend"],
+      convert_to: "bare",
+      convert_block_reason: "dirty working tree",
+    });
+    const { container } = renderList({ ...empty, rest: [workpot] });
+    const rowSurface = container.querySelector('[data-row-index="0"] > div');
+    expect(rowSurface).toBeTruthy();
+
+    await fireEvent.contextMenu(rowSurface!, { clientX: 80, clientY: 32 });
+
+    expect(invoke).toHaveBeenCalledOnce();
+    expect(invoke).toHaveBeenCalledWith("show_repo_context_menu", {
+      repoPath: "/tmp/workpot",
+      isPinned: false,
+      tags: ["backend"],
+      convertTo: "bare",
+      convertBlockReason: "dirty working tree",
+      clientX: 80,
+      clientY: 32,
+    });
+  });
+
+  it("contextmenu on sync badge does not invoke show_repo_context_menu", async () => {
+    const workpot = repo("workpot", {
+      path: "/tmp/workpot",
+      ahead: 2,
+      behind: 0,
+    });
+    const onSync = vi.fn();
+    const flatIndexByPath = new Map([[workpot.path, 0]]);
+    const selectedIndex = bindableSelectedIndex(0);
+    render(TrayRepoList, {
+      props: {
+        sectionedRepos: { ...empty, rest: [workpot] },
+        flatIndexByPath,
+        ...selectedIndex.props,
+        onPinReorder: vi.fn(),
+        onSelectRow: vi.fn(),
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+        onSync,
+      },
+    });
+
+    const syncBadge = document.querySelector("[data-sync-action]");
+    expect(syncBadge).toBeTruthy();
+    await fireEvent.contextMenu(syncBadge!);
+
+    expect(invoke).not.toHaveBeenCalled();
   });
 });
