@@ -113,7 +113,11 @@ pub fn run_volatile_preflight(path: &Path) -> Result<PreflightResult> {
         return Ok(result);
     }
 
-    let worktree_paths = worktree_paths_for_preflight(&canonical)?;
+    let worktree_paths = if is_bare_repo(&canonical) {
+        git::list_worktree_paths(&canonical)?
+    } else {
+        vec![canonical.to_path_buf()]
+    };
 
     if let Some(result) = dirty_worktree_in(&worktree_paths)? {
         return Ok(result);
@@ -141,8 +145,24 @@ pub fn assess_structural_blockers(
         .canonicalize()
         .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?;
 
-    if is_linked_worktree(&canonical) {
-        let common = git::resolve_git_common_dir(&canonical)?;
+    let path_key = canonical.display().to_string();
+    let record = match catalog::get_repo_by_path(conn, &path_key) {
+        Ok(record) => record,
+        Err(WorkpotError::NotFound(_)) => return Ok(PreflightResult::NotInCatalog),
+        Err(e) => return Err(e),
+    };
+
+    assess_structural_preflight(config, &canonical, target, &record)
+}
+
+fn assess_structural_preflight(
+    config: &Config,
+    canonical: &Path,
+    target: ConvertTarget,
+    record: &RepoRecord,
+) -> Result<PreflightResult> {
+    if catalog::is_git_worktree(canonical) && canonical.join(".git").is_file() {
+        let common = git::resolve_git_common_dir(canonical)?;
         return Ok(PreflightResult::Blocked {
             reason: format!(
                 "path is a git worktree; run convert on the bare repo at {}",
@@ -151,22 +171,24 @@ pub fn assess_structural_blockers(
         });
     }
 
-    if let Some(wrong_layout) = wrong_layout_for_target(target, is_bare_repo(&canonical)) {
+    if let Some(wrong_layout) = wrong_layout_for_target(target, is_bare_repo(canonical)) {
         return Ok(wrong_layout);
     }
 
-    let path_key = canonical.display().to_string();
-    let record = match catalog::get_repo_by_path(conn, &path_key) {
-        Ok(record) => record,
-        Err(WorkpotError::NotFound(_)) => return Ok(PreflightResult::NotInCatalog),
-        Err(e) => return Err(e),
-    };
+    assess_structural_blockers_for_record(config, canonical, target, record)
+}
 
-    let resolved_paths = resolve_target_paths(config, &record, &canonical, target)?;
-    if let Err(e) = check_target_paths_exist(&resolved_paths, &canonical) {
+fn assess_structural_blockers_for_record(
+    config: &Config,
+    canonical: &Path,
+    target: ConvertTarget,
+    record: &RepoRecord,
+) -> Result<PreflightResult> {
+    let resolved = resolve_conversion_layout(config, record, canonical, target)?;
+    if let Err(e) = check_target_paths_exist(&resolved.paths, canonical) {
         return Ok(blocked_from_preflight_error(e));
     }
-    if let Err(e) = assert_safe_to_convert(config, &canonical, &resolved_paths) {
+    if let Err(e) = assert_safe_to_convert(config, canonical, &resolved.paths) {
         return Ok(blocked_from_preflight_error(e));
     }
 
@@ -196,11 +218,26 @@ pub fn persist_structural_preflight_for_repo(
         .canonicalize()
         .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", path.display())))?;
     let path_key = canonical.display().to_string();
-    let is_bare = is_bare_repo(&canonical);
+    let record = catalog::get_repo_by_path(conn, &path_key)?;
+    persist_structural_preflight_for_record(conn, config, &canonical, &path_key, &record)
+}
+
+fn persist_structural_preflight_for_record(
+    conn: &Connection,
+    config: &Config,
+    canonical: &Path,
+    path_key: &str,
+    record: &RepoRecord,
+) -> Result<()> {
+    let is_bare = is_bare_repo(canonical);
     let reason = match convert_target_for_record(&config.migration, is_bare) {
         Some(target) => {
-            let result = assess_structural_blockers(conn, config, &canonical, target)?;
-            structural_block_reason(&result)
+            let result = assess_structural_preflight(config, canonical, target, record)?;
+            if result == PreflightResult::Ready {
+                None
+            } else {
+                Some(preflight_message(&result))
+            }
         }
         None => None,
     };
@@ -214,17 +251,17 @@ pub fn persist_structural_preflight_for_repo(
 pub fn persist_all_structural_preflight(conn: &Connection, config: &Config) -> Result<()> {
     let repos = catalog::list_repos(conn)?;
     for record in repos {
-        if record.path.exists() {
-            persist_structural_preflight_for_repo(conn, config, &record.path)?;
+        if !record.path.exists() {
+            continue;
         }
+        let canonical = record
+            .path
+            .canonicalize()
+            .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", record.path.display())))?;
+        let path_key = canonical.display().to_string();
+        persist_structural_preflight_for_record(conn, config, &canonical, &path_key, &record)?;
     }
     Ok(())
-}
-
-/// Full preflight including volatile checks. Prefer [`run_volatile_preflight`] or
-/// [`assess_conversion_readiness`] for tier-specific gates.
-pub fn run_preflight(path: &Path) -> Result<PreflightResult> {
-    run_volatile_preflight(path)
 }
 
 fn blocked_from_preflight_error(err: WorkpotError) -> PreflightResult {
@@ -233,14 +270,6 @@ fn blocked_from_preflight_error(err: WorkpotError) -> PreflightResult {
         other => PreflightResult::Blocked {
             reason: other.to_string(),
         },
-    }
-}
-
-fn structural_block_reason(result: &PreflightResult) -> Option<String> {
-    if *result == PreflightResult::Ready {
-        None
-    } else {
-        Some(preflight_message(result))
     }
 }
 
@@ -267,14 +296,6 @@ fn branch_layout_preflight(canonical: &Path) -> Result<Option<PreflightResult>> 
         return Ok(Some(PreflightResult::DetachedHead));
     }
     Ok(None)
-}
-
-fn worktree_paths_for_preflight(canonical: &Path) -> Result<Vec<PathBuf>> {
-    if is_bare_repo(canonical) {
-        git::list_worktree_paths(canonical)
-    } else {
-        Ok(vec![canonical.to_path_buf()])
-    }
 }
 
 fn dirty_worktree_in(paths: &[PathBuf]) -> Result<Option<PreflightResult>> {
@@ -356,10 +377,6 @@ pub fn catalog_path_swap(
     Ok(())
 }
 
-fn is_linked_worktree(path: &Path) -> bool {
-    catalog::is_git_worktree(path) && path.join(".git").is_file()
-}
-
 fn existing_worktree_dir_names(dir: &Path) -> Vec<String> {
     std::fs::read_dir(dir)
         .into_iter()
@@ -392,25 +409,20 @@ fn worktree_name_for_branch(
     unique_worktree_name(branch, &existing)
 }
 
-fn conversion_blocked(preflight: &PreflightResult) -> WorkpotError {
-    WorkpotError::ConversionPreflight(preflight_message(preflight))
+fn path_display_key(path: &Path) -> String {
+    path.canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .display()
+        .to_string()
 }
 
 fn check_target_paths_exist(resolved_paths: &[(String, PathBuf)], source: &Path) -> Result<()> {
-    let source_key = source
-        .canonicalize()
-        .unwrap_or_else(|_| source.to_path_buf())
-        .display()
-        .to_string();
+    let source_key = path_display_key(source);
     for (label, path) in resolved_paths {
         if label == "temp" {
             continue;
         }
-        let path_key = path
-            .canonicalize()
-            .unwrap_or_else(|_| path.clone())
-            .display()
-            .to_string();
+        let path_key = path_display_key(path);
         if path_key == source_key {
             continue;
         }
@@ -428,12 +440,8 @@ fn validate_resolved_path(resolved: &Path, parent: &Path) -> Result<()> {
     if resolved
         .components()
         .any(|c| matches!(c, Component::ParentDir))
+        || !resolved.starts_with(parent)
     {
-        return Err(WorkpotError::ConversionPreflight(
-            "resolved path escapes parent directory".into(),
-        ));
-    }
-    if !resolved.starts_with(parent) {
         return Err(WorkpotError::ConversionPreflight(
             "resolved path escapes parent directory".into(),
         ));
@@ -468,10 +476,10 @@ pub fn preflight_message(result: &PreflightResult) -> String {
     }
 }
 
-fn health_check_bare(bare_path: &Path, worktree_path: &Path) -> Result<()> {
+fn health_check_rev_parse(path: &Path) -> Result<()> {
     let status = git_cmd_clean()
         .args(["rev-parse", "HEAD"])
-        .current_dir(bare_path)
+        .current_dir(path)
         .status()
         .map_err(WorkpotError::Io)?;
     if !status.success() {
@@ -479,6 +487,11 @@ fn health_check_bare(bare_path: &Path, worktree_path: &Path) -> Result<()> {
             "health check failed: rev-parse HEAD".into(),
         ));
     }
+    Ok(())
+}
+
+fn health_check_bare(bare_path: &Path, worktree_path: &Path) -> Result<()> {
+    health_check_rev_parse(bare_path)?;
 
     let output = git_cmd_clean()
         .args(["worktree", "list", "--porcelain"])
@@ -521,17 +534,7 @@ fn health_check_bare(bare_path: &Path, worktree_path: &Path) -> Result<()> {
 }
 
 fn health_check_local(path: &Path) -> Result<()> {
-    let status = git_cmd_clean()
-        .args(["rev-parse", "HEAD"])
-        .current_dir(path)
-        .status()
-        .map_err(WorkpotError::Io)?;
-    if !status.success() {
-        return Err(WorkpotError::ConversionFailed(
-            "health check failed: rev-parse HEAD".into(),
-        ));
-    }
-    Ok(())
+    health_check_rev_parse(path)
 }
 
 fn path_to_utf8<'a>(path: &'a Path, label: &str) -> Result<&'a str> {
@@ -539,16 +542,21 @@ fn path_to_utf8<'a>(path: &'a Path, label: &str) -> Result<&'a str> {
         .ok_or_else(|| WorkpotError::ConversionFailed(format!("{label} path not UTF-8")))
 }
 
+struct ResolvedConversion {
+    paths: Vec<(String, PathBuf)>,
+    new_path: PathBuf,
+    new_name: String,
+    branch_for_bare: Option<String>,
+}
+
 struct PreparedConversion {
     canonical: PathBuf,
     path_key: String,
     parent_dir: PathBuf,
-    resolved_paths: Vec<(String, PathBuf)>,
+    resolved: ResolvedConversion,
     temp_path: PathBuf,
     target: ConvertTarget,
-    new_path: PathBuf,
-    new_name: String,
-    branch_for_bare: Option<String>,
+    source_remotes: Vec<git::RemoteConfig>,
 }
 
 enum PrepareOutcome {
@@ -577,24 +585,25 @@ fn prepare_conversion(
 
     let preflight = assess_conversion_readiness(conn, config, path, target)?;
     if preflight != PreflightResult::Ready {
-        return Err(conversion_blocked(&preflight));
+        return Err(WorkpotError::ConversionPreflight(preflight_message(
+            &preflight,
+        )));
     }
 
     let record = catalog::get_repo_by_path(conn, &path_key)?;
 
-    let resolved_paths = resolve_target_paths(config, &record, &canonical, target)?;
+    let resolved = resolve_conversion_layout(config, &record, &canonical, target)?;
 
     if dry_run {
         return Ok(PrepareOutcome::DryRun {
             preflight,
-            resolved_paths,
+            resolved_paths: resolved.paths,
         });
     }
 
-    let temp_path = resolved_path_by_label(&resolved_paths, "temp")?;
+    let temp_path = resolved_path_by_label(&resolved.paths, "temp")?;
 
-    let (new_path, new_name, branch_for_bare) =
-        conversion_targets(config, &record, &canonical, target, &parent_dir)?;
+    let source_remotes = git::list_remotes(&canonical)?;
 
     std::fs::rename(&canonical, &temp_path).map_err(|e| {
         log::warn!("convert_repo rename failed: {e}");
@@ -605,29 +614,33 @@ fn prepare_conversion(
         canonical,
         path_key,
         parent_dir,
-        resolved_paths,
+        resolved,
         temp_path,
         target,
-        new_path,
-        new_name,
-        branch_for_bare,
+        source_remotes,
     }))
 }
 
+fn cleanup_partial_bare(bare_git_path: &Path, worktree_path: &Path) {
+    if let Err(cleanup) = std::fs::remove_dir_all(worktree_path) {
+        log::warn!(
+            "failed to remove partial worktree {} after conversion failure: {cleanup}",
+            worktree_path.display()
+        );
+    }
+    if let Err(cleanup) = std::fs::remove_dir_all(bare_git_path) {
+        log::warn!(
+            "failed to remove partial bare repo {} after conversion failure: {cleanup}",
+            bare_git_path.display()
+        );
+    }
+}
+
 fn clone_bare_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String, String)> {
-    let bare_git_path = prepared
-        .resolved_paths
-        .iter()
-        .find(|(label, _)| label == "bare_repo")
-        .map(|(_, p)| p.clone())
-        .ok_or_else(|| WorkpotError::ConversionFailed("missing bare path".into()))?;
-    let worktree_path = prepared
-        .resolved_paths
-        .iter()
-        .find(|(label, _)| label == "worktree")
-        .map(|(_, p)| p.clone())
-        .ok_or_else(|| WorkpotError::ConversionFailed("missing worktree path".into()))?;
+    let bare_git_path = resolved_path_by_label(&prepared.resolved.paths, "bare_repo")?;
+    let worktree_path = resolved_path_by_label(&prepared.resolved.paths, "worktree")?;
     let branch = prepared
+        .resolved
         .branch_for_bare
         .clone()
         .ok_or_else(|| WorkpotError::ConversionFailed("missing branch for worktree".into()))?;
@@ -668,19 +681,13 @@ fn clone_bare_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String, 
         return Err(WorkpotError::ConversionFailed("worktree add failed".into()));
     }
 
+    if let Err(e) = git::apply_remotes(&bare_git_path, &prepared.source_remotes) {
+        cleanup_partial_bare(&bare_git_path, &worktree_path);
+        return Err(e);
+    }
+
     if let Err(e) = health_check_bare(&bare_git_path, &worktree_path) {
-        if let Err(cleanup) = std::fs::remove_dir_all(&worktree_path) {
-            log::warn!(
-                "failed to remove partial worktree {} after health check failure: {cleanup}",
-                worktree_path.display()
-            );
-        }
-        if let Err(cleanup) = std::fs::remove_dir_all(&bare_git_path) {
-            log::warn!(
-                "failed to remove partial bare repo {} after health check failure: {cleanup}",
-                bare_git_path.display()
-            );
-        }
+        cleanup_partial_bare(&bare_git_path, &worktree_path);
         return Err(e);
     }
     let gcd = bare_git_path
@@ -688,11 +695,11 @@ fn clone_bare_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String, 
         .map_err(WorkpotError::Io)?
         .display()
         .to_string();
-    Ok((bare_git_path, prepared.new_name.clone(), gcd))
+    Ok((bare_git_path, prepared.resolved.new_name.clone(), gcd))
 }
 
 fn clone_local_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String, String)> {
-    let target_path = prepared.new_path.clone();
+    let target_path = prepared.resolved.new_path.clone();
     let default_branch = git::detect_default_branch_for_path(&prepared.temp_path)?;
     let status = git_cmd_clean()
         .args([
@@ -709,6 +716,17 @@ fn clone_local_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String,
     if !status.success() {
         return Err(WorkpotError::ConversionFailed("clone failed".into()));
     }
+
+    if let Err(e) = git::apply_remotes(&target_path, &prepared.source_remotes) {
+        if let Err(cleanup) = std::fs::remove_dir_all(&target_path) {
+            log::warn!(
+                "failed to remove partial local checkout {} after remote reconcile failure: {cleanup}",
+                target_path.display()
+            );
+        }
+        return Err(e);
+    }
+
     if let Err(e) = health_check_local(&target_path) {
         if let Err(cleanup) = std::fs::remove_dir_all(&target_path) {
             log::warn!(
@@ -721,14 +739,7 @@ fn clone_local_layout(prepared: &PreparedConversion) -> Result<(PathBuf, String,
     let gcd = git::resolve_git_common_dir(&target_path)?
         .display()
         .to_string();
-    Ok((target_path, prepared.new_name.clone(), gcd))
-}
-
-fn clone_for_target(prepared: &PreparedConversion) -> Result<(PathBuf, String, String)> {
-    match prepared.target {
-        ConvertTarget::Bare => clone_bare_layout(prepared),
-        ConvertTarget::Local => clone_local_layout(prepared),
-    }
+    Ok((target_path, prepared.resolved.new_name.clone(), gcd))
 }
 
 fn finalize_conversion(
@@ -806,7 +817,10 @@ pub fn convert_repo(
             resolved_paths,
         }),
         PrepareOutcome::Ready(prepared) => {
-            let clone_result = clone_for_target(&prepared);
+            let clone_result = match prepared.target {
+                ConvertTarget::Bare => clone_bare_layout(&prepared),
+                ConvertTarget::Local => clone_local_layout(&prepared),
+            };
             let (new_path, new_name, new_git_common_dir) = match clone_result {
                 Ok(v) => v,
                 Err(e) => {
@@ -829,12 +843,12 @@ pub fn convert_repo(
     }
 }
 
-fn resolve_target_paths(
+fn resolve_conversion_layout(
     config: &Config,
     record: &RepoRecord,
     canonical: &Path,
     target: ConvertTarget,
-) -> Result<Vec<(String, PathBuf)>> {
+) -> Result<ResolvedConversion> {
     let parent_dir = canonical
         .parent()
         .ok_or_else(|| WorkpotError::InvalidPath("path has no parent directory".into()))?;
@@ -849,19 +863,35 @@ fn resolve_target_paths(
     match target {
         ConvertTarget::Bare => {
             let layout = resolve_bare_layout(config, &project, canonical, parent_dir)?;
-            Ok(vec![
-                ("temp".into(), temp_path),
-                ("bare_repo".into(), layout.bare_git_path),
-                ("worktree".into(), layout.worktree_path),
-            ])
+            let new_name = layout
+                .bare_git_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("bare.git")
+                .to_string();
+            Ok(ResolvedConversion {
+                paths: vec![
+                    ("temp".into(), temp_path),
+                    ("bare_repo".into(), layout.bare_git_path.clone()),
+                    ("worktree".into(), layout.worktree_path),
+                ],
+                new_path: layout.bare_git_path,
+                new_name,
+                branch_for_bare: Some(layout.branch),
+            })
         }
         ConvertTarget::Local => {
             let target_path = parent_dir.join(&project);
             validate_resolved_path(&target_path, parent_dir)?;
-            Ok(vec![
-                ("temp".into(), temp_path),
-                ("target".into(), target_path),
-            ])
+            Ok(ResolvedConversion {
+                paths: vec![
+                    ("temp".into(), temp_path),
+                    ("target".into(), target_path.clone()),
+                ],
+                new_path: target_path,
+                new_name: project,
+                branch_for_bare: None,
+            })
         }
     }
 }
@@ -925,33 +955,6 @@ fn assert_safe_to_convert(
         )));
     }
     Ok(())
-}
-
-fn conversion_targets(
-    config: &Config,
-    record: &RepoRecord,
-    canonical: &Path,
-    target: ConvertTarget,
-    parent_dir: &Path,
-) -> Result<(PathBuf, String, Option<String>)> {
-    let project = resolve_project_name(&config.migration, record);
-    match target {
-        ConvertTarget::Bare => {
-            let layout = resolve_bare_layout(config, &project, canonical, parent_dir)?;
-            let new_name = layout
-                .bare_git_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("bare.git")
-                .to_string();
-            Ok((layout.bare_git_path, new_name, Some(layout.branch)))
-        }
-        ConvertTarget::Local => {
-            let target_path = parent_dir.join(&project);
-            validate_resolved_path(&target_path, parent_dir)?;
-            Ok((target_path, project, None))
-        }
-    }
 }
 
 #[cfg(test)]

@@ -346,6 +346,102 @@ fn detect_default_branch(repo: &Repository) -> std::result::Result<String, git2:
         .ok_or_else(|| git2::Error::from_str("no branches found"))
 }
 
+/// Snapshot of a git remote's fetch and push URLs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteConfig {
+    pub name: String,
+    pub url: String,
+    pub push_url: Option<String>,
+}
+
+/// List configured remotes for a repository.
+pub fn list_remotes(path: &Path) -> Result<Vec<RemoteConfig>> {
+    let repo =
+        Repository::open(path).map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+
+    let names = repo
+        .remotes()
+        .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+
+    let mut remotes = Vec::new();
+    for i in 0..names.len() {
+        let Ok(Some(name)) = names.get(i) else {
+            continue;
+        };
+        let remote = repo
+            .find_remote(name)
+            .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+        let url = remote
+            .url()
+            .map(String::from)
+            .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+        let push_url = remote.pushurl().ok().flatten().map(String::from);
+        remotes.push(RemoteConfig {
+            name: name.to_string(),
+            url,
+            push_url,
+        });
+    }
+    Ok(remotes)
+}
+
+/// Sync target remotes to match `remotes` exactly (add/update/delete as needed).
+pub fn apply_remotes(path: &Path, remotes: &[RemoteConfig]) -> Result<()> {
+    let repo =
+        Repository::open(path).map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+
+    let current_names: Vec<String> = {
+        let names = repo
+            .remotes()
+            .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+        (0..names.len())
+            .filter_map(|i| names.get(i).ok().flatten().map(String::from))
+            .collect()
+    };
+
+    let snapshot_names: std::collections::HashSet<&str> =
+        remotes.iter().map(|r| r.name.as_str()).collect();
+
+    for name in &current_names {
+        if !snapshot_names.contains(name.as_str()) {
+            repo.remote_delete(name)
+                .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+        }
+    }
+
+    for remote_cfg in remotes {
+        let current_push_url = repo
+            .find_remote(&remote_cfg.name)
+            .ok()
+            .and_then(|remote| remote.pushurl().ok().flatten().map(String::from));
+
+        if current_names.contains(&remote_cfg.name) {
+            repo.remote_set_url(&remote_cfg.name, &remote_cfg.url)
+                .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+            match (&remote_cfg.push_url, &current_push_url) {
+                (Some(url), _) => {
+                    repo.remote_set_pushurl(&remote_cfg.name, Some(url))
+                        .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+                }
+                (None, Some(_)) => {
+                    repo.remote_set_pushurl(&remote_cfg.name, None)
+                        .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+                }
+                (None, None) => {}
+            }
+        } else {
+            repo.remote(&remote_cfg.name, &remote_cfg.url)
+                .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+            if let Some(push_url) = &remote_cfg.push_url {
+                repo.remote_set_pushurl(&remote_cfg.name, Some(push_url))
+                    .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Default branch for bare→normal conversion (HEAD symbolic target, else first local branch).
 pub(crate) fn detect_default_branch_for_path(repo_path: &Path) -> Result<String> {
     let repo = Repository::open(repo_path)
@@ -427,6 +523,61 @@ mod tests {
 
         let state = open_and_query(&path).expect("query");
         assert_eq!(state.is_dirty, Some(true));
+    }
+
+    #[test]
+    fn list_remotes_round_trip_via_apply_remotes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        Repository::init(&path).expect("init");
+        let repo = Repository::open(&path).expect("open");
+        repo.remote("origin", "https://example.com/foo.git")
+            .expect("add origin");
+
+        let snapshot = list_remotes(&path).expect("list");
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].name, "origin");
+        assert_eq!(snapshot[0].url, "https://example.com/foo.git");
+
+        repo.remote_set_url("origin", "https://example.com/bar.git")
+            .expect("mutate url");
+
+        apply_remotes(&path, &snapshot).expect("apply");
+        let restored = list_remotes(&path).expect("list again");
+        assert_eq!(restored, snapshot);
+    }
+
+    #[test]
+    fn apply_remotes_empty_removes_clone_injected_origin() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source = dir.path().join("source");
+        let clone_path = dir.path().join("clone");
+        Repository::init(&source).expect("init source");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        std::fs::write(source.join("README"), "hi").expect("write");
+        let repo = Repository::open(&source).expect("open source");
+        let mut index = repo.index().expect("index");
+        index.add_path(std::path::Path::new("README")).expect("add");
+        index.write().expect("write");
+        let tree_id = index.write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+
+        let status = crate::testing::git_cmd()
+            .args([
+                "clone",
+                "-q",
+                source.to_str().expect("utf8"),
+                clone_path.to_str().expect("utf8"),
+            ])
+            .status()
+            .expect("clone");
+        assert!(status.success());
+
+        assert!(!list_remotes(&clone_path).expect("list").is_empty());
+        apply_remotes(&clone_path, &[]).expect("clear remotes");
+        assert!(list_remotes(&clone_path).expect("list after").is_empty());
     }
 
     #[test]
