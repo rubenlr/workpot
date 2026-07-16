@@ -4,3 +4,5 @@ src-tauri/gen/
 node_modules/
 target/
 .planning/
+pnpm-lock.yaml
+package-lock.json
