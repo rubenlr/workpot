@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 description = "Workpot macOS menu bar tray"
 
+[lints]
+workspace = true
+
 [lib]
 name = "workpot_tray_lib"
 crate-type = ["lib", "cdylib", "staticlib"]

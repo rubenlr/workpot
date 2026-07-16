@@ -15,3 +15,6 @@ directories = "6.0.0"
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+[workspace.lints.clippy]
+all = "deny"

@@ -416,6 +416,98 @@ fn test_set_alias_stores_trimmed_and_list_repos() {
 }
 
 #[test]
+fn test_migration_009_repo_hidden_branches_table() {
+    let (_dir, conn) = temp_db();
+    let exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='repo_hidden_branches'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("repo_hidden_branches exists");
+    assert_eq!(exists, 1);
+}
+
+#[test]
+fn test_hidden_branch_set_list_unset() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-hidden-branch";
+    insert_repo(&conn, path);
+    org::set_branch_hidden(&conn, path, "feature", true).expect("hide");
+    let hidden = org::list_hidden_branches(&conn, path).expect("list");
+    assert_eq!(hidden, vec!["feature"]);
+    org::set_branch_hidden(&conn, path, "feature", false).expect("show");
+    let hidden = org::list_hidden_branches(&conn, path).expect("list after unset");
+    assert!(hidden.is_empty());
+}
+
+#[test]
+fn test_hidden_branch_missing_repo_returns_not_found() {
+    let (_dir, conn) = temp_db();
+    let err = org::set_branch_hidden(&conn, "/tmp/missing", "main", true).unwrap_err();
+    assert!(matches!(err, WorkpotError::NotFound(_)));
+}
+
+#[test]
+fn test_hidden_branch_rejects_empty_or_whitespace() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-hidden-empty";
+    insert_repo(&conn, path);
+    let err = org::set_branch_hidden(&conn, path, "", true).unwrap_err();
+    assert!(matches!(err, WorkpotError::InvalidInput(_)));
+    let err = org::set_branch_hidden(&conn, path, "   ", true).unwrap_err();
+    assert!(matches!(err, WorkpotError::InvalidInput(_)));
+}
+
+#[test]
+fn test_hidden_branch_hide_is_idempotent() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-hidden-idempotent";
+    insert_repo(&conn, path);
+    org::set_branch_hidden(&conn, path, "feature", true).expect("hide");
+    org::set_branch_hidden(&conn, path, "feature", true).expect("hide again");
+    let hidden = org::list_hidden_branches(&conn, path).expect("list");
+    assert_eq!(hidden, vec!["feature"]);
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM repo_hidden_branches WHERE repo_path = ?1",
+            params![path],
+            |row| row.get(0),
+        )
+        .expect("count");
+    assert_eq!(count, 1);
+}
+
+#[test]
+fn test_hidden_branches_cascade_on_repo_delete() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-hidden-cascade";
+    insert_repo(&conn, path);
+    org::set_branch_hidden(&conn, path, "feature", true).expect("hide");
+    conn.execute("DELETE FROM repos WHERE path = ?1", params![path])
+        .expect("delete repo");
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM repo_hidden_branches WHERE repo_path = ?1",
+            params![path],
+            |row| row.get(0),
+        )
+        .expect("count hidden");
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn test_list_hidden_branches_orders_nocase() {
+    let (_dir, conn) = temp_db();
+    let path = "/tmp/org-hidden-order";
+    insert_repo(&conn, path);
+    org::set_branch_hidden(&conn, path, "Zeta", true).expect("hide Zeta");
+    org::set_branch_hidden(&conn, path, "alpha", true).expect("hide alpha");
+    let hidden = org::list_hidden_branches(&conn, path).expect("list");
+    assert_eq!(hidden, vec!["alpha", "Zeta"]);
+}
+
+#[test]
 fn test_db_fixture_compiles() {
     let (_dir, conn) = temp_db();
     assert!(conn.is_autocommit());

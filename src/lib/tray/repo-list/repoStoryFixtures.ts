@@ -40,6 +40,7 @@ export function storyBranches(): BranchListItemDto[] {
       tracking: "local_remote",
       ahead: 5,
       behind: 3,
+      hidden: false,
     },
     {
       name: "wip",
@@ -47,6 +48,7 @@ export function storyBranches(): BranchListItemDto[] {
       tracking: "local_only",
       ahead: null,
       behind: null,
+      hidden: false,
     },
     {
       name: "origin/feature/IP-5481-add-logs-and-observability",
@@ -54,6 +56,7 @@ export function storyBranches(): BranchListItemDto[] {
       tracking: "remote_only",
       ahead: null,
       behind: null,
+      hidden: false,
     },
     {
       name: "feat/ui",
@@ -61,6 +64,7 @@ export function storyBranches(): BranchListItemDto[] {
       tracking: "local_remote",
       ahead: 2,
       behind: 1,
+      hidden: false,
     },
   ];
 }
@@ -72,5 +76,6 @@ export function storyCheckoutLocalOnlyBranch(): BranchListItemDto {
     tracking: "local_only",
     ahead: null,
     behind: null,
+    hidden: false,
   };
 }

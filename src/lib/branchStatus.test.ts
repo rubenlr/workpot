@@ -15,6 +15,7 @@ function branch(
   return {
     ahead: null,
     behind: null,
+    hidden: false,
     ...partial,
   };
 }

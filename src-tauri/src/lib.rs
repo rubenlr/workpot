@@ -115,6 +115,7 @@ pub fn run() {
             commands::set_pin,
             commands::set_pin_order,
             commands::list_branches,
+            commands::set_branch_hidden,
             commands::show_repo_context_menu,
         ])
         .run(tauri::generate_context!())

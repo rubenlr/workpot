@@ -19,6 +19,7 @@ install: build
     {{cargo}} install --path crates/workpot-cli -q
 
 # Tray dev only (no release DMG — use `just build` for bundles).
+# macOS only — requires Tauri tray + webview (v1 has no Linux/Windows tray).
 # Git refresh loading is tray-icon only (no panel spinner).
 # Trace tray: RUST_LOG=workpot_tray_lib=debug,workpot_core=debug just launch
 # Sync push/pull traces: RUST_LOG=workpot_tray_lib=info just launch
@@ -48,13 +49,17 @@ fmt-check:
     {{pnpm}} exec svelte-check --tsconfig ./tsconfig.json --threshold error
     {{cargo}} clippy --workspace --fix --allow-dirty --allow-staged --all-targets -- -D warnings
 
-# CI test-macos job — cargo/vitest/coverage/bundle only (`fmt-check` covers format/lint/svelte-check)
+# CI test-macos job — cargo/vitest/coverage/bundle only (`fmt-check` covers format/lint/svelte-check).
+# macOS only — ends with `tauri:build` (tray bundle smoke). Linux: `cargo test` + `pnpm test` only.
 test:
     {{cargo}} fetch
     {{pnpm}} install --frozen-lockfile
     {{cargo}} test -p workpot-core -p workpot-cli -p workpot-tray --all-targets -q
     {{pnpm}} run test:coverage -- --reporter=dot
     CI=true {{pnpm}} run tauri:build
+
+# macOS only — alias for `test` (local CI test-macos parity).
+alias try := test
 
 fix: fmt-fix
 
@@ -70,7 +75,7 @@ coverage:
     {{cargo}} llvm-cov test -q -p workpot-tray --all-targets --lcov --output-path lcov-tray.info
 
 # Pre-push: release build + fmt/clippy (CI `code-quality` on Ubuntu). Tests: `just test` (CI `test-macos` on macOS).
-# No cargo deny/audit until Tauri 3 — see CONTRIBUTING.md.
+# macOS only — `build` includes `tauri:build`. No cargo deny/audit until Tauri 3 — see CONTRIBUTING.md.
 pre: build fix fmt-check
     ./target/release/workpot --version
 

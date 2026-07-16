@@ -319,6 +319,16 @@ impl AppState {
         self.db.with_write(|conn| org::set_pin_order(conn, items))
     }
 
+    pub fn list_hidden_branches(&self, path: &str) -> Result<Vec<String>> {
+        self.db
+            .with_read(|conn| org::list_hidden_branches(conn, path))
+    }
+
+    pub fn set_branch_hidden(&self, path: &str, branch: &str, hidden: bool) -> Result<()> {
+        self.db
+            .with_write(|conn| org::set_branch_hidden(conn, path, branch, hidden))
+    }
+
     pub fn convert_repo(
         &self,
         path: &Path,

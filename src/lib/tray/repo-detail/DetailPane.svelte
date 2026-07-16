@@ -72,6 +72,7 @@
   });
 
   let branches = $state<BranchListItemDto[]>([]);
+  let showAllBranches = $state(false);
   let branchError = $state<string | null>(null);
   let checkoutError = $state<string | null>(null);
   let notesValue = $state("");
@@ -112,6 +113,17 @@
   });
 
   $effect(() => {
+    repo.path;
+    showAllBranches = false;
+  });
+
+  const visibleBranches = $derived(
+    showAllBranches ? branches : branches.filter((b) => !b.hidden),
+  );
+
+  const hasHiddenBranches = $derived(branches.some((b) => b.hidden));
+
+  $effect(() => {
     const path = repo.path;
     branchRevision;
     branchError = null;
@@ -135,6 +147,22 @@
       cancelled = true;
     };
   });
+
+  async function toggleBranchHidden(b: BranchListItemDto) {
+    branchError = null;
+    try {
+      await invoke("set_branch_hidden", {
+        repoPath: repo.path,
+        branch: b.name,
+        hidden: !b.hidden,
+      });
+      branches = branches.map((item) =>
+        item.name === b.name ? { ...item, hidden: !item.hidden } : item,
+      );
+    } catch (e) {
+      branchError = String(e);
+    }
+  }
 
   async function activateBranch(b: BranchListItemDto) {
     checkoutError = null;
@@ -326,7 +354,20 @@
     </section>
 
     <section>
-      <DetailSectionHeading>Branches</DetailSectionHeading>
+      <div class="flex items-center justify-between gap-2">
+        <DetailSectionHeading>Branches</DetailSectionHeading>
+        {#if hasHiddenBranches}
+          <button
+            type="button"
+            class="shrink-0 rounded-full border border-card-border bg-card-surface px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-inverse-on-surface-variant hover:bg-hover-overlay"
+            onclick={() => {
+              showAllBranches = !showAllBranches;
+            }}
+          >
+            {showAllBranches ? "Show less" : "Show all"}
+          </button>
+        {/if}
+      </div>
 
       <div class="space-y-1">
         {#if checkoutError}
@@ -334,18 +375,22 @@
         {/if}
         {#if branchError}
           <p class="px-2 py-1 text-sm text-error">{branchError}</p>
-        {:else if branches.length === 0}
-          <p class="px-2 py-1 text-sm text-inverse-on-surface-variant">
-            No branches
-          </p>
+        {/if}
+        {#if visibleBranches.length === 0}
+          {#if !branchError}
+            <p class="px-2 py-1 text-sm text-inverse-on-surface-variant">
+              No branches
+            </p>
+          {/if}
         {:else}
-          {#each branches as b (b.name)}
+          {#each visibleBranches as b (b.name)}
             <BranchListRow
               branch={b}
               repoPath={repo.path}
               {activeSync}
               {onSync}
               onActivate={(branch) => void activateBranch(branch)}
+              onToggleHidden={(branch) => void toggleBranchHidden(branch)}
             />
           {/each}
         {/if}

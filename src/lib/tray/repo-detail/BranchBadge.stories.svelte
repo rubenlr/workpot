@@ -9,7 +9,7 @@
     sync: { ahead: number | null; behind: number | null },
     name = "main",
   ): BranchListItemDto {
-    return { name, checked_out: checkedOut, tracking, ...sync };
+    return { name, checked_out: checkedOut, tracking, hidden: false, ...sync };
   }
 
   const none = { ahead: null, behind: null };

@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -167,6 +167,22 @@ fn log_emit_err(event: &str, err: tauri::Error) {
 /// Active repo path for the most recent `show_repo_context_menu` popup.
 pub struct ContextMenuRepo(pub Arc<Mutex<Option<String>>>);
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ShowRepoContextMenuParams {
+    repo_path: String,
+    is_pinned: bool,
+    tags: Vec<String>,
+    #[serde(default)]
+    convert_to: Option<String>,
+    #[serde(default)]
+    convert_block_reason: Option<String>,
+    #[serde(default)]
+    client_x: Option<f64>,
+    #[serde(default)]
+    client_y: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct RepoDto {
     pub path: String,
@@ -189,7 +205,7 @@ pub struct RepoDto {
     pub convert_block_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum BranchTrackingDto {
     LocalOnly,
@@ -204,6 +220,7 @@ pub struct BranchListItemDto {
     pub tracking: BranchTrackingDto,
     pub ahead: Option<i64>,
     pub behind: Option<i64>,
+    pub hidden: bool,
 }
 
 pub fn repo_records_to_dtos(records: Vec<RepoRecord>, migration: &MigrationConfig) -> Vec<RepoDto> {
@@ -500,9 +517,31 @@ pub async fn list_branches(
             .indexed_launch_path(Path::new(&repo_path))
             .map_err(|e| e.to_string())?;
     }
-    tauri::async_runtime::spawn_blocking(move || list_branches_sync(&repo_path))
+    let hidden = state
+        .inner()
+        .list_hidden_branches(&repo_path)
+        .map_err(|e| e.to_string())?;
+    let hidden_set: HashSet<String> = hidden.into_iter().collect();
+    let mut items = tauri::async_runtime::spawn_blocking(move || list_branches_sync(&repo_path))
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())??;
+    for item in &mut items {
+        item.hidden = hidden_set.contains(&item.name);
+    }
+    Ok(items)
+}
+
+#[tauri::command]
+pub fn set_branch_hidden(
+    repo_path: String,
+    branch: String,
+    hidden: bool,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .inner()
+        .set_branch_hidden(&repo_path, &branch, hidden)
+        .map_err(|e| e.to_string())
 }
 
 fn remote_branch_short_name(full_name: &str) -> Option<String> {
@@ -624,6 +663,68 @@ fn branch_list_item(
         tracking,
         ahead,
         behind,
+        hidden: false,
+    }
+}
+
+fn tracking_sort_order(tracking: BranchTrackingDto) -> u8 {
+    match tracking {
+        BranchTrackingDto::LocalOnly => 0,
+        BranchTrackingDto::LocalRemote => 1,
+        BranchTrackingDto::RemoteOnly => 2,
+    }
+}
+
+fn commit_tip_time(repo: &git2::Repository, oid: git2::Oid) -> i64 {
+    repo.find_commit(oid)
+        .ok()
+        .map(|commit| commit.time().seconds())
+        .unwrap_or(i64::MIN)
+}
+
+fn local_branch_tip_time(repo: &git2::Repository, name: &str) -> i64 {
+    let Ok(branch) = repo.find_branch(name, git2::BranchType::Local) else {
+        return i64::MIN;
+    };
+    branch
+        .get()
+        .target()
+        .map(|oid| commit_tip_time(repo, oid))
+        .unwrap_or(i64::MIN)
+}
+
+fn remote_only_branch_tip_time(repo: &git2::Repository, short_name: &str) -> i64 {
+    let Ok(remotes) = repo.branches(Some(git2::BranchType::Remote)) else {
+        return i64::MIN;
+    };
+    let mut max_time = i64::MIN;
+    for branch in remotes {
+        let Ok((branch, _)) = branch else {
+            continue;
+        };
+        let Some(full_name) = branch.name().ok().flatten() else {
+            continue;
+        };
+        let Some(short) = remote_branch_short_name(full_name) else {
+            continue;
+        };
+        if short != short_name {
+            continue;
+        }
+        let Some(oid) = branch.get().target() else {
+            continue;
+        };
+        max_time = max_time.max(commit_tip_time(repo, oid));
+    }
+    max_time
+}
+
+fn branch_tip_time(repo: &git2::Repository, name: &str, tracking: BranchTrackingDto) -> i64 {
+    match tracking {
+        BranchTrackingDto::LocalOnly | BranchTrackingDto::LocalRemote => {
+            local_branch_tip_time(repo, name)
+        }
+        BranchTrackingDto::RemoteOnly => remote_only_branch_tip_time(repo, name),
     }
 }
 
@@ -642,8 +743,12 @@ fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String>
         .collect();
 
     items.sort_by(|a, b| {
-        b.checked_out
-            .cmp(&a.checked_out)
+        tracking_sort_order(a.tracking)
+            .cmp(&tracking_sort_order(b.tracking))
+            .then_with(|| {
+                branch_tip_time(&repo, &b.name, b.tracking)
+                    .cmp(&branch_tip_time(&repo, &a.name, a.tracking))
+            })
             .then_with(|| a.name.cmp(&b.name))
     });
 
@@ -674,16 +779,20 @@ fn convert_menu_label(target: &str, block_reason: Option<&str>) -> String {
 pub async fn show_repo_context_menu(
     window: Window,
     app: AppHandle,
-    repo_path: String,
-    is_pinned: bool,
-    tags: Vec<String>,
-    convert_to: Option<String>,
-    convert_block_reason: Option<String>,
-    client_x: Option<f64>,
-    client_y: Option<f64>,
+    params: ShowRepoContextMenuParams,
     menu_repo: State<'_, ContextMenuRepo>,
     convert_guard: State<'_, RepoConvertGuard>,
 ) -> Result<(), String> {
+    let ShowRepoContextMenuParams {
+        repo_path,
+        is_pinned,
+        tags,
+        convert_to,
+        convert_block_reason,
+        client_x,
+        client_y,
+    } = params;
+
     log::debug!(
         "show_repo_context_menu: repo_path={} pinned={}",
         repo_path,
@@ -1662,8 +1771,118 @@ mod tests {
 
         let items = list_branches_sync(repo_path.to_str().expect("utf8 path")).expect("sync");
         assert!(!items.is_empty());
-        assert!(items[0].checked_out);
+        let checked_out = items.iter().find(|i| i.checked_out).expect("checked out");
+        assert_eq!(checked_out.tracking, BranchTrackingDto::LocalOnly);
+        assert!(!checked_out.hidden);
+    }
+
+    fn commit_on_ref(
+        repo: &git2::Repository,
+        refname: &str,
+        message: &str,
+        time_secs: i64,
+    ) -> git2::Oid {
+        let sig = git2::Signature::new("test", "test@example.com", &git2::Time::new(time_secs, 0))
+            .expect("sig");
+        let tree_id = repo.index().expect("index").write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        repo.commit(Some(refname), &sig, &sig, message, &tree, &[])
+            .expect("commit")
+    }
+
+    #[test]
+    fn list_branches_sync_sorts_by_category_then_tip_time_then_name() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo_path = dir.path().join("repo");
+        let repo = git2::Repository::init(&repo_path).expect("init");
+        repo.remote("origin", "/tmp/unused-remote")
+            .expect("add remote");
+
+        commit_on_ref(&repo, "HEAD", "main", 1_000);
+        commit_on_ref(&repo, "refs/heads/alpha", "alpha", 5_000);
+        commit_on_ref(&repo, "refs/heads/beta", "beta", 3_000);
+        let tracked_oid = commit_on_ref(&repo, "refs/heads/tracked", "tracked", 4_000);
+        repo.reference(
+            "refs/remotes/origin/tracked",
+            tracked_oid,
+            true,
+            "create remote tracked",
+        )
+        .expect("remote tracked");
+        let mut tracked = repo
+            .find_branch("tracked", git2::BranchType::Local)
+            .expect("tracked branch");
+        tracked
+            .set_upstream(Some("origin/tracked"))
+            .expect("set upstream");
+
+        let remote_only_oid = commit_on_ref(
+            &repo,
+            "refs/remotes/origin/remote-only",
+            "remote-only",
+            6_000,
+        );
+        let _ = remote_only_oid;
+
+        let default_branch = repo
+            .head()
+            .expect("head")
+            .shorthand()
+            .expect("default branch")
+            .to_string();
+
+        let items = list_branches_sync(repo_path.to_str().expect("utf8 path")).expect("sync");
+        let names: Vec<_> = items.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "alpha",
+                "beta",
+                default_branch.as_str(),
+                "tracked",
+                "remote-only"
+            ]
+        );
         assert_eq!(items[0].tracking, BranchTrackingDto::LocalOnly);
+        assert_eq!(items[3].tracking, BranchTrackingDto::LocalRemote);
+        assert_eq!(items[4].tracking, BranchTrackingDto::RemoteOnly);
+    }
+
+    #[test]
+    fn list_branches_hidden_flag_from_db() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("config.toml");
+        let db_path = dir.path().join("workpot.db");
+        std::fs::write(&config_path, "watch_roots = []\nexcludes = []\n").expect("config");
+        let ctx = AppState::open_with_paths(config_path, db_path).expect("open");
+        let repo_path = dir.path().join("sample");
+        std::fs::create_dir_all(&repo_path).expect("mkdir");
+        let repo = git2::Repository::init(&repo_path).expect("init");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        let tree_id = repo.index().expect("index").write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+        commit_on_ref(&repo, "refs/heads/feature", "feature", 2_000);
+        let record = ctx.register_manual(&repo_path).expect("register");
+        let path_str = record.path.display().to_string();
+        ctx.set_branch_hidden(&path_str, "feature", true)
+            .expect("hide feature");
+
+        let hidden = ctx
+            .list_hidden_branches(&path_str)
+            .expect("list hidden")
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>();
+        let mut items = list_branches_sync(repo_path.to_str().expect("utf8 path")).expect("sync");
+        for item in &mut items {
+            item.hidden = hidden.contains(&item.name);
+        }
+
+        let feature = items.iter().find(|i| i.name == "feature").expect("feature");
+        assert!(feature.hidden);
+        let default_branch = items.iter().find(|i| i.checked_out).expect("default");
+        assert!(!default_branch.hidden);
     }
 
     #[test]

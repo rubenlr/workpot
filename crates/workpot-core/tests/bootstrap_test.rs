@@ -92,7 +92,7 @@ fn migrations_apply() {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("user_version");
-    assert_eq!(version, 8);
+    assert_eq!(version, 9);
 
     let table_exists: i32 = conn
         .query_row(
@@ -111,6 +111,15 @@ fn migrations_apply() {
         )
         .expect("index_runs table query");
     assert_eq!(index_runs_exists, 1);
+
+    let hidden_branches_exists: i32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='repo_hidden_branches'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("repo_hidden_branches table query");
+    assert_eq!(hidden_branches_exists, 1);
 }
 
 #[test]

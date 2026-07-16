@@ -14,6 +14,7 @@
     activeSync = null,
     onSync,
     onActivate,
+    onToggleHidden,
     onSyncHoverChange,
   }: {
     branch: BranchListItemDto;
@@ -25,6 +26,7 @@
       direction: SyncDirection,
     ) => void;
     onActivate?: (branch: BranchListItemDto) => void;
+    onToggleHidden?: (branch: BranchListItemDto) => void;
     onSyncHoverChange?: (hovered: boolean) => void;
   } = $props();
 
@@ -89,7 +91,19 @@
       local
     </span>
   {/if}
-  <div class="flex shrink-0 items-center self-center">
+  <div class="flex shrink-0 items-center self-center gap-1">
+    {#if onToggleHidden}
+      <button
+        type="button"
+        class="rounded-full border border-card-border bg-card-surface px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-inverse-on-surface-variant hover:bg-hover-overlay"
+        aria-label={branch.hidden
+          ? `Show branch ${branch.name}`
+          : `Hide branch ${branch.name}`}
+        onclick={() => onToggleHidden?.(branch)}
+      >
+        {branch.hidden ? "Show" : "Hide"}
+      </button>
+    {/if}
     <SyncBadge
       ahead={branch.ahead}
       behind={branch.behind}

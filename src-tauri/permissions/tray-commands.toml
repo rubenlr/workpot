@@ -46,6 +46,7 @@ commands.allow = [
   "set_pin",
   "set_pin_order",
   "list_branches",
+  "set_branch_hidden",
   "show_repo_context_menu",
 ]
 

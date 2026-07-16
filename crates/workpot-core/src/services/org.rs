@@ -193,6 +193,44 @@ pub fn set_pin(conn: &Connection, repo_path: &str, pinned: bool, max_pinned: u32
     Ok(())
 }
 
+pub fn list_hidden_branches(conn: &Connection, repo_path: &str) -> Result<Vec<String>> {
+    ensure_repo_exists(conn, repo_path)?;
+    let mut stmt = conn.prepare(
+        "SELECT branch FROM repo_hidden_branches WHERE repo_path = ?1 ORDER BY branch COLLATE NOCASE",
+    )?;
+    let branches = stmt
+        .query_map(params![repo_path], |row| row.get(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(branches)
+}
+
+pub fn set_branch_hidden(
+    conn: &Connection,
+    repo_path: &str,
+    branch: &str,
+    hidden: bool,
+) -> Result<()> {
+    ensure_repo_exists(conn, repo_path)?;
+    let branch = branch.trim();
+    if branch.is_empty() {
+        return Err(WorkpotError::InvalidInput(
+            "branch must not be empty or whitespace".into(),
+        ));
+    }
+    if hidden {
+        conn.execute(
+            "INSERT OR IGNORE INTO repo_hidden_branches (repo_path, branch) VALUES (?1, ?2)",
+            params![repo_path, branch],
+        )?;
+    } else {
+        conn.execute(
+            "DELETE FROM repo_hidden_branches WHERE repo_path = ?1 AND branch = ?2",
+            params![repo_path, branch],
+        )?;
+    }
+    Ok(())
+}
+
 pub fn set_pin_order(conn: &Connection, items: &[(&str, i64)]) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
     for (path, order) in items {

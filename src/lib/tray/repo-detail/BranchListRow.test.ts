@@ -9,6 +9,7 @@ const branch: BranchListItemDto = {
   tracking: "local_remote",
   ahead: null,
   behind: null,
+  hidden: false,
 };
 
 describe("BranchListRow", () => {
@@ -73,6 +74,7 @@ describe("BranchListRow", () => {
           tracking: "local_only",
           ahead: null,
           behind: null,
+          hidden: false,
         },
         repoPath: "/tmp/repo",
       },
@@ -81,5 +83,40 @@ describe("BranchListRow", () => {
     expect(
       container.querySelector(".material-symbols-outlined")?.textContent,
     ).toBe("check");
+  });
+
+  it("renders Hide label for visible branches when onToggleHidden provided", () => {
+    const { getByRole } = render(BranchListRow, {
+      props: {
+        branch,
+        repoPath: "/tmp/repo",
+        onToggleHidden: vi.fn(),
+      },
+    });
+    expect(getByRole("button", { name: "Hide branch feature" })).toBeTruthy();
+  });
+
+  it("renders Show label for hidden branches when onToggleHidden provided", () => {
+    const { getByRole } = render(BranchListRow, {
+      props: {
+        branch: { ...branch, hidden: true },
+        repoPath: "/tmp/repo",
+        onToggleHidden: vi.fn(),
+      },
+    });
+    expect(getByRole("button", { name: "Show branch feature" })).toBeTruthy();
+  });
+
+  it("calls onToggleHidden when hide/show clicked", async () => {
+    const onToggleHidden = vi.fn();
+    const { getByRole } = render(BranchListRow, {
+      props: {
+        branch,
+        repoPath: "/tmp/repo",
+        onToggleHidden,
+      },
+    });
+    await fireEvent.click(getByRole("button", { name: "Hide branch feature" }));
+    expect(onToggleHidden).toHaveBeenCalledWith(branch);
   });
 });

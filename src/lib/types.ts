@@ -53,6 +53,7 @@ export interface BranchListItemDto {
   tracking: BranchTracking;
   ahead: number | null;
   behind: number | null;
+  hidden: boolean;
 }
 
 export interface RepoDto {

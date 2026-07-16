@@ -43,6 +43,7 @@ const sampleBranch: BranchListItemDto = {
   tracking: "local_remote",
   ahead: null,
   behind: null,
+  hidden: false,
 };
 
 function notesTextarea(container: HTMLElement): HTMLTextAreaElement {
@@ -275,6 +276,7 @@ describe("DetailPane", () => {
         tracking: "local_remote",
         ahead: null,
         behind: null,
+        hidden: false,
       },
     ];
     const fastBranches: BranchListItemDto[] = [
@@ -284,6 +286,7 @@ describe("DetailPane", () => {
         tracking: "local_remote",
         ahead: null,
         behind: null,
+        hidden: false,
       },
     ];
     const slowRepo = { ...baseRepo, path: "/tmp/slow" };
@@ -521,5 +524,173 @@ describe("DetailPane", () => {
         expect.anything(),
       );
     });
+  });
+
+  it("show_less_filters_hidden_branches_by_default", async () => {
+    const branches: BranchListItemDto[] = [
+      { ...sampleBranch, name: "visible", hidden: false },
+      { ...sampleBranch, name: "hidden-branch", hidden: true },
+    ];
+    invokeMock.mockResolvedValue(branches);
+
+    const { getByRole, queryByRole } = renderPane(baseRepo);
+    await waitFor(() => {
+      expect(
+        getByRole("button", { name: "Activate branch visible" }),
+      ).toBeTruthy();
+    });
+    expect(
+      queryByRole("button", { name: "Activate branch hidden-branch" }),
+    ).toBeNull();
+    expect(getByRole("button", { name: "Show all" })).toBeTruthy();
+  });
+
+  it("show_all_reveals_hidden_branches", async () => {
+    const branches: BranchListItemDto[] = [
+      { ...sampleBranch, name: "visible", hidden: false },
+      { ...sampleBranch, name: "hidden-branch", hidden: true },
+    ];
+    invokeMock.mockResolvedValue(branches);
+
+    const { getByRole } = renderPane(baseRepo);
+    await waitFor(() => {
+      expect(getByRole("button", { name: "Show all" })).toBeTruthy();
+    });
+    await fireEvent.click(getByRole("button", { name: "Show all" }));
+    expect(
+      getByRole("button", { name: "Activate branch hidden-branch" }),
+    ).toBeTruthy();
+    expect(getByRole("button", { name: "Show less" })).toBeTruthy();
+  });
+
+  it("resets_show_all_when_repo_changes", async () => {
+    const branches: BranchListItemDto[] = [
+      { ...sampleBranch, name: "hidden-branch", hidden: true },
+    ];
+    invokeMock.mockResolvedValue(branches);
+
+    const otherRepo = { ...baseRepo, path: "/tmp/other" };
+    const { getByRole, rerender, onClose, onMutated } = renderPane(baseRepo);
+    await waitFor(() => {
+      expect(getByRole("button", { name: "Show all" })).toBeTruthy();
+    });
+    await fireEvent.click(getByRole("button", { name: "Show all" }));
+    expect(getByRole("button", { name: "Show less" })).toBeTruthy();
+
+    await rerender({
+      repo: otherRepo,
+      allTags: [],
+      onClose,
+      onMutated,
+      branchRevision: 0,
+      requestTagFocus: false,
+      onTagFocusDone: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(getByRole("button", { name: "Show all" })).toBeTruthy();
+    });
+  });
+
+  it("hide_branch_invokes_set_branch_hidden_and_filters_row", async () => {
+    const branches: BranchListItemDto[] = [
+      { ...sampleBranch, name: "feature", hidden: false },
+      { ...sampleBranch, name: "main", hidden: false },
+    ];
+    invokeMock.mockImplementation((cmd) => {
+      if (cmd === "list_branches") {
+        return Promise.resolve(branches);
+      }
+      if (cmd === "set_branch_hidden") {
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve([]);
+    });
+
+    const { getByRole, queryByRole } = renderPane(baseRepo);
+    await waitFor(() => {
+      expect(
+        getByRole("button", { name: "Activate branch feature" }),
+      ).toBeTruthy();
+    });
+
+    await fireEvent.click(getByRole("button", { name: "Hide branch feature" }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("set_branch_hidden", {
+        repoPath: baseRepo.path,
+        branch: "feature",
+        hidden: true,
+      });
+    });
+    expect(
+      queryByRole("button", { name: "Activate branch feature" }),
+    ).toBeNull();
+    expect(getByRole("button", { name: "Activate branch main" })).toBeTruthy();
+    expect(getByRole("button", { name: "Show all" })).toBeTruthy();
+  });
+
+  it("hide_branch_error_shows_branchError_and_keeps_row", async () => {
+    const branches: BranchListItemDto[] = [
+      { ...sampleBranch, name: "feature", hidden: false },
+    ];
+    invokeMock.mockImplementation((cmd) => {
+      if (cmd === "list_branches") {
+        return Promise.resolve(branches);
+      }
+      if (cmd === "set_branch_hidden") {
+        return Promise.reject(new Error("hide failed"));
+      }
+      return Promise.resolve([]);
+    });
+
+    const { getByRole, getByText } = renderPane(baseRepo);
+    await waitFor(() => {
+      expect(
+        getByRole("button", { name: "Activate branch feature" }),
+      ).toBeTruthy();
+    });
+
+    await fireEvent.click(getByRole("button", { name: "Hide branch feature" }));
+
+    await waitFor(() => {
+      expect(getByText("Error: hide failed")).toBeTruthy();
+    });
+    expect(
+      getByRole("button", { name: "Activate branch feature" }),
+    ).toBeTruthy();
+    expect(getByRole("button", { name: "Hide branch feature" })).toBeTruthy();
+  });
+
+  it("all_hidden_default_filter_shows_empty_and_show_all", async () => {
+    const branches: BranchListItemDto[] = [
+      { ...sampleBranch, name: "hidden-a", hidden: true },
+      { ...sampleBranch, name: "hidden-b", hidden: true },
+    ];
+    invokeMock.mockResolvedValue(branches);
+
+    const { getByRole, getByText, queryByRole } = renderPane(baseRepo);
+    await waitFor(() => {
+      expect(getByText("No branches")).toBeTruthy();
+    });
+    expect(getByRole("button", { name: "Show all" })).toBeTruthy();
+    expect(
+      queryByRole("button", { name: "Activate branch hidden-a" }),
+    ).toBeNull();
+  });
+
+  it("show_all_absent_when_no_hidden_branches", async () => {
+    const branches: BranchListItemDto[] = [
+      { ...sampleBranch, name: "main", hidden: false },
+      { ...sampleBranch, name: "feature", hidden: false },
+    ];
+    invokeMock.mockResolvedValue(branches);
+
+    const { getByRole, queryByRole } = renderPane(baseRepo);
+    await waitFor(() => {
+      expect(
+        getByRole("button", { name: "Activate branch main" }),
+      ).toBeTruthy();
+    });
+    expect(queryByRole("button", { name: "Show all" })).toBeNull();
   });
 });
