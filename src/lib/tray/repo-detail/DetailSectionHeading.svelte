@@ -5,7 +5,7 @@
 </script>
 
 <h3
-  class="pl-2 pb-1 text-xs font-semibold uppercase tracking-widest text-inverse-on-surface-variant"
+  class="pb-1 text-xs font-semibold uppercase tracking-widest text-inverse-on-surface-variant"
 >
   # {@render children()}
 </h3>

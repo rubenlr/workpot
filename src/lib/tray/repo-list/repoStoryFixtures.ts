@@ -64,7 +64,7 @@ export function storyBranches(): BranchListItemDto[] {
       tracking: "local_remote",
       ahead: 2,
       behind: 1,
-      hidden: false,
+      hidden: true,
     },
   ];
 }
