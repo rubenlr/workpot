@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable recipes (shell steps, Cursor launch, multi-step workflows) — Phase 7
 - macOS `.app` / DMG distribution and install/update UX
 
+## [0.0.5] - 2026-07-21
+
+Repo conversion remotes, hidden branches, list context menu, and dependency maintenance.
+
+- **Convert remotes** — bare ↔ local conversion snapshots and re-applies git remotes; partial-failure cleanup on remote reconcile errors
+- **Hidden branches** — per-repo hide/show in the detail pane (filtered by default; Show all / Show less)
+- **Repo context menu** — right-click list row for Pin, Add/Remove tag, and Convert (with volatile preflight block reason)
+- **Deps** — tauri 2.11.5, `window-vibrancy` 0.7, `anyhow` 1.0.103, `log` 0.4.33, `env_logger` 0.11.11; Storybook/Vitest addon 10.4.6, svelte-check 4.7, testing-library/svelte 5.4, playwright 1.61.1; CI `taiki-e/install-action` 2.82.7; cookie constraint / lockfile hygiene for vulnerability cleanup
+
 ## [0.0.4] - 2026-06-17
 
 Maintenance release: grouped dependency updates across Rust, frontend tooling, and CI.
@@ -65,8 +74,9 @@ First public preview: local-only repo index, git-aware menu bar finder, and Curs
 - Bare and worktree paths canonicalized consistently during discovery
 - Unified CLI message when the repository index cap is exceeded
 
+[0.0.5]: https://github.com/rubenlr/workpot/releases/tag/v0.0.5
 [0.0.4]: https://github.com/rubenlr/workpot/releases/tag/v0.0.4
 [0.0.3]: https://github.com/rubenlr/workpot/releases/tag/v0.0.3
 [0.0.2]: https://github.com/rubenlr/workpot/releases/tag/v0.0.2
 [0.0.1]: https://github.com/rubenlr/workpot/releases/tag/v0.0.1
-[Unreleased]: https://github.com/rubenlr/workpot/compare/v0.0.4...HEAD
+[Unreleased]: https://github.com/rubenlr/workpot/compare/v0.0.5...HEAD
