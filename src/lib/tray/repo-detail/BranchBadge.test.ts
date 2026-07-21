@@ -7,7 +7,7 @@ function branch(
   partial: Partial<BranchListItemDto> &
     Pick<BranchListItemDto, "name" | "checked_out" | "tracking">,
 ): BranchListItemDto {
-  return { ahead: null, behind: null, ...partial };
+  return { ahead: null, behind: null, hidden: false, ...partial };
 }
 
 describe("BranchBadge", () => {

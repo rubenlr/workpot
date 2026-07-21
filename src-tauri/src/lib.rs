@@ -50,6 +50,14 @@ fn handle_panel_window_event(window: &tauri::Window, event: &WindowEvent) {
         }
         WindowEvent::Focused(false) => {
             let app = window.app_handle();
+            let context_menu_active = app
+                .try_state::<commands::ContextMenuRepo>()
+                .map(|state| state.0.lock().ok().is_some_and(|guard| guard.is_some()))
+                .unwrap_or(false);
+            if context_menu_active {
+                log::debug!("panel Focused(false) -> skip hide (context menu active)");
+                return;
+            }
             tray::hide_panel_on_window(app, window);
         }
         _ => {}
@@ -107,6 +115,7 @@ pub fn run() {
             commands::set_pin,
             commands::set_pin_order,
             commands::list_branches,
+            commands::set_branch_hidden,
             commands::show_repo_context_menu,
         ])
         .run(tauri::generate_context!())

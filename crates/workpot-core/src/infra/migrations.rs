@@ -11,6 +11,7 @@ pub fn apply_migrations(conn: &mut Connection) -> Result<()> {
     static MIGRATION_006: &str = include_str!("migrations/006_org.sql");
     static MIGRATION_007: &str = include_str!("migrations/007_alias.sql");
     static MIGRATION_008: &str = include_str!("migrations/008_convert_preflight.sql");
+    static MIGRATION_009: &str = include_str!("migrations/009_repo_hidden_branches.sql");
     let steps = [
         M::up(MIGRATION_001),
         M::up(MIGRATION_002),
@@ -20,6 +21,7 @@ pub fn apply_migrations(conn: &mut Connection) -> Result<()> {
         M::up(MIGRATION_006),
         M::up(MIGRATION_007),
         M::up(MIGRATION_008),
+        M::up(MIGRATION_009),
     ];
     let migrations = Migrations::from_slice(&steps);
     migrations.to_latest(conn)?;

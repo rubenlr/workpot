@@ -7,6 +7,7 @@
     storyRepoBase,
   } from "$lib/tray/repo-list/repoStoryFixtures";
 
+  const noop = () => {};
   const branches = storyBranches();
 
   const { Story } = defineMeta({
@@ -15,6 +16,7 @@
     tags: ["autodocs"],
     args: {
       repoPath: storyRepoBase.path,
+      onToggleHidden: noop,
     },
   });
 </script>
@@ -25,4 +27,8 @@
   args={{ branch: storyCheckoutLocalOnlyBranch() }}
 />
 <Story name="Remote" args={{ branch: branches[2] }} />
-<Story name="FeatureWithSync" args={{ branch: branches[3] }} />
+<Story
+  name="FeatureWithSync"
+  args={{ branch: { ...branches[3], hidden: false } }}
+/>
+<Story name="Hidden" args={{ branch: branches[3] }} />

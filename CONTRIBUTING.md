@@ -11,13 +11,28 @@ cargo test --workspace
 
 Rust 1.96 is required (pinned in `rust-toolchain.toml`).
 
+## Platform
+
+v1 is **macOS-only** for the menu-bar tray (`workpot-tray`, `src-tauri`). The CLI (`workpot` / `workpot-core`) builds on Linux and macOS.
+
+| Recipe                        | macOS                                                        | Linux                                                              |
+| ----------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `just launch`                 | Tray dev (`tauri dev`)                                       | N/A                                                                |
+| `just build`                  | CLI release + `Workpot.app`                                  | CLI only: `cargo build --release -p workpot-cli`                   |
+| `just test` / `just try`      | Full local CI (`test-macos`: cargo + vitest + `tauri:build`) | Partial: `cargo test -p workpot-core -p workpot-cli` + `pnpm test` |
+| `just fmt-check`              | Yes                                                          | Yes (Ubuntu `code-quality` job)                                    |
+| `just pre` / `just precommit` | Yes                                                          | No (`build` needs macOS tray)                                      |
+
+CI splits this: Ubuntu runs `code-quality` (fmt, clippy on core+cli); macOS runs `test-macos` (full suite + bundle smoke).
+
 ## Required gates before every PR
 
 CI enforces the checks in `.github/workflows/ci.yml`. Locally:
 
 ```bash
-just precommit   # build (CLI release + tray bundle) + fmt-check (+ auto-fix via fix)
-just test        # CI test-macos: cargo test, vitest coverage, CI tauri:build (run after fmt-check)
+just precommit   # macOS only: build (CLI release + tray bundle) + fmt-check (+ auto-fix via fix)
+just try         # macOS only: alias for `just test`
+just test        # macOS only: CI test-macos (cargo test, vitest coverage, tauri:build)
 ```
 
 Or step by step:
@@ -25,8 +40,8 @@ Or step by step:
 ```bash
 just fmt-fix     # rewrite formatting first
 just fmt-check   # strict fmt + clippy + frontend format/lint/check
-just test        # cargo test + vitest coverage + CI bundle smoke (after fmt-check)
-just build       # macOS: release CLI + `pnpm run tauri:build`
+just test        # macOS only: cargo test + vitest coverage + CI bundle smoke (after fmt-check)
+just build       # macOS only: release CLI + `pnpm run tauri:build`
 ```
 
 Frontend formatting and lint (also run in CI on macOS):

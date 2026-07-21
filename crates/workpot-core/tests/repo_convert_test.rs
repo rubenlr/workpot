@@ -257,6 +257,43 @@ fn test_ctx(parent: &Path) -> AppContext {
     AppContext::open_with_paths(config_path, db_path).expect("open ctx")
 }
 
+fn git_remote_url(repo: &Path, name: &str) -> String {
+    let output = common::git_cmd()
+        .args(["remote", "get-url", name])
+        .current_dir(repo)
+        .output()
+        .expect("remote get-url");
+    assert!(
+        output.status.success(),
+        "git remote get-url {name} failed in {}",
+        repo.display()
+    );
+    String::from_utf8(output.stdout)
+        .expect("utf8 stdout")
+        .trim()
+        .to_string()
+}
+
+fn git_remote_names(repo: &Path) -> Vec<String> {
+    let output = common::git_cmd()
+        .args(["remote"])
+        .current_dir(repo)
+        .output()
+        .expect("remote");
+    assert!(
+        output.status.success(),
+        "git remote failed in {}",
+        repo.display()
+    );
+    String::from_utf8(output.stdout)
+        .expect("utf8 stdout")
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(String::from)
+        .collect()
+}
+
 #[test]
 fn sanitize_worktree_replaces_slash_with_dot() {
     assert_eq!(
@@ -322,7 +359,7 @@ fn migration_config_serde_round_trip() {
 fn preflight_blocks_dirty() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dirty_local_repo(dir.path());
-    let result = repo_convert::run_preflight(&path).expect("preflight");
+    let result = repo_convert::run_volatile_preflight(&path).expect("preflight");
     assert!(matches!(result, PreflightResult::DirtyWorktree { .. }));
 }
 
@@ -336,7 +373,7 @@ fn preflight_blocks_detached_head() {
         .status()
         .expect("detach");
     assert!(status.success());
-    let result = repo_convert::run_preflight(&path).expect("preflight");
+    let result = repo_convert::run_volatile_preflight(&path).expect("preflight");
     assert_eq!(result, PreflightResult::DetachedHead);
 }
 
@@ -344,7 +381,7 @@ fn preflight_blocks_detached_head() {
 fn preflight_blocks_unborn() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = unborn_local_repo(dir.path());
-    let result = repo_convert::run_preflight(&path).expect("preflight");
+    let result = repo_convert::run_volatile_preflight(&path).expect("preflight");
     assert_eq!(result, PreflightResult::UnbornBranch);
 }
 
@@ -352,7 +389,7 @@ fn preflight_blocks_unborn() {
 fn preflight_blocks_no_upstream() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = no_upstream_local_repo(dir.path());
-    let result = repo_convert::run_preflight(&path).expect("preflight");
+    let result = repo_convert::run_volatile_preflight(&path).expect("preflight");
     assert!(matches!(result, PreflightResult::NoUpstream { .. }));
 }
 
@@ -360,7 +397,7 @@ fn preflight_blocks_no_upstream() {
 fn preflight_blocks_unpushed() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = unpushed_local_repo(dir.path());
-    let result = repo_convert::run_preflight(&path).expect("preflight");
+    let result = repo_convert::run_volatile_preflight(&path).expect("preflight");
     assert!(matches!(result, PreflightResult::UnpushedCommits { .. }));
 }
 
@@ -368,7 +405,7 @@ fn preflight_blocks_unpushed() {
 fn preflight_blocks_stash() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = stash_local_repo(dir.path());
-    let result = repo_convert::run_preflight(&path).expect("preflight");
+    let result = repo_convert::run_volatile_preflight(&path).expect("preflight");
     assert_eq!(result, PreflightResult::HasStash);
 }
 
@@ -376,7 +413,7 @@ fn preflight_blocks_stash() {
 fn preflight_passes_clean_synced() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = local_repo_clean_synced(dir.path());
-    let result = repo_convert::run_preflight(&path).expect("preflight");
+    let result = repo_convert::run_volatile_preflight(&path).expect("preflight");
     assert_eq!(result, PreflightResult::Ready);
 }
 
@@ -384,7 +421,7 @@ fn preflight_passes_clean_synced() {
 fn preflight_blocks_dirty_worktree_in_bare_repo() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = bare_repo_with_dirty_worktree(dir.path());
-    let result = repo_convert::run_preflight(&path).expect("preflight");
+    let result = repo_convert::run_volatile_preflight(&path).expect("preflight");
     assert!(matches!(result, PreflightResult::DirtyWorktree { .. }));
 }
 
@@ -393,7 +430,7 @@ fn preflight_bare_passes_clean_synced() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (bare_path, wt_path) = bare_repo_with_worktree(dir.path());
     let _ = wt_path;
-    let result = repo_convert::run_preflight(&bare_path).expect("preflight");
+    let result = repo_convert::run_volatile_preflight(&bare_path).expect("preflight");
     assert_eq!(result, PreflightResult::Ready);
 }
 
@@ -440,6 +477,13 @@ fn convert_normal_to_bare() {
     let old_key = path.canonicalize().expect("canon").display().to_string();
     ctx.register_manual(&path).expect("register");
     ctx.set_tags(&old_key, &["migrated"]).expect("tag");
+    let repos_before = ctx.list_repos().expect("list");
+    let original_name = repos_before
+        .iter()
+        .find(|r| r.path.display().to_string() == old_key)
+        .expect("registered")
+        .name
+        .clone();
 
     let result = ctx
         .convert_repo(&path, ConvertTarget::Bare, false)
@@ -467,9 +511,136 @@ fn convert_normal_to_bare() {
             .any(|r| r.path.display().to_string() == old_key)
     );
     assert!(repos.iter().any(|r| r.path == to));
+    let converted = repos.iter().find(|r| r.path == to).expect("converted");
+    assert_eq!(converted.name, original_name);
     let new_key = to.display().to_string();
     let tags = ctx.list_tags_for_repo(&new_key).expect("tags");
     assert_eq!(tags, vec!["migrated".to_string()]);
+}
+
+#[test]
+fn convert_normal_to_bare_preserves_catalog_name_over_project_alias() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ctx = test_ctx_with_migration(
+        dir.path(),
+        r#"[migration]
+project_name_source = "alias"
+allow_conversion_to_bare_repo = true
+"#,
+    );
+    let path = local_repo_clean_synced(dir.path());
+    let old_key = path.canonicalize().expect("canon").display().to_string();
+    ctx.register_manual(&path).expect("register");
+    ctx.set_alias(&old_key, Some("display-alias"))
+        .expect("set_alias");
+
+    let repos_before = ctx.list_repos().expect("list");
+    let original_name = repos_before
+        .iter()
+        .find(|r| r.path.display().to_string() == old_key)
+        .expect("registered")
+        .name
+        .clone();
+    assert_ne!(original_name, "display-alias");
+
+    let result = ctx
+        .convert_repo(&path, ConvertTarget::Bare, false)
+        .expect("convert");
+    let ConvertResult::Converted { to, .. } = result else {
+        panic!("expected Converted, got {result:?}");
+    };
+
+    let converted = ctx
+        .list_repos()
+        .expect("list")
+        .into_iter()
+        .find(|r| r.path == to)
+        .expect("converted");
+    assert_eq!(converted.name, original_name);
+    assert_ne!(converted.name, "bare.git");
+}
+
+#[test]
+fn convert_normal_to_bare_preserves_origin_remote() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ctx = test_ctx(dir.path());
+    let path = local_repo_clean_synced(dir.path());
+    let expected = git_remote_url(&path, "origin");
+    ctx.register_manual(&path).expect("register");
+
+    let result = ctx
+        .convert_repo(&path, ConvertTarget::Bare, false)
+        .expect("convert");
+    let ConvertResult::Converted { to: bare_path, .. } = result else {
+        panic!("expected Converted, got {result:?}");
+    };
+
+    let actual = git_remote_url(&bare_path, "origin");
+    assert_eq!(actual, expected);
+    assert!(!actual.contains(".temp"));
+}
+
+#[test]
+fn convert_bare_to_local_preserves_origin_remote() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ctx = test_ctx(dir.path());
+    let (bare_path, _wt) = bare_repo_with_worktree(dir.path());
+    let expected = git_remote_url(&bare_path, "origin");
+    ctx.register_manual(&bare_path).expect("register");
+
+    let result = ctx
+        .convert_repo(&bare_path, ConvertTarget::Local, false)
+        .expect("convert");
+    let ConvertResult::Converted { to: local_path, .. } = result else {
+        panic!("expected Converted, got {result:?}");
+    };
+
+    let actual = git_remote_url(&local_path, "origin");
+    assert_eq!(actual, expected);
+    assert!(!actual.contains(".temp"));
+}
+
+#[test]
+fn convert_normal_to_bare_preserves_multiple_remotes() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let ctx = test_ctx(dir.path());
+    let path = local_repo_clean_synced(dir.path());
+    let upstream_url = dir.path().join("upstream.git");
+    fs::create_dir_all(&upstream_url).expect("upstream dir");
+    let status = common::git_cmd()
+        .args(["init", "--bare", "-q", "-b", "main"])
+        .current_dir(&upstream_url)
+        .status()
+        .expect("upstream init");
+    assert!(status.success());
+    let status = common::git_cmd()
+        .args([
+            "remote",
+            "add",
+            "upstream",
+            upstream_url.to_str().expect("utf8"),
+        ])
+        .current_dir(&path)
+        .status()
+        .expect("add upstream");
+    assert!(status.success());
+
+    let expected_origin = git_remote_url(&path, "origin");
+    let expected_upstream = git_remote_url(&path, "upstream");
+    ctx.register_manual(&path).expect("register");
+
+    let result = ctx
+        .convert_repo(&path, ConvertTarget::Bare, false)
+        .expect("convert");
+    let ConvertResult::Converted { to: bare_path, .. } = result else {
+        panic!("expected Converted, got {result:?}");
+    };
+
+    let mut names = git_remote_names(&bare_path);
+    names.sort();
+    assert_eq!(names, vec!["origin".to_string(), "upstream".to_string()]);
+    assert_eq!(git_remote_url(&bare_path, "origin"), expected_origin);
+    assert_eq!(git_remote_url(&bare_path, "upstream"), expected_upstream);
 }
 
 #[test]
