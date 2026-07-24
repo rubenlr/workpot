@@ -50,6 +50,8 @@ project_name_source = "folder_name"
 | `limits.max_watch_roots` | `100`   | Maximum number of watch roots allowed.                                                                              |
 | `limits.max_repos`       | `1000`  | Maximum number of indexed repositories.                                                                             |
 
+See also [docs/indexing.md](docs/indexing.md) for how `workpot index` / tray Refresh Index walk roots, merge the catalog, and refresh git state.
+
 ## Tray settings
 
 | Key                | Default | Description                                                  |
