@@ -514,7 +514,7 @@ pub async fn list_branches(
     {
         state
             .inner()
-            .indexed_launch_path(Path::new(&repo_path))
+            .catalog_launch_path(Path::new(&repo_path))
             .map_err(|e| e.to_string())?;
     }
     let hidden = state
@@ -1038,7 +1038,12 @@ fn spawn_background_git_refresh_inner(
             log::debug!(
                 "background git refresh: paths lock released elapsed_ms={paths_acquire_ms}"
             );
-            let git_results = workpot_core::services::git_state::refresh_all(paths);
+            let fetch_cmd = state_for_blocking
+                .config()
+                .map_err(|e| e.to_string())?
+                .fetch
+                .clone();
+            let git_results = workpot_core::services::git_state::refresh_all(paths, &fetch_cmd);
             log::debug!("background git refresh: persist lock acquire");
             let summary = state_for_blocking
                 .persist_git_refresh_results(git_results)
@@ -1110,7 +1115,7 @@ pub async fn checkout_repo_branch(
     let state_clone = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         state_clone
-            .indexed_launch_path(Path::new(&repo_path))
+            .catalog_launch_path(Path::new(&repo_path))
             .map_err(|e| e.to_string())?;
         state_clone
             .checkout_repo_branch(Path::new(&repo_path), &branch)
@@ -1121,8 +1126,8 @@ pub async fn checkout_repo_branch(
 }
 
 #[tauri::command]
-pub async fn refresh_index(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    crate::tray::spawn_background_index(app, state.inner().clone());
+pub async fn refresh_sync(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    crate::tray::spawn_background_sync(app, state.inner().clone());
     Ok(())
 }
 

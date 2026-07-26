@@ -164,14 +164,14 @@ describe("createTrayPanel", () => {
     expect(invoke).toHaveBeenCalledWith("list_repos");
   });
 
-  it("index events toggle indexing and reload list", async () => {
+  it("sync events toggle syncing and reload list", async () => {
     vi.useFakeTimers();
     const panel = createTrayPanel();
     await panel.mount();
     const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
 
-    handlers.onIndexStarted();
-    expect(panel.indexing).toBe(true);
+    handlers.onSyncStarted();
+    expect(panel.syncing).toBe(true);
 
     invoke.mockImplementation(async (cmd: string) => {
       if (cmd === "list_repos") return [repo("/tmp/a")];
@@ -180,7 +180,7 @@ describe("createTrayPanel", () => {
       return undefined;
     });
 
-    handlers.onIndexComplete({
+    handlers.onSyncComplete({
       added: 1,
       removed: 0,
       skipped: 0,
@@ -188,19 +188,19 @@ describe("createTrayPanel", () => {
       git_errors: 0,
     });
     await vi.runAllTimersAsync();
-    expect(panel.indexing).toBe(false);
+    expect(panel.syncing).toBe(false);
     expect(invoke).toHaveBeenCalledWith("list_repos");
     vi.useRealTimers();
   });
 
-  it("index_complete_sets_indexRefreshSuccess_then_clears", async () => {
+  it("sync_complete_sets_syncSuccess_then_clears", async () => {
     vi.useFakeTimers();
     const panel = createTrayPanel();
     await panel.mount();
     const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
 
-    handlers.onIndexStarted();
-    handlers.onIndexComplete({
+    handlers.onSyncStarted();
+    handlers.onSyncComplete({
       added: 0,
       removed: 0,
       skipped: 0,
@@ -209,11 +209,11 @@ describe("createTrayPanel", () => {
     });
 
     await vi.advanceTimersByTimeAsync(1000);
-    expect(panel.indexing).toBe(false);
-    expect(panel.indexRefreshSuccess).toBe(true);
+    expect(panel.syncing).toBe(false);
+    expect(panel.syncSuccess).toBe(true);
 
     await vi.advanceTimersByTimeAsync(400);
-    expect(panel.indexRefreshSuccess).toBe(false);
+    expect(panel.syncSuccess).toBe(false);
     vi.useRealTimers();
   });
 
@@ -335,12 +335,12 @@ describe("createTrayPanel", () => {
     expect(invoke).toHaveBeenCalledWith("list_repos");
   });
 
-  it("startIndexRefresh invokes refresh_index and surfaces permission errors", async () => {
+  it("startSync invokes refresh_sync and surfaces permission errors", async () => {
     const panel = createTrayPanel();
     await panel.mount();
     invoke.mockImplementation(async (cmd: string) => {
-      if (cmd === "refresh_index") {
-        throw new Error("command refresh_index not allowed");
+      if (cmd === "refresh_sync") {
+        throw new Error("command refresh_sync not allowed");
       }
       if (cmd === "list_repos") return [repo("/tmp/a")];
       if (cmd === "list_all_tags") return [];
@@ -357,10 +357,10 @@ describe("createTrayPanel", () => {
       return undefined;
     });
 
-    await panel.startIndexRefresh();
+    await panel.startSync();
 
-    expect(invoke).toHaveBeenCalledWith("refresh_index");
-    expect(panel.listError).toBe("Error: command refresh_index not allowed");
+    expect(invoke).toHaveBeenCalledWith("refresh_sync");
+    expect(panel.listError).toBe("Error: command refresh_sync not allowed");
     expect(panel.listView).toEqual({ kind: "list" });
   });
 
@@ -499,19 +499,19 @@ describe("createTrayPanel", () => {
     expect(invoke).not.toHaveBeenCalledWith("convert_repo", expect.anything());
   });
 
-  it("index_failed clears indexing and sets list error", async () => {
+  it("sync_failed clears syncing and sets list error", async () => {
     vi.useFakeTimers();
     const panel = createTrayPanel();
     await panel.mount();
     const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
 
-    handlers.onIndexStarted();
-    expect(panel.indexing).toBe(true);
+    handlers.onSyncStarted();
+    expect(panel.syncing).toBe(true);
 
-    handlers.onIndexFailed("index exploded");
+    handlers.onSyncFailed("index exploded");
     await vi.runAllTimersAsync();
 
-    expect(panel.indexing).toBe(false);
+    expect(panel.syncing).toBe(false);
     expect(panel.listError).toBe("index exploded");
     vi.useRealTimers();
   });

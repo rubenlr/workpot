@@ -16,7 +16,7 @@ use crate::infra::config_doc;
 use crate::infra::db::DbPool;
 use crate::infra::paths;
 use crate::infra::store;
-use crate::services::{catalog, excludes, index, org, roots};
+use crate::services::{catalog, excludes, local_catalog_sync, org, roots, sync};
 use rusqlite::Connection;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -116,9 +116,9 @@ impl AppState {
             .with_write(|conn| catalog::touch_last_opened_at(conn, path))
     }
 
-    pub fn indexed_launch_path(&self, path: &Path) -> Result<PathBuf> {
+    pub fn catalog_launch_path(&self, path: &Path) -> Result<PathBuf> {
         self.db
-            .with_read(|conn| catalog::indexed_launch_path(conn, path))
+            .with_read(|conn| catalog::catalog_launch_path(conn, path))
     }
 
     pub fn remove_repo(&self, path: &Path) -> Result<()> {
@@ -137,13 +137,16 @@ impl AppState {
         excludes::remove_exclude(&self.config_path, &mut config, glob)
     }
 
-    pub fn run_index(&self) -> Result<index::IndexSummary> {
+    /// Full sync (v1: local catalog sync only).
+    pub fn run_sync(&self) -> Result<local_catalog_sync::LocalCatalogSyncSummary> {
         let config = self.config.read().map_err(lock_poison)?;
-        index::run_phased(&self.db, &config)
+        sync::run_full(&self.db, &config)
     }
 
-    pub fn run_index_phased(&self) -> Result<index::IndexSummary> {
-        self.run_index()
+    /// Local catalog sync (watch-root rescan + git refresh).
+    pub fn run_local_catalog_sync(&self) -> Result<local_catalog_sync::LocalCatalogSyncSummary> {
+        let config = self.config.read().map_err(lock_poison)?;
+        local_catalog_sync::run_phased(&self.db, &config)
     }
 
     pub fn config_mut(&self) -> Result<RwLockWriteGuard<'_, Config>> {
@@ -260,7 +263,7 @@ impl AppState {
 
     /// Checkout a branch in an indexed repo and persist updated git state.
     pub fn checkout_repo_branch(&self, catalog_path: &Path, branch: &str) -> Result<()> {
-        let launch_path = self.indexed_launch_path(catalog_path)?;
+        let launch_path = self.catalog_launch_path(catalog_path)?;
         crate::services::branch_checkout::checkout_repo_branch(&launch_path, branch)?;
         self.db.with_write(|conn| {
             crate::services::git_state::refresh_and_persist_catalog_entry(
@@ -275,7 +278,8 @@ impl AppState {
     /// Refresh git state for all non-excluded repos (rayon batch, then single tx persist).
     pub fn refresh_all_git_state(&self) -> Result<GitRefreshSummary> {
         let paths = self.git_refresh_paths()?;
-        let git_results = crate::services::git_state::refresh_all(paths);
+        let fetch_cmd = self.config.read().map_err(lock_poison)?.fetch.clone();
+        let git_results = crate::services::git_state::refresh_all(paths, &fetch_cmd);
         self.persist_git_refresh_results(git_results)
     }
 

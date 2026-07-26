@@ -8,9 +8,9 @@ import {
   onPanelOpened,
 } from "$lib/tray/logic/handlers/trayGitRefreshHandlers";
 import {
-  onIndexComplete,
-  onIndexFailed,
-} from "$lib/tray/logic/handlers/trayIndexHandlers";
+  onSyncComplete,
+  onSyncFailed,
+} from "$lib/tray/logic/handlers/traySyncHandlers";
 import { createTrayLaunch } from "./trayLaunch.svelte";
 import { createTrayListSelection } from "./trayListSelection.svelte";
 import { createTrayPanelKeyboard } from "./trayPanelKeyboard.svelte";
@@ -42,8 +42,8 @@ import {
 } from "$lib/tray/logic/handlers/trayRepoConvert";
 import type { ActiveConvert, ActiveSync, SyncDirection } from "$lib/types";
 
-const MIN_INDEX_REFRESH_MS = 1000;
-const INDEX_SUCCESS_FLASH_MS = 400;
+const MIN_SYNC_MS = 1000;
+const SYNC_SUCCESS_FLASH_MS = 400;
 
 export function createTrayPanel() {
   const config = createTrayConfig();
@@ -70,9 +70,9 @@ export function createTrayPanel() {
   let unsubscribeEvents: (() => void) | null = null;
   let activeSync = $state<ActiveSync | null>(null);
   let activeConvert = $state<ActiveConvert | null>(null);
-  let indexing = $state(false);
-  let indexRefreshSuccess = $state(false);
-  let indexingStartedAt = $state<number | null>(null);
+  let syncing = $state(false);
+  let syncSuccess = $state(false);
+  let syncingStartedAt = $state<number | null>(null);
   let branchRevision = $state(0);
 
   function resetPanelToInitialState() {
@@ -118,7 +118,7 @@ export function createTrayPanel() {
     onConvert: handleConvert,
   };
 
-  const indexDeps = {
+  const catalogSyncDeps = {
     setSelectedIndex: (index: number) => {
       list.selectedIndex = index;
     },
@@ -152,47 +152,47 @@ export function createTrayPanel() {
     focusFilter: () => keyboard.focusFilter(),
   };
 
-  async function finishIndexing(success: boolean): Promise<void> {
-    const started = indexingStartedAt ?? Date.now();
-    const remaining = MIN_INDEX_REFRESH_MS - (Date.now() - started);
+  async function finishSync(success: boolean): Promise<void> {
+    const started = syncingStartedAt ?? Date.now();
+    const remaining = MIN_SYNC_MS - (Date.now() - started);
     if (remaining > 0) {
       await new Promise((resolve) => setTimeout(resolve, remaining));
     }
-    indexing = false;
-    indexingStartedAt = null;
+    syncing = false;
+    syncingStartedAt = null;
     if (success) {
-      indexRefreshSuccess = true;
+      syncSuccess = true;
       await new Promise((resolve) =>
-        setTimeout(resolve, INDEX_SUCCESS_FLASH_MS),
+        setTimeout(resolve, SYNC_SUCCESS_FLASH_MS),
       );
-      indexRefreshSuccess = false;
+      syncSuccess = false;
     }
   }
 
-  async function startIndexRefresh(): Promise<void> {
-    trayTrace("invoke refresh_index");
+  async function startSync(): Promise<void> {
+    trayTrace("invoke refresh_sync");
     try {
-      await invoke("refresh_index");
-      trayTrace("refresh_index ok");
+      await invoke("refresh_sync");
+      trayTrace("refresh_sync ok");
     } catch (e) {
-      trayTrace("refresh_index failed", e);
+      trayTrace("refresh_sync failed", e);
       data.setListError(String(e));
-      await finishIndexing(false);
+      await finishSync(false);
     }
   }
 
-  function beginIndexRefresh(): void {
-    indexing = true;
-    indexingStartedAt = Date.now();
-    trayTrace("refresh_index requested");
-    void startIndexRefresh();
+  function beginSync(): void {
+    syncing = true;
+    syncingStartedAt = Date.now();
+    trayTrace("refresh_sync requested");
+    void startSync();
   }
 
   const keyboard = createTrayPanelKeyboard({
     list,
     detail,
     launch,
-    startIndexRefresh: beginIndexRefresh,
+    startSync: beginSync,
   });
 
   async function mount(): Promise<void> {
@@ -207,23 +207,23 @@ export function createTrayPanel() {
       onGitRefreshFailed: (message) => {
         onGitRefreshFailed(message, gitRefreshDeps);
       },
-      onIndexStarted: () => {
-        trayTrace("index-started");
-        if (!indexing) {
-          indexing = true;
-          indexingStartedAt = Date.now();
+      onSyncStarted: () => {
+        trayTrace("sync-started");
+        if (!syncing) {
+          syncing = true;
+          syncingStartedAt = Date.now();
         }
       },
-      onIndexComplete: (summary) => {
+      onSyncComplete: (summary) => {
         void (async () => {
-          await finishIndexing(true);
-          onIndexComplete(summary, indexDeps);
+          await finishSync(true);
+          onSyncComplete(summary, catalogSyncDeps);
         })();
       },
-      onIndexFailed: (message) => {
+      onSyncFailed: (message) => {
         void (async () => {
-          await finishIndexing(false);
-          onIndexFailed(message, indexDeps);
+          await finishSync(false);
+          onSyncFailed(message, catalogSyncDeps);
         })();
       },
       onRepoSyncStarted: (payload) =>
@@ -310,11 +310,11 @@ export function createTrayPanel() {
     get activeConvert() {
       return activeConvert;
     },
-    get indexing() {
-      return indexing;
+    get syncing() {
+      return syncing;
     },
-    get indexRefreshSuccess() {
-      return indexRefreshSuccess;
+    get syncSuccess() {
+      return syncSuccess;
     },
     get branchRevision() {
       return branchRevision;
@@ -337,7 +337,7 @@ export function createTrayPanel() {
     dismissListError: data.dismissListError,
     bindFilterInput: keyboard.bindFilterInput,
     refreshReposAndDetail: () => data.refresh(),
-    startIndexRefresh: beginIndexRefresh,
+    startSync: beginSync,
     mount,
     destroy,
   };

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Scoped sync** — `workpot index` / tray Refresh index renamed to `workpot sync` (+ `sync local`) and tray **Sync**; index audit tables → `local_catalog_sync_*`; new `Config.fetch` (default `git -C {path} fetch`, empty disables) runs before batch git refresh. See [docs/sync.md](docs/sync.md).
+
 ### Planned
 
 - CLI parity with the tray (`workpot list`, `workpot search`, `workpot open`) — Phase 6

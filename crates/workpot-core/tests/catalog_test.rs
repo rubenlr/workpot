@@ -100,7 +100,7 @@ fn list_repos_returns_git_state_after_index() {
 
     let ctx = AppContext::open_with_paths(config_path, db_path).expect("open");
     ctx.roots_add(&watch).expect("roots_add");
-    ctx.run_index().expect("index");
+    ctx.run_local_catalog_sync().expect("index");
 
     let repos = ctx.list_repos().expect("list");
     let canon = repo_path.canonicalize().expect("canonicalize");

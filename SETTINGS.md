@@ -27,6 +27,7 @@ max_repos = 1000
 launch_cmd = "cursor --new-window {path}"
 push_cmd = "git -C {path} push origin {branch}"
 pull_cmd = "git -C {path} pull origin {branch}"
+fetch = "git -C {path} fetch"
 max_visible_rows = 15
 max_pinned = 5
 max_recent_days = 14
@@ -46,11 +47,11 @@ project_name_source = "folder_name"
 | Key                      | Default | Description                                                                                                         |
 | ------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------- |
 | `watch_roots`            | `[]`    | Directories scanned for git repositories. On first run, `~/code` and `~/dev` are added automatically if they exist. |
-| `excludes`               | `[]`    | Glob patterns excluded from indexing (e.g. `**/node_modules/**`).                                                   |
+| `excludes`               | `[]`    | Glob patterns excluded from local catalog sync (e.g. `**/node_modules/**`).                                         |
 | `limits.max_watch_roots` | `100`   | Maximum number of watch roots allowed.                                                                              |
-| `limits.max_repos`       | `1000`  | Maximum number of indexed repositories.                                                                             |
+| `limits.max_repos`       | `1000`  | Maximum number of cataloged repositories.                                                                           |
 
-See also [docs/indexing.md](docs/indexing.md) for how `workpot index` / tray Refresh Index walk roots, merge the catalog, and refresh git state.
+See also [docs/sync.md](docs/sync.md) for sync scopes (`sync`, `sync local`, fetch-repo) and how tray Sync walks roots, merges the catalog, and refreshes git state.
 
 ## Tray settings
 
@@ -70,12 +71,15 @@ See also [docs/indexing.md](docs/indexing.md) for how `workpot index` / tray Ref
 
 ## Sync settings
 
-| Key        | Default                                | Description                                                                                       |
-| ---------- | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `push_cmd` | `"git -C {path} push origin {branch}"` | Shell command template for pushing a branch. `{path}` and `{branch}` are replaced at invoke time. |
-| `pull_cmd` | `"git -C {path} pull origin {branch}"` | Shell command template for pulling a branch. `{path}` and `{branch}` are replaced at invoke time. |
+Catalog sync and per-branch push/pull share this section. Catalog scopes (`sync` / `sync local` / `fetch`) are documented in [docs/sync.md](docs/sync.md). Push/pull are **not** catalog sync — they move commits for one branch.
 
-`{path}` resolves to the indexed launch path (worktree for bare repos). `{branch}` is the branch name from the tray row. Both placeholders are required. Commands run synchronously and refresh git state on success.
+| Key        | Default                                | Description                                                                                                                    |
+| ---------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `fetch`    | `"git -C {path} fetch"`                | Shell command template for fetching remotes before git-state refresh. Empty string disables. `{path}` required when non-empty. |
+| `push_cmd` | `"git -C {path} push origin {branch}"` | Shell command template for pushing a branch. `{path}` and `{branch}` are replaced at invoke time.                              |
+| `pull_cmd` | `"git -C {path} pull origin {branch}"` | Shell command template for pulling a branch. `{path}` and `{branch}` are replaced at invoke time.                              |
+
+`{path}` resolves to the catalog launch path (worktree for bare repos). For push/pull, `{branch}` is the branch name from the tray row and both placeholders are required. Push/pull run synchronously and refresh git state on success.
 
 ## Repo migration settings (`[migration]`)
 
@@ -170,7 +174,7 @@ Dry-run checks the same path collisions as a real run, including an existing `{o
 
 ### Bare repo launch path
 
-When opening a bare catalog entry, Workpot launches the linked worktree whose checked-out branch matches the catalog `branch` field. If `branch` is unset, the first linked worktree is used — for repos with multiple worktrees, ensure git state is refreshed (`workpot index`) so the catalog branch is current.
+When opening a bare catalog entry, Workpot launches the linked worktree whose checked-out branch matches the catalog `branch` field. If `branch` is unset, the first linked worktree is used — for repos with multiple worktrees, ensure git state is refreshed (`workpot sync`) so the catalog branch is current.
 
 ### Recovery from interrupted conversion
 

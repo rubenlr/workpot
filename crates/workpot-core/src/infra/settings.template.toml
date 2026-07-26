@@ -7,7 +7,7 @@
 #   watch_roots = ["/Users/you/code", "/Users/you/projects"]
 watch_roots = []
 
-# Glob patterns excluded from indexing.
+# Glob patterns excluded from local catalog sync discovery.
 # Examples:
 #   excludes = []
 #   excludes = ["**/node_modules/**", "/archive/old/**"]
@@ -25,6 +25,11 @@ push_cmd = "git -C {path} push origin {branch}"
 # Example: pull_cmd = "git -C {path} pull origin {branch}"
 pull_cmd = "git -C {path} pull origin {branch}"
 
+# Shell command to fetch remotes before git-state refresh. Must include {path}.
+# Set to "" to disable fetch during local catalog sync / git refresh.
+# Example: fetch = "git -C {path} fetch"
+fetch = "git -C {path} fetch"
+
 # Maximum repo rows shown in the tray panel before scrolling (1–100).
 max_visible_rows = 15
 
@@ -40,11 +45,11 @@ min_recent_count = 3
 # Days before a dirty repo triggers the stale-dirty tray icon (1–365).
 stale_dirty_days = 7
 
-# Indexing caps (hard ceilings: 5000 roots, 20000 repos).
+# Catalog sync caps (hard ceilings: 5000 roots, 20000 repos).
 [limits]
 # Maximum watch roots allowed in config.
 max_watch_roots = 100
-# Maximum indexed repositories across all roots.
+# Maximum cataloged repositories across all roots.
 max_repos = 1000
 
 # Repo layout conversion (`workpot repo convert`). Templates are global only.

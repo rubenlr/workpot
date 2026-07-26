@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  indexGitErrorMessage,
-  onIndexComplete,
-  onIndexFailed,
-} from "./trayIndexHandlers";
+  onSyncComplete,
+  onSyncFailed,
+  syncGitErrorMessage,
+} from "./traySyncHandlers";
 
-describe("trayIndexHandlers", () => {
-  it("indexGitErrorMessage surfaces total git failure", () => {
+describe("traySyncHandlers", () => {
+  it("syncGitErrorMessage surfaces total git failure", () => {
     expect(
-      indexGitErrorMessage({
+      syncGitErrorMessage({
         added: 0,
         removed: 0,
         skipped: 0,
@@ -17,7 +17,7 @@ describe("trayIndexHandlers", () => {
       }),
     ).toContain("failed");
     expect(
-      indexGitErrorMessage({
+      syncGitErrorMessage({
         added: 1,
         removed: 0,
         skipped: 0,
@@ -27,13 +27,13 @@ describe("trayIndexHandlers", () => {
     ).toBeNull();
   });
 
-  it("onIndexComplete resets selection and refreshes", async () => {
+  it("onSyncComplete resets selection and refreshes", async () => {
     const setSelectedIndex = vi.fn();
     const refresh = vi.fn().mockResolvedValue(undefined);
     const resyncDetail = vi.fn();
     const setError = vi.fn();
 
-    onIndexComplete(
+    onSyncComplete(
       {
         added: 1,
         removed: 0,
@@ -50,9 +50,9 @@ describe("trayIndexHandlers", () => {
     expect(setError).toHaveBeenCalledWith(null);
   });
 
-  it("onIndexFailed sets error", () => {
+  it("onSyncFailed sets error", () => {
     const setError = vi.fn();
-    onIndexFailed("boom", { setError });
+    onSyncFailed("boom", { setError });
     expect(setError).toHaveBeenCalledWith("boom");
   });
 });

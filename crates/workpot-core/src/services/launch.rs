@@ -65,7 +65,7 @@ pub fn build_command(template: &str, repo_path: &Path) -> Result<(String, Vec<St
 pub fn launch_repo(ctx: &AppState, path: &str) -> Result<(), String> {
     let catalog_path = Path::new(path);
     let launch_path = ctx
-        .indexed_launch_path(catalog_path)
+        .catalog_launch_path(catalog_path)
         .map_err(|e| e.to_string())?;
     let template = ctx.config().map_err(|e| e.to_string())?.launch_cmd.clone();
     let (program, args) = build_command(&template, &launch_path)?;

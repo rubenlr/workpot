@@ -2,7 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import type {
   GitRefreshSummary,
-  IndexSummary,
+  SyncSummary,
   RepoConvertEvent,
   RepoSyncEvent,
 } from "$lib/types";
@@ -19,9 +19,9 @@ export interface TrayPanelEventHandlers {
   onGitRefreshStarted: () => void;
   onGitRefreshComplete: (summary: GitRefreshSummary) => void;
   onGitRefreshFailed: (message: string) => void;
-  onIndexStarted: () => void;
-  onIndexComplete: (summary: IndexSummary) => void;
-  onIndexFailed: (message: string) => void;
+  onSyncStarted: () => void;
+  onSyncComplete: (summary: SyncSummary) => void;
+  onSyncFailed: (message: string) => void;
   onRepoSyncStarted: (payload: RepoSyncEvent) => void;
   onRepoSyncComplete: (payload: RepoSyncEvent) => void;
   onRepoSyncFailed: (payload: RepoSyncEvent) => void;
@@ -47,12 +47,12 @@ export async function subscribeTrayPanelEvents(
     listenFn<string>("git-refresh-failed", (event) =>
       handlers.onGitRefreshFailed(event.payload),
     ),
-    listenFn("index-started", () => handlers.onIndexStarted()),
-    listenFn<IndexSummary>("index-complete", (event) =>
-      handlers.onIndexComplete(event.payload),
+    listenFn("sync-started", () => handlers.onSyncStarted()),
+    listenFn<SyncSummary>("sync-complete", (event) =>
+      handlers.onSyncComplete(event.payload),
     ),
-    listenFn<string>("index-failed", (event) =>
-      handlers.onIndexFailed(event.payload),
+    listenFn<string>("sync-failed", (event) =>
+      handlers.onSyncFailed(event.payload),
     ),
     listenFn<RepoSyncEvent>("repo-sync-started", (event) =>
       handlers.onRepoSyncStarted(event.payload),

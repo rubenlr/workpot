@@ -92,7 +92,7 @@ fn migrations_apply() {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("user_version");
-    assert_eq!(version, 9);
+    assert_eq!(version, 10);
 
     let table_exists: i32 = conn
         .query_row(
@@ -103,14 +103,14 @@ fn migrations_apply() {
         .expect("repos table query");
     assert_eq!(table_exists, 1);
 
-    let index_runs_exists: i32 = conn
+    let local_catalog_sync_runs_exists: i32 = conn
         .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='index_runs'",
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='local_catalog_sync_runs'",
             [],
             |row| row.get(0),
         )
-        .expect("index_runs table query");
-    assert_eq!(index_runs_exists, 1);
+        .expect("local_catalog_sync_runs table query");
+    assert_eq!(local_catalog_sync_runs_exists, 1);
 
     let hidden_branches_exists: i32 = conn
         .query_row(
@@ -152,6 +152,29 @@ fn config_validate_rejects_too_many_watch_roots() {
         .map(|i| PathBuf::from(format!("/tmp/workpot-root-{i}")))
         .collect();
     assert!(config.validate().is_err());
+}
+
+#[test]
+fn config_fetch_defaults_and_empty_ok() {
+    let config = Config::default();
+    assert_eq!(config.fetch, "git -C {path} fetch");
+    assert!(config.validate().is_ok());
+
+    let mut empty = Config::default();
+    empty.fetch = String::new();
+    assert!(empty.validate().is_ok());
+
+    let mut whitespace = Config::default();
+    whitespace.fetch = "   ".to_string();
+    assert!(whitespace.validate().is_ok());
+}
+
+#[test]
+fn config_fetch_rejects_missing_path_placeholder() {
+    let mut config = Config::default();
+    config.fetch = "git fetch".to_string();
+    let err = config.validate().expect_err("missing {path}");
+    assert!(err.contains("{path}"), "got {err}");
 }
 
 #[test]

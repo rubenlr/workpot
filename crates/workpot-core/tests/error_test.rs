@@ -51,11 +51,11 @@ fn workpot_error_display_messages() {
             "watch root already exists: /tmp/root",
         ),
         (
-            WorkpotError::IndexCapExceeded {
+            WorkpotError::LocalCatalogSyncCapExceeded {
                 projected: 42,
                 max: 40,
             },
-            "index cap exceeded: projected 42 repos (max 40)",
+            "local catalog sync cap exceeded: projected 42 repos (max 40)",
         ),
         (
             WorkpotError::ConversionPreflight("dirty tree".into()),

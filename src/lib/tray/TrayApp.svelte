@@ -58,9 +58,9 @@
     panel.selectedIndex = idx;
     panel.openDetail(repo);
   }}
-  onRefresh={() => void panel.startIndexRefresh()}
-  refreshing={panel.indexing}
-  refreshSuccess={panel.indexRefreshSuccess}
+  onRefresh={() => void panel.startSync()}
+  refreshing={panel.syncing}
+  refreshSuccess={panel.syncSuccess}
   activeSync={panel.activeSync}
   onSync={panel.handleSync}
   activeConvert={panel.activeConvert}
