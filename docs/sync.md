@@ -4,12 +4,12 @@ Workpot sync keeps the local catalog and git metadata up to date. Sync is not au
 
 ## Scopes
 
-| Scope | Meaning | Status |
-| ----- | ------- | ------ |
-| `sync-local-catalog` | Today's watch-root scan + catalog merge + git refresh | Implemented (`workpot sync local`) |
-| `sync-remote-catalog` | Future remote directory index | Documented only — not implemented |
-| `fetch-repo` | Per-repo fetch via `Config.fetch` before git-state refresh | Implemented |
-| `sync` (full) | Orchestrator: runs local catalog (+ later remote) | Implemented thin wrapper (`workpot sync`) |
+| Scope                 | Meaning                                                    | Status                                    |
+| --------------------- | ---------------------------------------------------------- | ----------------------------------------- |
+| `sync-local-catalog`  | Today's watch-root scan + catalog merge + git refresh      | Implemented (`workpot sync local`)        |
+| `sync-remote-catalog` | Future remote directory index                              | Documented only — not implemented         |
+| `fetch-repo`          | Per-repo fetch via `Config.fetch` before git-state refresh | Implemented                               |
+| `sync` (full)         | Orchestrator: runs local catalog (+ later remote)          | Implemented thin wrapper (`workpot sync`) |
 
 Push/pull via tray/`repo_sync` is **not** a catalog sync scope — those commands move commits for one branch.
 
