@@ -160,19 +160,25 @@ fn config_fetch_defaults_and_empty_ok() {
     assert_eq!(config.fetch, "git -C {path} fetch");
     assert!(config.validate().is_ok());
 
-    let mut empty = Config::default();
-    empty.fetch = String::new();
+    let empty = Config {
+        fetch: String::new(),
+        ..Config::default()
+    };
     assert!(empty.validate().is_ok());
 
-    let mut whitespace = Config::default();
-    whitespace.fetch = "   ".to_string();
+    let whitespace = Config {
+        fetch: "   ".to_string(),
+        ..Config::default()
+    };
     assert!(whitespace.validate().is_ok());
 }
 
 #[test]
 fn config_fetch_rejects_missing_path_placeholder() {
-    let mut config = Config::default();
-    config.fetch = "git fetch".to_string();
+    let config = Config {
+        fetch: "git fetch".to_string(),
+        ..Config::default()
+    };
     let err = config.validate().expect_err("missing {path}");
     assert!(err.contains("{path}"), "got {err}");
 }
