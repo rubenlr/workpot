@@ -71,7 +71,7 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@vitest/browser@3.2.7)(vitest@3.2.7)
       eslint:
-        specifier: ^10.7.0
+        specifier: ^10.8.0
         version: 10.8.0(jiti@2.7.0)
       eslint-plugin-storybook:
         specifier: ^10.4.6
