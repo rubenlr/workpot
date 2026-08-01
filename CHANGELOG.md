@@ -13,14 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable recipes (shell steps, Cursor launch, multi-step workflows) — Phase 7
 - macOS `.app` / DMG distribution and install/update UX
 
-## [0.0.6] - 2026-07-31
+## [0.0.7] - 2026-08-01
 
-Rename index to sync and add local catalog sync scopes.
+Corrected re-release of the sync work after the broken 0.0.6 merge. Use this instead of 0.0.6.
 
 - **Sync rename** — `workpot index` → `workpot sync` (CLI, tray IPC, docs, settings); local catalog sync is an explicit operator/tray action (`sync local` / tray **Sync**)
 - **Sync scopes + fetch** — sync scopes plus a `fetch` step before git-state refresh so tray/full sync can update remotes, not only rescan local paths (`Config.fetch`, default `git -C {path} fetch`; empty disables)
 - **Indexer internals + docs** — rename to `local_catalog_sync` (audit table migration); operator docs in [docs/sync.md](docs/sync.md) and SETTINGS Discovery
+- **CI / release** — fold PR smoke into `release.yml`, assert smoke artifact contract in dry_run; stylelint-safe Svelte style directives for dynamic CSS
 - **Deps** — `clap` 4.6.4, `window-vibrancy` 0.8.0, `toml` 1.1.4; eslint 10.8, eslint-plugin-svelte 3.22, globals 17.7, jsdom 30.0.1, prettier 3.9.6, storybook 10.5.5, stylelint 17.14.1, svelte 5.56.8
+
+## [0.0.6] - 2026-08-01
+
+Broken release — accidental squash of #52 landed on `master` as commit `test` and was reverted (#59). Tag/artifacts are not the intended sync build; superseded by 0.0.7.
+
+- Do not install or ship from `v0.0.6`; use `v0.0.7` instead
 
 ## [0.0.5] - 2026-07-21
 
@@ -83,10 +90,11 @@ First public preview: local-only repo index, git-aware menu bar finder, and Curs
 - Bare and worktree paths canonicalized consistently during discovery
 - Unified CLI message when the repository index cap is exceeded
 
+[0.0.7]: https://github.com/rubenlr/workpot/releases/tag/v0.0.7
 [0.0.6]: https://github.com/rubenlr/workpot/releases/tag/v0.0.6
 [0.0.5]: https://github.com/rubenlr/workpot/releases/tag/v0.0.5
 [0.0.4]: https://github.com/rubenlr/workpot/releases/tag/v0.0.4
 [0.0.3]: https://github.com/rubenlr/workpot/releases/tag/v0.0.3
 [0.0.2]: https://github.com/rubenlr/workpot/releases/tag/v0.0.2
 [0.0.1]: https://github.com/rubenlr/workpot/releases/tag/v0.0.1
-[Unreleased]: https://github.com/rubenlr/workpot/compare/v0.0.6...HEAD
+[Unreleased]: https://github.com/rubenlr/workpot/compare/v0.0.7...HEAD
