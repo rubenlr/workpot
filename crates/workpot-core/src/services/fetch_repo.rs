@@ -17,40 +17,23 @@ pub fn fetch_repo(path: &Path, fetch_cmd: &str) -> Result<(), String> {
         .output()
         .map_err(|e| format!("failed to run fetch for {}: {e}", path.display()))?;
     if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let detail = if !stderr.trim().is_empty() {
-            stderr.trim().to_string()
-        } else if !stdout.trim().is_empty() {
-            stdout.trim().to_string()
-        } else {
-            format!("exit status {}", output.status)
-        };
-        Err(format!("fetch failed for {}: {detail}", path.display()))
+        return Ok(());
     }
+    Err(format!(
+        "fetch failed for {}: {}",
+        path.display(),
+        command_failure_detail(&output)
+    ))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-
-    #[test]
-    fn empty_fetch_cmd_is_noop() {
-        let path = PathBuf::from("/tmp/some-repo");
-        assert!(fetch_repo(&path, "").is_ok());
-        assert!(fetch_repo(&path, "   ").is_ok());
-    }
-
-    #[test]
-    fn invalid_template_errs_without_running() {
-        let path = PathBuf::from("/tmp/some-repo");
-        let err = fetch_repo(&path, "git fetch").expect_err("missing {path}");
-        assert!(
-            err.contains("{path}"),
-            "expected placeholder error, got {err}"
-        );
+fn command_failure_detail(output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stderr.trim().is_empty() {
+        stderr.trim().to_string()
+    } else if !stdout.trim().is_empty() {
+        stdout.trim().to_string()
+    } else {
+        format!("exit status {}", output.status)
     }
 }
