@@ -321,7 +321,7 @@ fn refresh_all_absorbs_per_repo_failure() {
     make_commit(&repo, "initial");
 
     let missing = dir.path().join("does-not-exist");
-    let results = workpot_core::services::git_state::refresh_all(vec![good_path, missing]);
+    let results = workpot_core::services::git_state::refresh_all(vec![good_path, missing], "");
 
     assert_eq!(results.len(), 2);
     let good = results

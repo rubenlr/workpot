@@ -5,7 +5,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 use workpot_core::AppState;
-use workpot_core::services::index::IndexSummary;
+use workpot_core::services::local_catalog_sync::LocalCatalogSyncSummary;
 
 /// Tray status icons loaded at setup (default, stale-dirty, syncing animation frames).
 pub struct TrayIcons {
@@ -21,7 +21,7 @@ impl TrayIcons {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct IndexSummaryDto {
+pub struct SyncSummaryDto {
     pub added: u32,
     pub removed: u32,
     pub skipped: u32,
@@ -29,8 +29,8 @@ pub struct IndexSummaryDto {
     pub git_errors: u32,
 }
 
-impl From<IndexSummary> for IndexSummaryDto {
-    fn from(s: IndexSummary) -> Self {
+impl From<LocalCatalogSyncSummary> for SyncSummaryDto {
+    fn from(s: LocalCatalogSyncSummary) -> Self {
         Self {
             added: s.added,
             removed: s.removed,
@@ -112,18 +112,16 @@ fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
     }
 }
 
-pub(crate) fn spawn_background_index(app: tauri::AppHandle, state: Arc<AppState>) {
-    log::info!("background index refresh: started");
-    if let Err(e) = app.emit("index-started", ()) {
-        log::warn!("failed to emit index-started: {e}");
+pub(crate) fn spawn_background_sync(app: tauri::AppHandle, state: Arc<AppState>) {
+    log::info!("background sync: started");
+    if let Err(e) = app.emit("sync-started", ()) {
+        log::warn!("failed to emit sync-started: {e}");
     }
     tauri::async_runtime::spawn(async move {
         let started = std::time::Instant::now();
         let state_for_blocking = Arc::clone(&state);
         let blocking_result = tauri::async_runtime::spawn_blocking(move || {
-            state_for_blocking
-                .run_index_phased()
-                .map_err(|e| e.to_string())
+            state_for_blocking.run_sync().map_err(|e| e.to_string())
         })
         .await;
 
@@ -131,27 +129,27 @@ pub(crate) fn spawn_background_index(app: tauri::AppHandle, state: Arc<AppState>
         match blocking_result {
             Ok(Ok(summary)) => {
                 log::info!(
-                    "background index refresh: complete elapsed_ms={elapsed_ms} added={} removed={} git_refreshed={}",
+                    "background sync: complete elapsed_ms={elapsed_ms} added={} removed={} git_refreshed={}",
                     summary.added,
                     summary.removed,
                     summary.git_refreshed
                 );
-                let dto = IndexSummaryDto::from(summary);
-                if let Err(e) = app.emit("index-complete", &dto) {
-                    log::warn!("failed to emit index-complete: {e}");
+                let dto = SyncSummaryDto::from(summary);
+                if let Err(e) = app.emit("sync-complete", &dto) {
+                    log::warn!("failed to emit sync-complete: {e}");
                 }
             }
             Ok(Err(e)) => {
-                log::warn!("background index refresh: failed elapsed_ms={elapsed_ms}: {e}");
-                if let Err(err) = app.emit("index-failed", &e) {
-                    log::warn!("failed to emit index-failed: {err}");
+                log::warn!("background sync: failed elapsed_ms={elapsed_ms}: {e}");
+                if let Err(err) = app.emit("sync-failed", &e) {
+                    log::warn!("failed to emit sync-failed: {err}");
                 }
             }
             Err(join_err) => {
-                let msg = format!("background index task panicked or was cancelled: {join_err}");
-                log::error!("background index refresh: failed elapsed_ms={elapsed_ms}: {msg}");
-                if let Err(err) = app.emit("index-failed", &msg) {
-                    log::warn!("failed to emit index-failed: {err}");
+                let msg = format!("background sync task panicked or was cancelled: {join_err}");
+                log::error!("background sync: failed elapsed_ms={elapsed_ms}: {msg}");
+                if let Err(err) = app.emit("sync-failed", &msg) {
+                    log::warn!("failed to emit sync-failed: {err}");
                 }
             }
         }
@@ -175,9 +173,9 @@ fn show_about_dialog(version: &str) {
 
 fn handle_tray_menu_event(app: &tauri::AppHandle, menu_id: &str) {
     match menu_id {
-        "refresh_index" => {
+        "refresh_sync" => {
             if let Some(state) = app.try_state::<Arc<AppState>>() {
-                spawn_background_index(app.clone(), state.inner().clone());
+                spawn_background_sync(app.clone(), state.inner().clone());
             }
         }
         "preferences" => {
@@ -203,15 +201,14 @@ fn toggle_panel_on_tray_click(app: &tauri::AppHandle, rect: tauri::Rect) {
 }
 
 fn build_tray_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
-    let refresh_index =
-        MenuItem::with_id(app, "refresh_index", "Refresh index", true, None::<&str>)?;
+    let refresh_sync = MenuItem::with_id(app, "refresh_sync", "Sync", true, None::<&str>)?;
     let preferences = MenuItem::with_id(app, "preferences", "Preferences…", true, None::<&str>)?;
     let about = MenuItem::with_id(app, "about", "About Workpot", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Workpot", true, None::<&str>)?;
     Menu::with_items(
         app,
-        &[&refresh_index, &preferences, &about, &separator, &quit],
+        &[&refresh_sync, &preferences, &about, &separator, &quit],
     )
 }
 
@@ -277,15 +274,15 @@ mod tests {
     }
 
     #[test]
-    fn index_summary_dto_maps_all_fields_from_core_summary() {
-        let summary = IndexSummary {
+    fn sync_summary_dto_maps_all_fields_from_core_summary() {
+        let summary = LocalCatalogSyncSummary {
             added: 1,
             removed: 2,
             skipped: 3,
             git_refreshed: 4,
             git_errors: 5,
         };
-        let dto = IndexSummaryDto::from(summary);
+        let dto = SyncSummaryDto::from(summary);
         assert_eq!(dto.added, 1);
         assert_eq!(dto.removed, 2);
         assert_eq!(dto.skipped, 3);

@@ -22,7 +22,7 @@ fn git_worktree(parent: &Path, name: &str) -> std::path::PathBuf {
 
 #[test]
 fn list_repos_during_index_stays_fast() {
-    unsafe { std::env::set_var("WORKPOT_TEST_INDEX_DELAY_MS", "500") };
+    unsafe { std::env::set_var("WORKPOT_TEST_LOCAL_CATALOG_SYNC_DELAY_MS", "500") };
 
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("config.toml");
@@ -45,9 +45,11 @@ fn list_repos_during_index_stays_fast() {
     let expected_count = state.list_repos().expect("list").len();
     assert_eq!(expected_count, 1);
 
-    let state_for_index = Arc::clone(&state);
+    let state_for_sync = Arc::clone(&state);
     let index_handle = std::thread::spawn(move || {
-        state_for_index.run_index_phased().expect("index");
+        state_for_sync
+            .run_local_catalog_sync()
+            .expect("local_catalog_sync");
     });
 
     let mut max_ms = 0u128;
@@ -60,7 +62,7 @@ fn list_repos_during_index_stays_fast() {
     }
 
     index_handle.join().expect("index thread");
-    unsafe { std::env::remove_var("WORKPOT_TEST_INDEX_DELAY_MS") };
+    unsafe { std::env::remove_var("WORKPOT_TEST_LOCAL_CATALOG_SYNC_DELAY_MS") };
 
     assert!(
         max_ms < 50,

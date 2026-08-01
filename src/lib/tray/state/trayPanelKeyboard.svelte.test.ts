@@ -60,7 +60,7 @@ function panelKeyboard() {
     list,
     detail,
     launch,
-    startIndexRefresh: vi.fn(),
+    startSync: vi.fn(),
   });
 }
 
@@ -86,7 +86,7 @@ describe("createTrayPanelKeyboard", () => {
       list,
       detail,
       launch,
-      startIndexRefresh: vi.fn(),
+      startSync: vi.fn(),
     });
 
     const e = new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true });
@@ -118,7 +118,7 @@ describe("createTrayPanelKeyboard", () => {
           list.selectedIndex = i;
         },
       }),
-      startIndexRefresh: vi.fn(),
+      startSync: vi.fn(),
     });
 
     const input = document.createElement("input");
@@ -159,7 +159,7 @@ describe("createTrayPanelKeyboard", () => {
           list.selectedIndex = i;
         },
       }),
-      startIndexRefresh: vi.fn(),
+      startSync: vi.fn(),
     });
 
     const input = document.createElement("input");
@@ -199,7 +199,7 @@ describe("createTrayPanelKeyboard", () => {
           list.selectedIndex = i;
         },
       }),
-      startIndexRefresh: vi.fn(),
+      startSync: vi.fn(),
     });
 
     const input = document.createElement("input");
@@ -250,7 +250,7 @@ describe("createTrayPanelKeyboard", () => {
           list.selectedIndex = i;
         },
       }),
-      startIndexRefresh: vi.fn(),
+      startSync: vi.fn(),
     });
 
     const e = new KeyboardEvent("keydown", {
@@ -262,7 +262,7 @@ describe("createTrayPanelKeyboard", () => {
   });
 
   it("onFilterKeydown delegates refresh shortcut to tray nav", () => {
-    const startIndexRefresh = vi.fn();
+    const startSync = vi.fn();
     const list = createTrayListSelection({
       getRepos: () => [],
       getSectionCfg: () => ({ maxRecentDays: 14, minRecentCount: 3 }),
@@ -281,7 +281,7 @@ describe("createTrayPanelKeyboard", () => {
           list.selectedIndex = i;
         },
       }),
-      startIndexRefresh,
+      startSync,
     });
     const input = document.createElement("input");
     const e = new KeyboardEvent("keydown", {
@@ -291,7 +291,7 @@ describe("createTrayPanelKeyboard", () => {
     });
     Object.defineProperty(e, "currentTarget", { value: input });
     kb.onFilterKeydown(e);
-    expect(startIndexRefresh).toHaveBeenCalledOnce();
+    expect(startSync).toHaveBeenCalledOnce();
   });
 
   it("onPanelKeydown ignores repo-filter input target", () => {
@@ -313,7 +313,7 @@ describe("createTrayPanelKeyboard", () => {
           list.selectedIndex = i;
         },
       }),
-      startIndexRefresh: vi.fn(),
+      startSync: vi.fn(),
     });
 
     const input = document.createElement("input");
@@ -346,7 +346,7 @@ describe("createTrayPanelKeyboard", () => {
       list,
       detail: createTrayDetail(),
       launch,
-      startIndexRefresh: vi.fn(),
+      startSync: vi.fn(),
     });
 
     kb.onPanelKeydown(
@@ -377,7 +377,7 @@ describe("createTrayPanelKeyboard", () => {
           list.selectedIndex = i;
         },
       }),
-      startIndexRefresh: vi.fn(),
+      startSync: vi.fn(),
     });
 
     const notes = document.createElement("textarea");

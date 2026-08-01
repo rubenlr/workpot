@@ -35,7 +35,7 @@ fn workpot_cmd(home: &std::path::Path) -> Command {
     let mut cmd = Command::cargo_bin("workpot").expect("workpot binary");
     // Isolate all platform dirs under `home`. CI often sets XDG_* globally; without
     // this, `directories::config_dir()` ignores the temp HOME and tests read/write
-    // different config files (Linux failures on excludes + index cap).
+    // different config files (Linux failures on excludes + sync cap).
     cmd.env("HOME", home);
     cmd.env("XDG_CONFIG_HOME", home.join(".config"));
     cmd.env("XDG_DATA_HOME", home.join(".local/share"));
@@ -129,7 +129,7 @@ fn repo_add_list_remove_roundtrip() {
 }
 
 #[test]
-fn index_prints_git_refresh_stats() {
+fn sync_prints_git_refresh_stats() {
     let home = tempfile::tempdir().expect("tempdir");
     let watch = home.path().join("watch");
     fs::create_dir_all(&watch).expect("watch dir");
@@ -141,18 +141,18 @@ fn index_prints_git_refresh_stats() {
         .success();
 
     workpot_cmd(home.path())
-        .arg("index")
+        .arg("sync")
         .assert()
         .success()
         .stdout(
-            predicate::str::contains("index:")
+            predicate::str::contains("sync:")
                 .and(predicate::str::contains("git:"))
                 .and(predicate::str::contains("refreshed")),
         );
 }
 
 #[test]
-fn repo_list_shows_question_mark_before_index() {
+fn repo_list_shows_question_mark_before_sync() {
     let home = tempfile::tempdir().expect("tempdir");
     let repo_path = git_fixture(home.path());
 
@@ -169,7 +169,7 @@ fn repo_list_shows_question_mark_before_index() {
 }
 
 #[test]
-fn repo_list_shows_git_state_after_index() {
+fn repo_list_shows_git_state_after_sync() {
     let home = tempfile::tempdir().expect("tempdir");
     let watch = home.path().join("watch");
     fs::create_dir_all(&watch).expect("watch dir");
@@ -180,7 +180,7 @@ fn repo_list_shows_git_state_after_index() {
         .assert()
         .success();
 
-    workpot_cmd(home.path()).arg("index").assert().success();
+    workpot_cmd(home.path()).arg("sync").assert().success();
 
     workpot_cmd(home.path())
         .args(["repo", "list"])
@@ -252,7 +252,7 @@ fn cli_roots_remove_prunes_repos() {
 }
 
 #[test]
-fn cli_repo_remove_stays_absent_after_index() {
+fn cli_repo_remove_stays_absent_after_sync() {
     let home = tempfile::tempdir().expect("tempdir");
     let watch = home.path().join("watch");
     fs::create_dir_all(&watch).expect("watch dir");
@@ -271,9 +271,9 @@ fn cli_repo_remove_stays_absent_after_index() {
         .assert()
         .success();
 
-    workpot_cmd(home.path()).arg("index").assert().success();
+    workpot_cmd(home.path()).arg("sync").assert().success();
 
-    workpot_cmd(home.path()).arg("index").assert().success();
+    workpot_cmd(home.path()).arg("sync").assert().success();
 
     workpot_cmd(home.path())
         .args(["repo", "list"])
@@ -283,7 +283,7 @@ fn cli_repo_remove_stays_absent_after_index() {
 }
 
 #[test]
-fn roots_add_index_list_roundtrip() {
+fn roots_add_sync_list_roundtrip() {
     let home = tempfile::tempdir().expect("tempdir");
     let watch = home.path().join("watch");
     fs::create_dir_all(&watch).expect("watch dir");
@@ -296,10 +296,10 @@ fn roots_add_index_list_roundtrip() {
         .success();
 
     workpot_cmd(home.path())
-        .arg("index")
+        .arg("sync")
         .assert()
         .success()
-        .stdout(predicate::str::contains("index:"));
+        .stdout(predicate::str::contains("sync:"));
 
     workpot_cmd(home.path())
         .args(["repo", "list"])
@@ -311,7 +311,7 @@ fn roots_add_index_list_roundtrip() {
 }
 
 #[test]
-fn index_rescan_without_roots_add() {
+fn sync_rescan_without_roots_add() {
     let home = tempfile::tempdir().expect("tempdir");
     let watch = home.path().join("watch");
     fs::create_dir_all(&watch).expect("watch dir");
@@ -329,14 +329,14 @@ fn index_rescan_without_roots_add() {
     workpot_cmd(home.path()).arg("paths").assert().success();
 
     workpot_cmd(home.path())
-        .arg("index")
+        .arg("sync")
         .assert()
         .success()
-        .stdout(predicate::str::contains("index:"));
+        .stdout(predicate::str::contains("sync:"));
 }
 
 #[test]
-fn index_cap_exceeded_exits_one() {
+fn sync_cap_exceeded_exits_one() {
     let home = tempfile::tempdir().expect("tempdir");
     let watch = home.path().join("watch");
     fs::create_dir_all(&watch).expect("watch");
@@ -361,7 +361,7 @@ fn index_cap_exceeded_exits_one() {
     workpot_cmd(home.path()).arg("paths").assert().success();
 
     workpot_cmd(home.path())
-        .arg("index")
+        .arg("sync")
         .assert()
         .code(1)
         .stderr(predicate::str::contains("cap exceeded"));
@@ -596,7 +596,7 @@ fn tag_add_rejects_tag_over_64_graphemes() {
 }
 
 #[test]
-fn list_empty_index_exits_zero() {
+fn list_empty_catalog_exits_zero() {
     let home = tempfile::tempdir().expect("tempdir");
 
     workpot_cmd(home.path())
@@ -962,7 +962,7 @@ fn workpot_list_omits_branch_placeholder_for_bare_repos() {
         .assert()
         .success();
 
-    workpot_cmd(home.path()).arg("index").assert().success();
+    workpot_cmd(home.path()).arg("sync").assert().success();
 
     workpot_cmd(home.path())
         .arg("list")

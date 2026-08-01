@@ -11,7 +11,7 @@ describe("trayListView", () => {
 
   it("shows list when error is set but repos are cached", () => {
     expect(trayListView("git push failed", 5, "", 5)).toEqual({ kind: "list" });
-    expect(trayListView("refresh_index not allowed", 3, "wp", 1)).toEqual({
+    expect(trayListView("refresh_sync not allowed", 3, "wp", 1)).toEqual({
       kind: "list",
     });
   });

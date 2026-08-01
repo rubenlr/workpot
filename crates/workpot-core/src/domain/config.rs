@@ -24,6 +24,10 @@ fn default_pull_cmd() -> String {
     "git -C {path} pull origin {branch}".to_string()
 }
 
+fn default_fetch_cmd() -> String {
+    "git -C {path} fetch".to_string()
+}
+
 fn default_max_visible_rows() -> u32 {
     15
 }
@@ -166,7 +170,7 @@ pub struct Config {
     /// Watch roots for auto-discovery (consumed in Phase 2).
     #[serde(default)]
     pub watch_roots: Vec<PathBuf>,
-    /// Path patterns excluded from indexing (consumed in Phase 2).
+    /// Path patterns excluded from local catalog sync discovery.
     #[serde(default)]
     pub excludes: Vec<String>,
     #[serde(default)]
@@ -180,6 +184,10 @@ pub struct Config {
     /// Shell command template for pulling a branch. `{path}` and `{branch}` are substituted.
     #[serde(default = "default_pull_cmd")]
     pub pull_cmd: String,
+    /// Shell command template for fetching remotes before git-state refresh.
+    /// Empty string disables fetch. Non-empty must contain `{path}`.
+    #[serde(default = "default_fetch_cmd")]
+    pub fetch: String,
     /// Maximum repo rows visible in the tray panel before scrolling (D-12).
     #[serde(default = "default_max_visible_rows")]
     pub max_visible_rows: u32,
@@ -208,6 +216,7 @@ impl Default for Config {
             launch_cmd: default_launch_cmd(),
             push_cmd: default_push_cmd(),
             pull_cmd: default_pull_cmd(),
+            fetch: default_fetch_cmd(),
             max_visible_rows: default_max_visible_rows(),
             max_pinned: default_max_pinned(),
             max_recent_days: default_max_recent_days(),
@@ -255,6 +264,10 @@ impl Config {
         validate_shell_cmd("launch_cmd", &self.launch_cmd, &["{path}"])?;
         validate_shell_cmd("push_cmd", &self.push_cmd, &["{path}", "{branch}"])?;
         validate_shell_cmd("pull_cmd", &self.pull_cmd, &["{path}", "{branch}"])?;
+        // Empty/whitespace fetch disables remote fetch during catalog sync.
+        if !self.fetch.trim().is_empty() {
+            validate_shell_cmd("fetch", &self.fetch, &["{path}"])?;
+        }
         Ok(())
     }
 

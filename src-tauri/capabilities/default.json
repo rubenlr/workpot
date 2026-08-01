@@ -13,7 +13,7 @@
     "allow-list-repos",
     "allow-get-tray-config",
     "allow-refresh-all-git-state",
-    "allow-refresh-index",
+    "allow-refresh-sync",
     "allow-checkout-repo-branch",
     "allow-open-in-cursor",
     "allow-open-in-finder",

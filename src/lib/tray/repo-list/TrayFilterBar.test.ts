@@ -31,7 +31,7 @@ function renderBar(
 }
 
 function refreshIcon(container: HTMLElement): HTMLElement | null {
-  return container.querySelector('button[aria-label="Refresh index"] span');
+  return container.querySelector('button[aria-label="Sync"] span');
 }
 
 describe("TrayFilterBar", () => {
@@ -104,8 +104,8 @@ describe("TrayFilterBar", () => {
       onRefresh: vi.fn(),
       refreshing: true,
     });
-    expect(
-      getByRole("button", { name: "Refresh index" }).hasAttribute("disabled"),
-    ).toBe(true);
+    expect(getByRole("button", { name: "Sync" }).hasAttribute("disabled")).toBe(
+      true,
+    );
   });
 });

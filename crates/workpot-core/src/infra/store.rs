@@ -3,7 +3,7 @@ use crate::infra::db::DbPool;
 use rusqlite::Connection;
 use std::path::Path;
 
-/// Open a single read-write connection (unit tests in index/catalog).
+/// Open a single read-write connection (unit tests in local_catalog_sync/catalog).
 pub fn open_connection(path: &Path) -> Result<Connection> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

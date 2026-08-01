@@ -102,8 +102,8 @@ fn roots_add_rolls_back_on_index_cap() {
     let ctx = AppContext::open_with_paths(config_path.clone(), db_path).expect("open");
     let err = ctx.roots_add(&watch_parent).expect_err("cap should fail");
     assert!(
-        matches!(err, WorkpotError::IndexCapExceeded { .. }),
-        "expected IndexCapExceeded, got {err:?}"
+        matches!(err, WorkpotError::LocalCatalogSyncCapExceeded { .. }),
+        "expected LocalCatalogSyncCapExceeded, got {err:?}"
     );
 
     let on_disk = fs::read_to_string(&config_path).expect("read config");
