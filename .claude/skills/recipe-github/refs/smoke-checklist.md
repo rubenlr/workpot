@@ -9,7 +9,10 @@ bash scripts/recipe-github/list-dependabot-branches.sh
 # expect: valid JSON, count >= 0
 
 bash scripts/recipe-github/capture-deprecation-signals.sh
-# expect: valid JSON, exit 0
+# expect: valid JSON with deprecated (int) + symbols[]; exit 0
+
+bash scripts/recipe-github/measure-trigger-sites.sh --deprecation-sites 2 --build-sites 0
+# expect: trigger_sites=2 (not LoC); exit 0
 
 # Do NOT run verify-full on every PR CI — it is the full local gate (fmt+pre+test).
 # Optional once on a clean tree when validating the skill:
@@ -21,9 +24,10 @@ bash scripts/recipe-github/capture-deprecation-signals.sh
 1. Create/switch to integration branch; ensure clean tree
 2. `list-dependabot-branches.sh` — confirm expected set
 3. Invoke skill `recipe-github` / follow `refs/workflows/merge-dependabot.md`
-4. Per branch: merge → conflict agent if needed → commit1 → deprecations → commit2? → verify-full → delete
-5. Confirm remotes gone: `git fetch --prune && list-dependabot-branches.sh`
-6. Do not push integration branch unless explicitly requested
+4. Per branch: merge → conflict agent? → commit1 → deprecations → commit2? → verify-full → metrics → delete?
+5. Summary table must include `deprecated` + `trigger sites` (`refs/report-table.md`)
+6. Confirm remotes gone: `git fetch --prune && list-dependabot-branches.sh`
+7. Do not push integration branch unless explicitly requested
 
 ## Abort
 

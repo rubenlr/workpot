@@ -28,7 +28,7 @@ Orchestrate GitHub maintenance for Workpot via **scripts** (mechanical loops + J
 2. **Load workflow** — Read `refs/workflows/<action>.md`. Create TodoWrite from its step ids (`merge: false`).
 3. **Execute** — Follow the workflow. Run scripts under `scripts/recipe-github/`; load policy/agent refs only when the step requires them.
 4. **Escalate** — On `escalate` from conflict/deprecation agent or verify FAIL: stop that branch, keep remote, report JSON + reason. Do not guess.
-5. **Close** — Emit final run summary. Offer Next Up (push integration branch / open PR). Do **not** auto-push unless the user asked.
+5. **Close** — Emit final run summary table per `refs/report-table.md` (includes `deprecated` + `trigger sites`). Offer Next Up (push / open PR). Do **not** auto-push unless the user asked.
 
 ## Progressive disclosure
 
@@ -39,6 +39,7 @@ Orchestrate GitHub maintenance for Workpot via **scripts** (mechanical loops + J
 | merge-dependabot steps   | `refs/workflows/merge-dependabot.md`                               |
 | Conflict handling        | `refs/conflict-policy.md`, `refs/agents/conflict-resolve.md`       |
 | Deprecation commit 2     | `refs/deprecation-policy.md`, `refs/agents/deprecation-migrate.md` |
+| Final run table          | `refs/report-table.md`                                             |
 | Dry-run / live checklist | `refs/smoke-checklist.md`                                          |
 
 ## Orchestration
