@@ -188,8 +188,14 @@ fn release_yml_bundle_and_tap_update_wired() {
 #[test]
 fn release_smoke_asserts_tarball_contract_only() {
     let smoke = workflow_text("release-smoke.yml");
-    assert!(smoke.contains("Workpot-0.0.0-smoke-aarch64.tar.gz"));
-    assert!(smoke.contains("unexpected artifact in smoke output"));
+    assert!(smoke.contains("uses: ./.github/workflows/release.yml"));
+    assert!(smoke.contains("dry_run: true"));
+    assert!(smoke.contains("v0.0.0-smoke"));
+    // Contract assertion lives in release.yml dry_run (avoids caller download-artifact).
+    let release = workflow_text("release.yml");
+    assert!(release.contains("Validate aarch64-only artifact contract"));
+    assert!(release.contains("unexpected artifact in smoke output"));
+    assert!(release.contains("Workpot-${version}-aarch64.tar.gz"));
 }
 
 /// release-publish chains canonical `release.yml` after tagging (GITHUB_TOKEN releases do not fire release:published).
