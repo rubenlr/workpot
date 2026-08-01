@@ -4,7 +4,7 @@
 
 **Workpot**
 
-Workpot is a macOS-native assistant for engineers who juggle many git repositories. It indexes local repos, surfaces git state and metadata at a glance, and makes it fast to find the right project and launch Cursor or run recipes—without keeping dozens of IDE windows open.
+Workpot is a macOS-native assistant for engineers who juggle many git repositories. It syncs a local catalog of repos, surfaces git state and metadata at a glance, and makes it fast to find the right project and launch Cursor or run recipes—without keeping dozens of IDE windows open.
 
 Built on Tauri with a CLI and menu-bar tray. v1 is a prioritized fuzzy finder with git awareness; content search and remote integrations come later.
 
@@ -14,9 +14,9 @@ Built on Tauri with a CLI and menu-bar tray. v1 is a prioritized fuzzy finder wi
 
 - **Platform**: macOS only for v1 — Tauri tray + CLI
 - **IDE**: Cursor launch integration required in v1
-- **Privacy**: Local-only — index and config stay on disk
+- **Privacy**: Local-only — catalog and config stay on disk
 - **Search**: Metadata-first in v1; no cross-repo code index until v2
-- **Discovery**: Watch roots auto-index + manual register/exclude
+- **Discovery**: Watch roots + local catalog sync + manual register/exclude
 
 <!-- GSD:project-end -->
 

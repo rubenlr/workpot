@@ -33,19 +33,23 @@ struct Cli {
 enum Commands {
     /// Print resolved config and database paths (creates defaults on first run).
     Paths,
-    /// Full rescan of all configured watch roots.
+    /// Sync catalog from watch roots (and later remotes).
     ///
+    /// `workpot sync` runs the full orchestrator. `workpot sync local` syncs the local catalog only.
     /// To scan a single new root immediately, use `workpot roots add` instead.
-    Index,
+    Sync {
+        #[command(subcommand)]
+        command: Option<SyncCommands>,
+    },
     /// List repositories in priority order (Pinned > Dirty > Recent > Rest).
     List,
-    /// Register, remove, convert, or inspect repositories in the index.
+    /// Register, remove, convert, or inspect repositories in the catalog.
     #[command(subcommand)]
     Repo(RepoCommands),
     /// Add, list, or remove filesystem watch roots for automatic discovery.
     #[command(subcommand)]
     Roots(RootsCommands),
-    /// List or remove path-exclusion globs applied during index scans.
+    /// List or remove path-exclusion globs applied during local catalog sync scans.
     #[command(subcommand)]
     Excludes(ExcludesCommands),
     /// Add, remove, or list tags on a repository.
@@ -89,6 +93,12 @@ struct SettingsArgs {
 }
 
 #[derive(Subcommand)]
+enum SyncCommands {
+    /// Sync local catalog only (watch-root rescan + git refresh).
+    Local,
+}
+
+#[derive(Subcommand)]
 enum SettingsCommands {
     /// Write a documented default config.toml.
     Init {
@@ -110,7 +120,7 @@ enum RepoCommands {
     ///
     /// Manual registration bypasses scan exclude globs.
     Add { path: PathBuf },
-    /// Flat index dump with git-state columns (admin/debug).
+    /// Flat catalog dump with git-state columns (admin/debug).
     ///
     /// Unlike `workpot list`, does not apply tray priority order or icons.
     List,
@@ -170,10 +180,10 @@ enum RootsCommands {
     Add { path: PathBuf },
     /// List configured watch roots.
     List,
-    /// Remove a watch root and prune indexed repos under it by default.
+    /// Remove a watch root and prune cataloged repos under it by default.
     Remove {
         path: PathBuf,
-        /// Keep indexed repos under this root (orphan scan rows until `workpot index` or `repo remove`).
+        /// Keep cataloged repos under this root (orphan scan rows until `workpot sync` or `repo remove`).
         #[arg(long)]
         skip_prune: bool,
     },
@@ -199,7 +209,7 @@ fn main() -> ExitCode {
         Err(e)
             if matches!(
                 e.downcast_ref::<WorkpotError>(),
-                Some(WorkpotError::IndexCapExceeded { .. })
+                Some(WorkpotError::LocalCatalogSyncCapExceeded { .. })
             ) =>
         {
             eprintln!("{e:#}");
@@ -236,7 +246,7 @@ fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Paths => run_paths(),
-        Commands::Index => run_index(),
+        Commands::Sync { command } => run_sync_cmd(command),
         Commands::List => run_list(),
         Commands::Repo(sub) => run_repo(sub),
         Commands::Excludes(sub) => run_excludes(sub),
@@ -306,11 +316,14 @@ fn run_paths() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_index() -> anyhow::Result<()> {
+fn run_sync_cmd(scope: Option<SyncCommands>) -> anyhow::Result<()> {
     let ctx = AppContext::open().context("failed to open workpot")?;
-    let summary = ctx.run_index()?;
+    let (label, summary) = match scope {
+        None => ("sync", ctx.run_sync()?),
+        Some(SyncCommands::Local) => ("sync local", ctx.run_local_catalog_sync()?),
+    };
     println!(
-        "index: +{} -{} skipped {} / git: {} refreshed, {} errors",
+        "{label}: +{} -{} skipped {} / git: {} refreshed, {} errors",
         summary.added, summary.removed, summary.skipped, summary.git_refreshed, summary.git_errors
     );
     Ok(())
@@ -572,8 +585,16 @@ mod cli_parse_tests {
             Commands::Paths
         ));
         assert!(matches!(
-            Cli::try_parse_from(["workpot", "index"]).unwrap().command,
-            Commands::Index
+            Cli::try_parse_from(["workpot", "sync"]).unwrap().command,
+            Commands::Sync { command: None }
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "sync", "local"])
+                .unwrap()
+                .command,
+            Commands::Sync {
+                command: Some(SyncCommands::Local)
+            }
         ));
         assert!(matches!(
             Cli::try_parse_from(["workpot", "list"]).unwrap().command,

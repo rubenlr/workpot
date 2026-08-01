@@ -670,7 +670,7 @@ fn convert_bare_to_normal() {
 }
 
 #[test]
-fn indexed_launch_path_prefers_catalog_branch_among_worktrees() {
+fn catalog_launch_path_prefers_catalog_branch_among_worktrees() {
     let dir = tempfile::tempdir().expect("tempdir");
     let ctx = test_ctx(dir.path());
     let (bare_path, wt_main, wt_feature) = bare_repo_with_two_worktrees(dir.path());
@@ -688,7 +688,7 @@ fn indexed_launch_path_prefers_catalog_branch_among_worktrees() {
     )
     .expect("set branch");
 
-    let resolved = catalog::indexed_launch_path(&conn, &bare_path).expect("resolve");
+    let resolved = catalog::catalog_launch_path(&conn, &bare_path).expect("resolve");
     assert_eq!(
         resolved,
         wt_feature.canonicalize().expect("canon feature wt")

@@ -176,7 +176,7 @@ fn touch_last_opened_at_updates_row() {
 }
 
 #[test]
-fn indexed_launch_path_resolves_non_excluded_repo() {
+fn catalog_launch_path_resolves_non_excluded_repo() {
     let (_dir, conn) = temp_db();
     let path_key = "/tmp/tray-indexed-launch-ok";
     conn.execute(
@@ -186,15 +186,15 @@ fn indexed_launch_path_resolves_non_excluded_repo() {
     )
     .expect("insert");
 
-    let resolved = catalog::indexed_launch_path(&conn, Path::new(path_key)).expect("resolve");
+    let resolved = catalog::catalog_launch_path(&conn, Path::new(path_key)).expect("resolve");
     assert_eq!(resolved.display().to_string(), path_key);
 }
 
 #[test]
-fn indexed_launch_path_rejects_unknown_repo() {
+fn catalog_launch_path_rejects_unknown_repo() {
     let (_dir, conn) = temp_db();
     let err =
-        catalog::indexed_launch_path(&conn, Path::new("/tmp/not-indexed")).expect_err("missing");
+        catalog::catalog_launch_path(&conn, Path::new("/tmp/not-indexed")).expect_err("missing");
     match &err {
         WorkpotError::NotFound(key) => assert_eq!(key.as_str(), "/tmp/not-indexed"),
         other => panic!("expected NotFound, got: {other:?}"),
@@ -202,7 +202,7 @@ fn indexed_launch_path_rejects_unknown_repo() {
 }
 
 #[test]
-fn indexed_launch_path_rejects_excluded_repo() {
+fn catalog_launch_path_rejects_excluded_repo() {
     let (_dir, conn) = temp_db();
     let path_key = "/tmp/tray-indexed-launch-excluded";
     conn.execute(
@@ -212,7 +212,7 @@ fn indexed_launch_path_rejects_excluded_repo() {
     )
     .expect("insert");
 
-    let err = catalog::indexed_launch_path(&conn, Path::new(path_key)).expect_err("excluded");
+    let err = catalog::catalog_launch_path(&conn, Path::new(path_key)).expect_err("excluded");
     match &err {
         WorkpotError::NotFound(key) => assert_eq!(key.as_str(), path_key),
         other => panic!("expected NotFound, got: {other:?}"),

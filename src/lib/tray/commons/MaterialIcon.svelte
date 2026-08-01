@@ -14,9 +14,9 @@
 
 <span
   class="material-symbols-outlined inline-flex shrink-0 select-none leading-none {className}"
-  style="font-size: {size}px; font-variation-settings: 'FILL' {filled
-    ? 1
-    : 0}, 'wght' 400, 'GRAD' 0, 'opsz' 24;"
+  style:font-size="{size}px"
+  style:font-variation-settings="'FILL' {filled ? 1 : 0}, 'wght' 400, 'GRAD' 0,
+  'opsz' 24"
   aria-hidden="true">{name}</span
 >
 

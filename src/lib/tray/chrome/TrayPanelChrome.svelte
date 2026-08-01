@@ -97,7 +97,7 @@
 
 <main
   class="panel-shell flex h-auto flex-col overflow-hidden rounded-xl bg-inverse-surface text-inverse-on-surface shadow-2xl"
-  style="max-height: {listMaxHeightPx}px"
+  style:max-height="{listMaxHeightPx}px"
   use:observePanelHeight={onPanelHeightChange}
 >
   {#if launchError && onDismissLaunchError}
