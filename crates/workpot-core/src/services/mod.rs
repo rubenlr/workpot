@@ -7,6 +7,7 @@ pub mod git_state;
 pub mod launch;
 pub mod local_catalog_sync;
 pub mod org;
+pub mod path_cmd_template;
 pub mod paths;
 pub mod repo_convert;
 pub mod repo_fuzzy;

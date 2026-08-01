@@ -9,7 +9,8 @@ pub fn fetch_repo(path: &Path, fetch_cmd: &str) -> Result<(), String> {
     if fetch_cmd.trim().is_empty() {
         return Ok(());
     }
-    let (program, args) = build_fetch_command(fetch_cmd, path)?;
+    let (program, args) =
+        crate::services::path_cmd_template::build_path_cmd_template(fetch_cmd, path, "fetch")?;
     let output = Command::new(&program)
         .args(&args)
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -29,32 +30,6 @@ pub fn fetch_repo(path: &Path, fetch_cmd: &str) -> Result<(), String> {
         };
         Err(format!("fetch failed for {}: {detail}", path.display()))
     }
-}
-
-/// Split `fetch` template into program + args after substituting `{path}`.
-fn build_fetch_command(template: &str, repo_path: &Path) -> Result<(String, Vec<String>), String> {
-    let path_str = repo_path
-        .to_str()
-        .ok_or_else(|| "repo path is not valid UTF-8".to_string())?;
-    if path_str.contains('\n') || path_str.contains('\r') {
-        return Err("repo path must not contain newlines".to_string());
-    }
-    if !template.contains("{path}") {
-        return Err("fetch must contain {path} placeholder".to_string());
-    }
-    let path_token = if path_str.contains(char::is_whitespace) {
-        format!("\"{path_str}\"")
-    } else {
-        path_str.to_string()
-    };
-    let expanded = template.replace("{path}", &path_token);
-    let parts = shell_words::split(&expanded).map_err(|e| format!("invalid fetch: {e}"))?;
-    if parts.is_empty() {
-        return Err("fetch is empty after parsing".to_string());
-    }
-    let program = parts[0].clone();
-    let args = parts[1..].to_vec();
-    Ok((program, args))
 }
 
 #[cfg(test)]
