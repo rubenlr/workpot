@@ -2,9 +2,15 @@ name: release
 
 # Builds macOS aarch64 combined Workpot.app+CLI tarball + checksum,
 # then uploads to an existing GitHub Release and updates the Homebrew tap.
-# Invoked by release-publish.yml (after tagging), release-smoke (dry_run), or workflow_dispatch.
+# Invoked by: PR (smoke dry_run), release-publish.yml (after tagging), or workflow_dispatch.
 
 on:
+  pull_request:
+    branches: [master]
+    paths:
+      - ".github/workflows/release*.yml"
+      - "Cargo.toml"
+      - "crates/**"
   workflow_call:
     inputs:
       tag:
@@ -28,16 +34,16 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RELEASE_TAG: ${{ inputs.tag || github.event.inputs.tag }}
+  RELEASE_TAG: ${{ github.event_name == 'pull_request' && 'v0.0.0-smoke' || inputs.tag || github.event.inputs.tag }}
 
 permissions:
   contents: read
 
-# Real releases serialize per tag; PR smoke uses a unique group so a stuck/queued
-# matrix leg does not block every other PR (smoke tag is always v0.0.0-smoke).
+# Real releases serialize per tag; PR / dry_run smoke uses a unique group so a
+# stuck matrix leg does not block other PRs (smoke tag is always v0.0.0-smoke).
 concurrency:
-  group: ${{ inputs.dry_run && format('release-smoke-{0}', github.run_id) || format('release-{0}', inputs.tag || github.event.inputs.tag) }}
-  cancel-in-progress: ${{ inputs.dry_run }}
+  group: ${{ github.event_name == 'pull_request' && format('release-pr-{0}', github.event.pull_request.number || github.run_id) || (inputs.dry_run && format('release-smoke-{0}', github.run_id) || format('release-{0}', inputs.tag || github.event.inputs.tag)) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || inputs.dry_run }}
 
 jobs:
   prepare:
@@ -50,7 +56,7 @@ jobs:
       - id: flags
         run: |
           set -euo pipefail
-          if [ "${{ inputs.dry_run }}" = "true" ] || [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+          if [ "${{ github.event_name }}" = "pull_request" ] || [ "${{ inputs.dry_run }}" = "true" ] || [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             echo "dry_run=true" >> "$GITHUB_OUTPUT"
             echo "checkout_ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else
@@ -171,8 +177,7 @@ jobs:
           tar -C "${BUNDLE_MACOS_DIR}" -czf "$archive" Workpot.app
           shasum -a 256 "$archive" > "$checksum"
 
-      # Smoke contract: aarch64 tarball + checksum only (no DMG / x86). Checked here so
-      # release-smoke need not download-artifact across the reusable-workflow boundary.
+      # Smoke contract: aarch64 tarball + checksum only (no DMG / x86).
       - name: Validate aarch64-only artifact contract
         if: needs.prepare.outputs.dry_run == 'true'
         env:

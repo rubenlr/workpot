@@ -156,7 +156,7 @@ fn workflow_text(name: &str) -> String {
 
 #[test]
 fn release_workflows_use_bundle_not_dmg() {
-    for file in ["release.yml", "release-smoke.yml", "release-publish.yml"] {
+    for file in ["release.yml", "release-publish.yml"] {
         let text = workflow_text(file);
         assert!(!text.contains("dmg:"), "{file} must not define a dmg job");
         assert!(
@@ -186,16 +186,19 @@ fn release_yml_bundle_and_tap_update_wired() {
 }
 
 #[test]
-fn release_smoke_asserts_tarball_contract_only() {
-    let smoke = workflow_text("release-smoke.yml");
-    assert!(smoke.contains("uses: ./.github/workflows/release.yml"));
-    assert!(smoke.contains("dry_run: true"));
-    assert!(smoke.contains("v0.0.0-smoke"));
-    // Contract assertion lives in release.yml dry_run (avoids caller download-artifact).
+fn release_yml_pr_smoke_asserts_tarball_contract() {
     let release = workflow_text("release.yml");
+    assert!(release.contains("pull_request:"));
+    assert!(release.contains("v0.0.0-smoke"));
     assert!(release.contains("Validate aarch64-only artifact contract"));
     assert!(release.contains("unexpected artifact in smoke output"));
     assert!(release.contains("Workpot-${version}-aarch64.tar.gz"));
+    assert!(
+        !PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.github/workflows/release-smoke.yml")
+            .exists(),
+        "release-smoke.yml wrapper removed; PR smoke lives in release.yml"
+    );
 }
 
 /// release-publish chains canonical `release.yml` after tagging (GITHUB_TOKEN releases do not fire release:published).
@@ -217,7 +220,8 @@ fn releasing_md_documents_tarball_contract_without_legacy_install_paths() {
     let doc = read_repo_file("docs/releasing.md");
     assert!(doc.contains("Workpot-X.Y.Z-aarch64.tar.gz"));
     assert!(doc.contains("Workpot-X.Y.Z-aarch64.tar.gz.sha256"));
-    assert!(doc.contains("release-smoke"));
+    assert!(doc.contains("v0.0.0-smoke"));
+    assert!(doc.contains("dry_run"));
     assert!(!doc.contains("install.sh"));
     assert!(!doc.contains("workpot update"));
     assert!(
