@@ -171,6 +171,31 @@ jobs:
           tar -C "${BUNDLE_MACOS_DIR}" -czf "$archive" Workpot.app
           shasum -a 256 "$archive" > "$checksum"
 
+      # Smoke contract: aarch64 tarball + checksum only (no DMG / x86). Checked here so
+      # release-smoke need not download-artifact across the reusable-workflow boundary.
+      - name: Validate aarch64-only artifact contract
+        if: needs.prepare.outputs.dry_run == 'true'
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          archive="Workpot-${version}-aarch64.tar.gz"
+          checksum="${archive}.sha256"
+          test -f "$archive"
+          test -f "$checksum"
+          shasum -a 256 -c "$checksum"
+          for artifact in Workpot-*; do
+            case "$artifact" in
+              "$archive"|"$checksum")
+                ;;
+              *)
+                echo "unexpected artifact in smoke output: $artifact" >&2
+                exit 1
+                ;;
+            esac
+          done
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ needs.prepare.outputs.dry_run == 'true' && 'smoke-workpot-bundle-aarch64' || 'workpot-bundle-aarch64' }}
