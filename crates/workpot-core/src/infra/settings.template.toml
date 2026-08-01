@@ -27,8 +27,8 @@ pull_cmd = "git -C {path} pull origin {branch}"
 
 # Shell command to fetch remotes before git-state refresh. Must include {path}.
 # Set to "" to disable fetch during local catalog sync / git refresh.
-# Example: fetch = "git -C {path} fetch"
-fetch = "git -C {path} fetch"
+# Example: fetch = "git -C {path} fetch --prune --no-tags"
+fetch = "git -C {path} fetch --prune --no-tags"
 
 # Maximum repo rows shown in the tray panel before scrolling (1–100).
 max_visible_rows = 15

@@ -244,6 +244,21 @@ describe("createTrayPanel", () => {
     expect(panel.listView).toEqual({ kind: "list" });
   });
 
+  it("git_refresh_complete_bumps_branch_revision", async () => {
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+    expect(panel.branchRevision).toBe(0);
+
+    handlers.onGitRefreshComplete({
+      refreshed: 1,
+      errors: 0,
+      any_dirty: false,
+    });
+
+    expect(panel.branchRevision).toBe(1);
+  });
+
   it("git_refresh_failed_sets_list_error", async () => {
     const panel = createTrayPanel();
     await panel.mount();

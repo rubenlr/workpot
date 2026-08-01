@@ -14,6 +14,7 @@ export interface GitRefreshHandlerDeps {
   refresh: (clearError: boolean) => Promise<void>;
   setError: (message: string | null) => void;
   focusFilter: () => void;
+  bumpBranchRevision?: () => void;
 }
 
 export function onPanelOpened(deps: GitRefreshHandlerDeps): void {
@@ -35,6 +36,7 @@ export function onGitRefreshComplete(
   trayTrace("git-refresh-complete", summary);
   clearGitRefreshWatchdog();
   deps.setSelectedIndex(0);
+  deps.bumpBranchRevision?.();
   void deps.refresh(shouldClearListErrorOnRefreshLoad()).then(() => {
     deps.setError(gitRefreshErrorMessage(summary));
   });

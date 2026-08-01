@@ -150,6 +150,9 @@ export function createTrayPanel() {
     refresh: (clearError: boolean) => data.refresh(clearError),
     setError: (message: string | null) => data.setListError(message),
     focusFilter: () => keyboard.focusFilter(),
+    bumpBranchRevision: () => {
+      branchRevision += 1;
+    },
   };
 
   async function finishSync(success: boolean): Promise<void> {

@@ -157,7 +157,7 @@ fn config_validate_rejects_too_many_watch_roots() {
 #[test]
 fn config_fetch_defaults_and_empty_ok() {
     let config = Config::default();
-    assert_eq!(config.fetch, "git -C {path} fetch");
+    assert_eq!(config.fetch, "git -C {path} fetch --prune --no-tags");
     assert!(config.validate().is_ok());
 
     let empty = Config {

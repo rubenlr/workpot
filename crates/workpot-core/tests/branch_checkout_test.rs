@@ -29,25 +29,20 @@ fn init_repo_with_feature_branch(repo_path: &Path) {
 
 fn bare_repo_with_worktree(parent: &Path) -> (PathBuf, PathBuf) {
     let bare_path = parent.join("myproject.git");
-    fs::create_dir_all(&bare_path).expect("bare dir");
+    // Path-arg init (not cwd): survives hk-injected GIT_DIR via common::git_cmd scrub.
     let status = common::git_cmd()
         .args(["init", "--bare", "-q", "-b", "main"])
-        .current_dir(&bare_path)
+        .arg(&bare_path)
         .status()
         .expect("bare init");
-    assert!(status.success());
-    for (key, val) in [("user.email", "t@example.com"), ("user.name", "Test")] {
-        let status = common::git_cmd()
-            .args(["config", key, val])
-            .current_dir(&bare_path)
-            .status()
-            .expect("config");
-        assert!(status.success());
-    }
+    assert!(status.success(), "bare init failed");
+    // Identity is set inside seed_bare_repo's seed worktree; bare needs no config here.
     common::seed_bare_repo(&bare_path);
 
     let wt_path = parent.join("wt-main");
     let status = common::git_cmd()
+        .args(["-C"])
+        .arg(&bare_path)
         .args([
             "worktree",
             "add",
@@ -55,23 +50,34 @@ fn bare_repo_with_worktree(parent: &Path) -> (PathBuf, PathBuf) {
             wt_path.to_str().expect("utf8"),
             "main",
         ])
-        .current_dir(&bare_path)
         .status()
         .expect("worktree add");
-    assert!(status.success());
+    assert!(status.success(), "worktree add failed");
+    for (key, val) in [("user.email", "t@example.com"), ("user.name", "Test")] {
+        let output = common::git_cmd()
+            .args(["config", "--local", key, val])
+            .current_dir(&wt_path)
+            .output()
+            .expect("config");
+        assert!(
+            output.status.success(),
+            "git config {key} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
     let status = common::git_cmd()
         .args(["remote", "add", "origin"])
         .arg(&bare_path)
         .current_dir(&wt_path)
         .status()
         .expect("remote");
-    assert!(status.success());
+    assert!(status.success(), "remote add failed");
     let status = common::git_cmd()
         .args(["push", "-q", "-u", "origin", "main"])
         .current_dir(&wt_path)
         .status()
         .expect("push upstream");
-    assert!(status.success());
+    assert!(status.success(), "push upstream failed");
     (bare_path, wt_path)
 }
 

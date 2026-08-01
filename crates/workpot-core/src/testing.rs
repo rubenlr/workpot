@@ -3,16 +3,7 @@ use std::process::Command;
 /// Git subprocess isolated from hook-injected `GIT_*` env (hk pre-commit sets `GIT_DIR`).
 pub fn git_cmd() -> Command {
     let mut cmd = Command::new("git");
-    for key in [
-        "GIT_DIR",
-        "GIT_WORK_TREE",
-        "GIT_INDEX_FILE",
-        "GIT_OBJECT_DIRECTORY",
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-        "GIT_COMMON_DIR",
-    ] {
-        cmd.env_remove(key);
-    }
+    crate::infra::git::prepare_git_command(&mut cmd, "git");
     cmd
 }
 

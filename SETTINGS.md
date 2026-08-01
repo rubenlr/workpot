@@ -27,7 +27,7 @@ max_repos = 1000
 launch_cmd = "cursor --new-window {path}"
 push_cmd = "git -C {path} push origin {branch}"
 pull_cmd = "git -C {path} pull origin {branch}"
-fetch = "git -C {path} fetch"
+fetch = "git -C {path} fetch --prune --no-tags"
 max_visible_rows = 15
 max_pinned = 5
 max_recent_days = 14
@@ -73,11 +73,11 @@ See also [docs/sync.md](docs/sync.md) for sync scopes (`sync`, `sync local`, fet
 
 Catalog sync and per-branch push/pull share this section. Catalog scopes (`sync` / `sync local` / `fetch`) are documented in [docs/sync.md](docs/sync.md). Push/pull are **not** catalog sync — they move commits for one branch.
 
-| Key        | Default                                | Description                                                                                                                    |
-| ---------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `fetch`    | `"git -C {path} fetch"`                | Shell command template for fetching remotes before git-state refresh. Empty string disables. `{path}` required when non-empty. |
-| `push_cmd` | `"git -C {path} push origin {branch}"` | Shell command template for pushing a branch. `{path}` and `{branch}` are replaced at invoke time.                              |
-| `pull_cmd` | `"git -C {path} pull origin {branch}"` | Shell command template for pulling a branch. `{path}` and `{branch}` are replaced at invoke time.                              |
+| Key        | Default                                   | Description                                                                                                                                                                                                                                  |
+| ---------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fetch`    | `"git -C {path} fetch --prune --no-tags"` | Shell command template for fetching remotes before git-state refresh. Empty string disables. `{path}` required when non-empty. Before fetch, Workpot verifies each remote has a multi-branch fetch refspec (repairs bare-convert leftovers). |
+| `push_cmd` | `"git -C {path} push origin {branch}"`    | Shell command template for pushing a branch. `{path}` and `{branch}` are replaced at invoke time.                                                                                                                                            |
+| `pull_cmd` | `"git -C {path} pull origin {branch}"`    | Shell command template for pulling a branch. `{path}` and `{branch}` are replaced at invoke time.                                                                                                                                            |
 
 `{path}` resolves to the catalog launch path (worktree for bare repos). For push/pull, `{branch}` is the branch name from the tray row and both placeholders are required. Push/pull run synchronously and refresh git state on success.
 

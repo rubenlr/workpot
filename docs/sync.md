@@ -87,10 +87,11 @@ If the catalog merge succeeds but a later git-persist step fails, the merge may 
 
 ## Fetch-repo (`fetch-repo`)
 
-`Config.fetch` defaults to `git -C {path} fetch`. During batch git refresh (local catalog sync and tray background git refresh), Workpot runs this template per repo before querying git state.
+`Config.fetch` defaults to `git -C {path} fetch --prune --no-tags`. During batch git refresh (local catalog sync and tray background git refresh), Workpot runs this template per repo before querying git state.
 
 - Set `fetch = ""` to disable.
 - Non-empty values must include `{path}`.
+- Before each fetch, Workpot verifies every remote has a multi-branch fetch refspec (`+refs/heads/*:refs/remotes/<name>/*`) and rewrites missing or single-branch mappings (typical after bare conversion).
 - Failures are soft: logged and counted toward git errors without aborting the batch.
 
 ## Full sync (`sync`)

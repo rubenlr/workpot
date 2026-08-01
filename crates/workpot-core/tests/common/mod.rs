@@ -1,30 +1,20 @@
 use std::path::Path;
 use std::process::Command;
 
-// Mirror of `workpot_core::testing::git_cmd` — integration tests cannot import
-// `#[cfg(test)]` modules from the library under test.
 pub fn git_cmd() -> Command {
     let mut cmd = Command::new("git");
-    for key in [
-        "GIT_DIR",
-        "GIT_WORK_TREE",
-        "GIT_INDEX_FILE",
-        "GIT_OBJECT_DIRECTORY",
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-        "GIT_COMMON_DIR",
-    ] {
-        cmd.env_remove(key);
-    }
+    workpot_core::infra::git::prepare_git_command(&mut cmd, "git");
     cmd
 }
 
 /// Push an initial commit into a bare repo so `git clone` does not warn about an empty remote.
 #[allow(dead_code)]
 pub fn seed_bare_repo(bare: &Path) {
-    let seed = bare
-        .parent()
-        .expect("bare parent")
-        .join(".seed-bare-workpot");
+    // Unique per bare path so parallel tests under the same parent cannot collide.
+    let seed = bare.parent().expect("bare parent").join(format!(
+        ".seed-{}",
+        bare.file_name().and_then(|n| n.to_str()).unwrap_or("bare")
+    ));
     let status = git_cmd()
         .args(["init", "-q", "-b", "main"])
         .arg(&seed)
@@ -33,12 +23,16 @@ pub fn seed_bare_repo(bare: &Path) {
     assert!(status.success(), "seed init failed");
 
     for (key, val) in [("user.email", "t@example.com"), ("user.name", "Test")] {
-        let status = git_cmd()
-            .args(["config", key, val])
+        let output = git_cmd()
+            .args(["config", "--local", key, val])
             .current_dir(&seed)
-            .status()
+            .output()
             .expect("seed config");
-        assert!(status.success(), "seed config {key} failed");
+        assert!(
+            output.status.success(),
+            "seed config {key} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
     let status = git_cmd()
         .args(["commit", "--allow-empty", "-m", "seed", "-q"])

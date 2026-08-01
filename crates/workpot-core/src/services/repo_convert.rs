@@ -332,16 +332,7 @@ fn sync_blocker_in(paths: &[PathBuf]) -> Result<Option<PreflightResult>> {
 
 fn git_cmd_clean() -> Command {
     let mut cmd = Command::new("git");
-    for key in [
-        "GIT_DIR",
-        "GIT_WORK_TREE",
-        "GIT_INDEX_FILE",
-        "GIT_OBJECT_DIRECTORY",
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-        "GIT_COMMON_DIR",
-    ] {
-        cmd.env_remove(key);
-    }
+    crate::infra::git::prepare_git_command(&mut cmd, "git");
     cmd
 }
 

@@ -25,7 +25,7 @@ fn default_pull_cmd() -> String {
 }
 
 fn default_fetch_cmd() -> String {
-    "git -C {path} fetch".to_string()
+    "git -C {path} fetch --prune --no-tags".to_string()
 }
 
 fn default_max_visible_rows() -> u32 {

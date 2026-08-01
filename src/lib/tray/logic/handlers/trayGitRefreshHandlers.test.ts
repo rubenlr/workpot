@@ -45,6 +45,18 @@ describe("trayGitRefreshHandlers", () => {
     await vi.waitFor(() => expect(d.setError).toHaveBeenCalledWith(null));
   });
 
+  it("onGitRefreshComplete bumps branchRevision when provided", () => {
+    const bumpBranchRevision = vi.fn();
+    const d = deps({ bumpBranchRevision });
+    const summary: GitRefreshSummary = {
+      refreshed: 1,
+      errors: 0,
+      any_dirty: false,
+    };
+    onGitRefreshComplete(summary, d);
+    expect(bumpBranchRevision).toHaveBeenCalledOnce();
+  });
+
   it("onGitRefreshComplete clears list error on partial failure", async () => {
     const d = deps();
     const summary: GitRefreshSummary = {
