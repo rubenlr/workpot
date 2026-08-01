@@ -2,7 +2,7 @@ use crate::AppState;
 use crate::domain::SOURCE_SCAN;
 use crate::error::{Result, WorkpotError};
 use crate::save_config;
-use crate::services::{local_catalog_sync, paths};
+use crate::services::{index, paths};
 use rusqlite::{Connection, params};
 use std::path::{Path, PathBuf};
 
@@ -38,11 +38,11 @@ pub fn add_root(state: &AppState, path: &Path) -> Result<()> {
         }
     }
 
-    let sync_result = {
+    let index_result = {
         let config = state.config()?;
-        local_catalog_sync::run_full(&state.db, &config)
+        index::run_full(&state.db, &config)
     };
-    match sync_result {
+    match index_result {
         Ok(_) => Ok(()),
         Err(e) => {
             let mut config = state.config_mut()?;

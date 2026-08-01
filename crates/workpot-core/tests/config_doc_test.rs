@@ -74,7 +74,7 @@ fn apply_config_to_document_updates_values_not_comments() {
     let updated = doc.to_string();
     assert!(updated.contains("/custom/exclude/**"));
     assert!(
-        updated.contains("Glob patterns excluded from local catalog sync"),
+        updated.contains("Glob patterns excluded from indexing"),
         "exclude key comment should remain:\n{updated}"
     );
 }

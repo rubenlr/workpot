@@ -224,14 +224,6 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
     },
     ConfigFieldSpec {
         section: None,
-        key: "fetch",
-        comment_path: "fetch",
-        is_section: false,
-        optional: false,
-        write: |c, item| assign_string(item, &c.fetch),
-    },
-    ConfigFieldSpec {
-        section: None,
         key: "max_visible_rows",
         comment_path: "max_visible_rows",
         is_section: false,
@@ -561,7 +553,7 @@ mod registry_tests {
     fn render_init_config_serializes_key_comments() {
         let rendered = super::render_init_config(&crate::domain::Config::default());
         assert!(
-            rendered.contains("Glob patterns excluded from local catalog sync"),
+            rendered.contains("Glob patterns excluded from indexing"),
             "rendered config should include key comments:\n{rendered}"
         );
         let doc = rendered
@@ -569,7 +561,7 @@ mod registry_tests {
             .expect("parse rendered config");
         let round_trip = doc.to_string();
         assert!(
-            round_trip.contains("Glob patterns excluded from local catalog sync"),
+            round_trip.contains("Glob patterns excluded from indexing"),
             "parsed document should preserve key comments on serialize:\n{round_trip}"
         );
     }

@@ -155,7 +155,7 @@ fn org_facade_delegates_through_app_context() {
 }
 
 #[test]
-fn run_local_catalog_sync_keeps_manual_repo() {
+fn run_index_phased_matches_run_index_for_manual_repo() {
     let dir = tempfile::tempdir().expect("tempdir");
     let config_path = dir.path().join("config.toml");
     let db_path = dir.path().join("workpot.db");
@@ -174,8 +174,7 @@ fn run_local_catalog_sync_keeps_manual_repo() {
     let repo_path = git_worktree(&watch_root, "phased-index");
     ctx.register_manual(&repo_path).expect("register");
 
-    ctx.run_local_catalog_sync()
-        .expect("run_local_catalog_sync");
+    ctx.run_index_phased().expect("run_index_phased");
 
     let repos = ctx.list_repos().expect("list");
     assert!(

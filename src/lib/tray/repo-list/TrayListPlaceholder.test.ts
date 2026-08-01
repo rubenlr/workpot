@@ -9,9 +9,9 @@ describe("TrayListPlaceholder", () => {
 
   it("renders message text", () => {
     const { getByText } = render(TrayListPlaceholder, {
-      props: { message: "No repos in catalog yet." },
+      props: { message: "No repos indexed yet." },
     });
-    expect(getByText("No repos in catalog yet.")).toBeTruthy();
+    expect(getByText("No repos indexed yet.")).toBeTruthy();
   });
 
   it("tone_error_applies_red_class", () => {

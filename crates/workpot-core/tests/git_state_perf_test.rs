@@ -14,7 +14,7 @@ fn refresh_50_repos() {
         })
         .collect();
     let start = std::time::Instant::now();
-    let results = workpot_core::services::git_state::refresh_all(paths, "");
+    let results = workpot_core::services::git_state::refresh_all(paths);
     let elapsed = start.elapsed();
     assert_eq!(results.len(), 50);
     assert!(

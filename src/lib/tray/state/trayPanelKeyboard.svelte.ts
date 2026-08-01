@@ -8,7 +8,7 @@ export interface TrayPanelKeyboardDeps {
   list: TrayListSelection;
   detail: TrayDetail;
   launch: TrayLaunch;
-  startSync: () => void | Promise<void>;
+  startIndexRefresh: () => void | Promise<void>;
 }
 
 export function createTrayPanelKeyboard(deps: TrayPanelKeyboardDeps) {
@@ -31,7 +31,7 @@ export function createTrayPanelKeyboard(deps: TrayPanelKeyboardDeps) {
         getSelectedRepo: () => list.getSelectedRepo(),
       },
       {
-        onRefresh: () => void deps.startSync(),
+        onRefresh: () => void deps.startIndexRefresh(),
         onCloseDetail: () => detail.closeDetail(),
         onHidePanel: () => void launch.hidePanel(),
         onOpenDetailForSelection: () => {

@@ -100,7 +100,7 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
         })?;
     let count = u32::try_from(count).unwrap_or(u32::MAX);
     if count >= config.limits.max_repos {
-        return Err(WorkpotError::LocalCatalogSyncCapExceeded {
+        return Err(WorkpotError::IndexCapExceeded {
             projected: count.saturating_add(1),
             max: config.limits.max_repos,
         });
@@ -187,13 +187,13 @@ pub fn get_repo_by_path(conn: &Connection, path_key: &str) -> Result<RepoRecord>
     })
 }
 
-/// Absolute path for a cataloged repo launch, after validating it is in the catalog.
+/// Absolute path for an indexed repo launch, after validating it is in the catalog.
 ///
 /// Bare repos resolve to a linked worktree checkout so IDE launch targets the developer
 /// workspace rather than the bare object store. When the catalog row has a `branch`,
 /// the worktree checked out on that branch is preferred; otherwise the first listed
 /// worktree is used.
-pub fn catalog_launch_path(conn: &Connection, path: &Path) -> Result<PathBuf> {
+pub fn indexed_launch_path(conn: &Connection, path: &Path) -> Result<PathBuf> {
     let (repo_path, path_key) = resolve_repo_location(conn, path)?;
     let record = get_repo_by_path(conn, &path_key)?;
     if is_bare_repo(&repo_path) {
@@ -302,7 +302,7 @@ pub(crate) fn repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
     }
 }
 
-/// Non-excluded repo paths whose working tree no longer exists (stale catalog rows).
+/// Non-excluded repo paths whose working tree no longer exists (stale index rows).
 pub fn missing_repo_paths(conn: &Connection) -> Result<Vec<String>> {
     let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
     let paths: Vec<String> = stmt
@@ -324,7 +324,7 @@ pub fn prune_missing_repos(conn: &Connection) -> Result<u32> {
         pruned += u32::try_from(deleted).unwrap_or(0);
     }
     if pruned > 0 {
-        log::info!("pruned {pruned} missing repo(s) from catalog");
+        log::info!("pruned {pruned} missing repo(s) from index");
     }
     Ok(pruned)
 }
@@ -451,8 +451,8 @@ pub(crate) fn is_bare_repo(path: &Path) -> bool {
 /// Insert or update a scan-discovered repo. Returns `true` when the path was newly added.
 ///
 /// Does not enforce [`Limits::max_repos`](crate::domain::config::Limits::max_repos); callers must cap
-/// before bulk upsert (typically [`crate::services::local_catalog_sync::run_full`], which returns
-/// [`crate::WorkpotError::LocalCatalogSyncCapExceeded`] when the projected count would exceed the limit).
+/// before bulk upsert (typically [`crate::services::index::run_full`], which returns
+/// [`crate::WorkpotError::IndexCapExceeded`] when the projected count would exceed the limit).
 pub fn upsert_scan(conn: &Connection, path: &Path, git_common_dir: &str) -> Result<bool> {
     let canonical = path
         .canonicalize()

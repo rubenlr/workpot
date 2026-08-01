@@ -60,7 +60,7 @@
       <button
         type="button"
         class="flex shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border-subtle bg-input-surface p-2 text-inverse-on-surface-variant outline-none hover:bg-hover-overlay hover:text-inverse-on-surface focus-visible:ring-1 focus-visible:ring-primary disabled:opacity-50"
-        aria-label="Sync"
+        aria-label="Refresh index"
         disabled={refreshing}
         onclick={onRefresh}
       >

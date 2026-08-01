@@ -100,20 +100,15 @@ pub fn refresh_git_state(path: &Path) -> Result<GitState> {
 ///
 /// Never aborts on individual failure — embeds error string in GitState.error (D-16).
 /// Each rayon thread opens its own Repository via open_and_query (Repository is Send not Sync).
-/// When `fetch_cmd` is non-empty, runs [`crate::services::fetch_repo::fetch_repo`] before query.
-pub fn refresh_all(paths: Vec<PathBuf>, fetch_cmd: &str) -> Vec<GitRefreshResult> {
+pub fn refresh_all(paths: Vec<PathBuf>) -> Vec<GitRefreshResult> {
     let repo_count = paths.len();
     let batch_started = std::time::Instant::now();
     log::debug!("git refresh_all: batch start repos={repo_count}");
-    let fetch_cmd = fetch_cmd.to_string();
     let results: Vec<GitRefreshResult> = paths
         .into_par_iter()
         .map(|path| {
             let path_key = path.display().to_string();
             let repo_started = std::time::Instant::now();
-            if let Err(e) = crate::services::fetch_repo::fetch_repo(&path, &fetch_cmd) {
-                log::warn!("git fetch before refresh {path_key}: {e}");
-            }
             let state = refresh_git_state(&path).unwrap_or_else(|e| {
                 log::debug!("git refresh {path_key}: error {e}");
                 GitState {

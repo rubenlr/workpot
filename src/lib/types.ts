@@ -6,7 +6,7 @@ export interface TrayConfigDto {
   stale_dirty_days: number;
 }
 
-export interface SyncSummary {
+export interface IndexSummary {
   added: number;
   removed: number;
   skipped: number;

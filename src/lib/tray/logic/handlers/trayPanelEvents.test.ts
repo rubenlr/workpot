@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { subscribeTrayPanelEvents, type ListenFn } from "./trayPanelEvents";
-import type { GitRefreshSummary, SyncSummary, RepoSyncEvent } from "$lib/types";
+import type {
+  GitRefreshSummary,
+  IndexSummary,
+  RepoSyncEvent,
+} from "$lib/types";
 
 function mockListen(): {
   listen: ListenFn;
@@ -28,9 +32,9 @@ describe("subscribeTrayPanelEvents", () => {
     const onGitRefreshStarted = vi.fn();
     const onGitRefreshComplete = vi.fn();
     const onGitRefreshFailed = vi.fn();
-    const onSyncStarted = vi.fn();
-    const onSyncComplete = vi.fn();
-    const onSyncFailed = vi.fn();
+    const onIndexStarted = vi.fn();
+    const onIndexComplete = vi.fn();
+    const onIndexFailed = vi.fn();
     const onRepoSyncStarted = vi.fn();
     const onRepoSyncComplete = vi.fn();
     const onRepoSyncFailed = vi.fn();
@@ -46,9 +50,9 @@ describe("subscribeTrayPanelEvents", () => {
         onGitRefreshStarted,
         onGitRefreshComplete,
         onGitRefreshFailed,
-        onSyncStarted,
-        onSyncComplete,
-        onSyncFailed,
+        onIndexStarted,
+        onIndexComplete,
+        onIndexFailed,
         onRepoSyncStarted,
         onRepoSyncComplete,
         onRepoSyncFailed,
@@ -82,21 +86,21 @@ describe("subscribeTrayPanelEvents", () => {
     handlers.get("git-refresh-failed")!({ payload: "boom" });
     expect(onGitRefreshFailed).toHaveBeenCalledWith("boom");
 
-    handlers.get("sync-started")!({ payload: undefined });
-    expect(onSyncStarted).toHaveBeenCalledOnce();
+    handlers.get("index-started")!({ payload: undefined });
+    expect(onIndexStarted).toHaveBeenCalledOnce();
 
-    const syncSummary: SyncSummary = {
+    const indexSummary: IndexSummary = {
       added: 1,
       removed: 0,
       skipped: 0,
       git_refreshed: 2,
       git_errors: 0,
     };
-    handlers.get("sync-complete")!({ payload: syncSummary });
-    expect(onSyncComplete).toHaveBeenCalledWith(syncSummary);
+    handlers.get("index-complete")!({ payload: indexSummary });
+    expect(onIndexComplete).toHaveBeenCalledWith(indexSummary);
 
-    handlers.get("sync-failed")!({ payload: "sync boom" });
-    expect(onSyncFailed).toHaveBeenCalledWith("sync boom");
+    handlers.get("index-failed")!({ payload: "index boom" });
+    expect(onIndexFailed).toHaveBeenCalledWith("index boom");
 
     const syncEvent: RepoSyncEvent = {
       repo_path: "/tmp/x",

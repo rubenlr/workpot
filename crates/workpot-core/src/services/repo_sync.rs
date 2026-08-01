@@ -154,7 +154,7 @@ pub fn run_repo_sync(
 ) -> Result<(), SyncFailure> {
     let catalog_path = Path::new(repo_path);
     let launch_path = ctx
-        .catalog_launch_path(catalog_path)
+        .indexed_launch_path(catalog_path)
         .map_err(|e| sync_failure(e.to_string()))?;
     let config = ctx.config().map_err(|e| sync_failure(e.to_string()))?;
     let template = match direction {

@@ -23,7 +23,7 @@ install: build
 # Git refresh loading is tray-icon only (no panel spinner).
 # Trace tray: RUST_LOG=workpot_tray_lib=debug,workpot_core=debug just launch
 # Sync push/pull traces: RUST_LOG=workpot_tray_lib=info just launch
-# Trace CLI: RUST_LOG=workpot_core=debug,workpot_cli=debug workpot sync
+# Trace CLI: RUST_LOG=workpot_core=debug,workpot_cli=debug workpot index
 # Webview: right-click panel → Inspect → Console ([workpot-tray] lines)
 launch:
     {{cargo}} build -p workpot-tray

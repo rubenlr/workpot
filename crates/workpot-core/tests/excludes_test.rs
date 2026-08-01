@@ -142,7 +142,7 @@ fn remove_then_index_skips() {
     );
 
     ctx.remove_repo(&repo).expect("remove with exclude");
-    ctx.run_local_catalog_sync().expect("rescan");
+    ctx.run_index().expect("rescan");
 
     assert!(
         !ctx.list_repos()

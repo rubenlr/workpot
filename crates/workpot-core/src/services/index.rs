@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct LocalCatalogSyncSummary {
+pub struct IndexSummary {
     pub added: u32,
     pub removed: u32,
     pub skipped: u32,
@@ -21,7 +21,7 @@ struct ChangeEntry {
     action: &'static str,
 }
 
-/// Discovery output for phased local catalog sync (filesystem scan + read-only catalog queries).
+/// Discovery output for phased indexing (filesystem scan + read-only catalog queries).
 #[derive(Debug)]
 pub struct DiscoveryPlan {
     pub started_at: i64,
@@ -78,7 +78,7 @@ pub fn discover_phase(conn: &Connection, config: &Config) -> Result<DiscoveryPla
     removes.dedup();
 
     log::debug!(
-        "local catalog sync discovery: scan_candidates={} upserts={} removes={}",
+        "index discovery: scan_candidates={} upserts={} removes={}",
         scan_candidate_count,
         upserts.len(),
         removes.len()
@@ -99,7 +99,7 @@ pub fn merge_catalog_phase(
     conn: &Connection,
     config: &Config,
     plan: DiscoveryPlan,
-) -> Result<LocalCatalogSyncSummary> {
+) -> Result<IndexSummary> {
     let max_repos = config.limits.max_repos;
     let projected = projected_repo_count(conn, &plan.removes, &plan.upserts)?;
     if projected > i64::from(max_repos) {
@@ -107,21 +107,21 @@ pub fn merge_catalog_phase(
         if let Err(e) = record_cap_exceeded_run(conn, plan.started_at, projected, max_repos) {
             log::warn!("failed to record cap-exceeded audit row: {e}");
         }
-        return Err(WorkpotError::LocalCatalogSyncCapExceeded {
+        return Err(WorkpotError::IndexCapExceeded {
             projected: projected_u32,
             max: max_repos,
         });
     }
 
-    let mut summary = LocalCatalogSyncSummary {
+    let mut summary = IndexSummary {
         skipped: plan.pre_skipped,
-        ..LocalCatalogSyncSummary::default()
+        ..IndexSummary::default()
     };
 
     let mut changelog = plan.changelog;
 
     let tx = conn.unchecked_transaction()?;
-    let run_id = insert_sync_run(&tx, plan.started_at)?;
+    let run_id = insert_index_run(&tx, plan.started_at)?;
 
     let backfill_skipped_tx = backfill_empty_git_common_dir(&tx, &mut changelog)?;
     summary.skipped += backfill_skipped_tx;
@@ -150,18 +150,18 @@ pub fn merge_catalog_phase(
 
     for entry in &changelog {
         tx.execute(
-            "INSERT INTO local_catalog_sync_changes (run_id, path, action) VALUES (?1, ?2, ?3)",
+            "INSERT INTO index_changes (run_id, path, action) VALUES (?1, ?2, ?3)",
             params![run_id, entry.path, entry.action],
         )?;
     }
 
-    finish_sync_run(&tx, run_id, "ok", &summary, None)?;
+    finish_index_run(&tx, run_id, "ok", &summary, None)?;
     tx.commit()?;
     Ok(summary)
 }
 
 /// Phase 3 prep: paths for git refresh (read connection).
-pub fn local_catalog_git_paths(conn: &Connection) -> Result<Vec<PathBuf>> {
+pub fn index_git_paths(conn: &Connection) -> Result<Vec<PathBuf>> {
     let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
     Ok(stmt
         .query_map([], |row| row.get::<_, String>(0))?
@@ -171,10 +171,10 @@ pub fn local_catalog_git_paths(conn: &Connection) -> Result<Vec<PathBuf>> {
 }
 
 /// Phase 4: persist rayon git refresh results (write connection, one transaction).
-pub fn persist_local_catalog_git_phase(
+pub fn persist_index_git_phase(
     conn: &Connection,
     config: &Config,
-    summary: &mut LocalCatalogSyncSummary,
+    summary: &mut IndexSummary,
     git_results: Vec<crate::services::git_state::GitRefreshResult>,
 ) -> Result<()> {
     for r in &git_results {
@@ -212,31 +212,27 @@ pub fn persist_local_catalog_git_phase(
     }
     crate::services::repo_convert::persist_all_structural_preflight(&git_tx, config)?;
     if let Err(e) = git_tx.commit() {
-        log::warn!("git refresh commit failed after successful local catalog sync merge: {e}");
+        log::warn!("git refresh commit failed after successful index merge: {e}");
         summary.git_errors = summary.git_errors.saturating_add(summary.git_refreshed);
         summary.git_refreshed = 0;
     }
     Ok(())
 }
 
-/// Phased local catalog sync: release locks between discovery, merge, git refresh, and persist.
-pub fn run_phased(
-    pool: &crate::infra::db::DbPool,
-    config: &Config,
-) -> Result<LocalCatalogSyncSummary> {
+/// Phased index: release locks between discovery, merge, git refresh, and persist.
+pub fn run_phased(pool: &crate::infra::db::DbPool, config: &Config) -> Result<IndexSummary> {
     let started_at = crate::services::git_state::unix_now_secs();
-    run_local_catalog_sync_with_audit(
+    run_index_with_audit(
         "run_phased",
         started_at,
         || {
-            run_local_catalog_sync_pipeline(
-                &config.fetch,
+            run_index_pipeline(
                 || pool.with_read(|conn| discover_phase(conn, config)),
                 |plan| pool.with_write(|conn| merge_catalog_phase(conn, config, plan)),
-                || pool.with_read(local_catalog_git_paths),
+                || pool.with_read(index_git_paths),
                 |summary, git_results| {
                     pool.with_write(|conn| {
-                        persist_local_catalog_git_phase(conn, config, summary, git_results)
+                        persist_index_git_phase(conn, config, summary, git_results)
                     })
                 },
             )
@@ -245,8 +241,8 @@ pub fn run_phased(
     )
 }
 
-fn test_local_catalog_sync_delay() {
-    if let Ok(ms) = std::env::var("WORKPOT_TEST_LOCAL_CATALOG_SYNC_DELAY_MS")
+fn test_index_delay() {
+    if let Ok(ms) = std::env::var("WORKPOT_TEST_INDEX_DELAY_MS")
         && let Ok(ms) = ms.parse::<u64>()
     {
         std::thread::sleep(std::time::Duration::from_millis(ms));
@@ -254,45 +250,39 @@ fn test_local_catalog_sync_delay() {
 }
 
 /// Full watch-root rescan with transactional merge, caps, and audit history (D-07, D-14–D-18).
-pub fn run_full(
-    pool: &crate::infra::db::DbPool,
-    config: &Config,
-) -> Result<LocalCatalogSyncSummary> {
+pub fn run_full(pool: &crate::infra::db::DbPool, config: &Config) -> Result<IndexSummary> {
     run_phased(pool, config)
 }
 
 /// Single-connection variant for unit tests.
-pub fn run_full_connection(conn: &Connection, config: &Config) -> Result<LocalCatalogSyncSummary> {
+pub fn run_full_connection(conn: &Connection, config: &Config) -> Result<IndexSummary> {
     let started_at = crate::services::git_state::unix_now_secs();
-    run_local_catalog_sync_with_audit(
+    run_index_with_audit(
         "run_full",
         started_at,
         || {
-            run_local_catalog_sync_pipeline(
-                &config.fetch,
+            run_index_pipeline(
                 || discover_phase(conn, config),
                 |plan| merge_catalog_phase(conn, config, plan),
-                || local_catalog_git_paths(conn),
-                |summary, git_results| {
-                    persist_local_catalog_git_phase(conn, config, summary, git_results)
-                },
+                || index_git_paths(conn),
+                |summary, git_results| persist_index_git_phase(conn, config, summary, git_results),
             )
         },
         |e| record_error_run(conn, started_at, e),
     )
 }
 
-fn run_local_catalog_sync_with_audit(
+fn run_index_with_audit(
     label: &str,
     _started_at: i64,
-    run: impl FnOnce() -> Result<LocalCatalogSyncSummary>,
+    run: impl FnOnce() -> Result<IndexSummary>,
     record_error: impl FnOnce(&WorkpotError) -> Result<()>,
-) -> Result<LocalCatalogSyncSummary> {
-    log::debug!("local catalog sync {label}: start");
+) -> Result<IndexSummary> {
+    log::debug!("index {label}: start");
     match run() {
         Ok(summary) => {
             log::debug!(
-                "local catalog sync {label}: complete added={} removed={} skipped={} git_refreshed={} git_errors={}",
+                "index {label}: complete added={} removed={} skipped={} git_refreshed={} git_errors={}",
                 summary.added,
                 summary.removed,
                 summary.skipped,
@@ -301,8 +291,8 @@ fn run_local_catalog_sync_with_audit(
             );
             Ok(summary)
         }
-        Err(WorkpotError::LocalCatalogSyncCapExceeded { projected, max }) => {
-            Err(WorkpotError::LocalCatalogSyncCapExceeded { projected, max })
+        Err(WorkpotError::IndexCapExceeded { projected, max }) => {
+            Err(WorkpotError::IndexCapExceeded { projected, max })
         }
         Err(e) => {
             if let Err(audit_err) = record_error(&e) {
@@ -313,38 +303,33 @@ fn run_local_catalog_sync_with_audit(
     }
 }
 
-fn run_local_catalog_sync_pipeline(
-    fetch_cmd: &str,
+fn run_index_pipeline(
     discover: impl FnOnce() -> Result<DiscoveryPlan>,
-    merge: impl FnOnce(DiscoveryPlan) -> Result<LocalCatalogSyncSummary>,
+    merge: impl FnOnce(DiscoveryPlan) -> Result<IndexSummary>,
     git_paths: impl FnOnce() -> Result<Vec<PathBuf>>,
     persist: impl FnOnce(
-        &mut LocalCatalogSyncSummary,
+        &mut IndexSummary,
         Vec<crate::services::git_state::GitRefreshResult>,
     ) -> Result<()>,
-) -> Result<LocalCatalogSyncSummary> {
-    test_local_catalog_sync_delay();
+) -> Result<IndexSummary> {
+    test_index_delay();
     let plan = discover()?;
     let mut summary = merge(plan)?;
     let all_paths = git_paths()?;
-    let git_results = refresh_git_states(all_paths, fetch_cmd);
-    test_local_catalog_sync_delay();
+    let git_results = refresh_git_states(all_paths);
+    test_index_delay();
     persist(&mut summary, git_results)?;
     Ok(summary)
 }
 
 fn refresh_git_states(
     all_paths: Vec<PathBuf>,
-    fetch_cmd: &str,
 ) -> Vec<crate::services::git_state::GitRefreshResult> {
-    log::debug!(
-        "local catalog sync git second pass: start repos={}",
-        all_paths.len()
-    );
+    log::debug!("index git second pass: start repos={}", all_paths.len());
     let git_pass_started = std::time::Instant::now();
-    let git_results = git_state::refresh_all(all_paths, fetch_cmd);
+    let git_results = git_state::refresh_all(all_paths);
     log::debug!(
-        "local catalog sync git second pass: refresh_all elapsed_ms={}",
+        "index git second pass: refresh_all elapsed_ms={}",
         git_pass_started.elapsed().as_millis()
     );
     git_results
@@ -436,7 +421,7 @@ fn collect_stale_scan_paths(
         {
             continue;
         }
-        // Root still configured but not scannable this run — preserve cataloged repos.
+        // Root still configured but not scannable this run — preserve indexed repos.
         if !scan_roots
             .iter()
             .any(|root| paths::path_under_root(path, root))
@@ -514,7 +499,7 @@ fn record_error_run(conn: &Connection, started_at: i64, err: &WorkpotError) -> R
     let finished_at = crate::services::git_state::unix_now_secs();
     let message = err.to_string();
     conn.execute(
-        "INSERT INTO local_catalog_sync_runs (started_at, finished_at, status, added_count, removed_count, skipped_count, message)
+        "INSERT INTO index_runs (started_at, finished_at, status, added_count, removed_count, skipped_count, message)
          VALUES (?1, ?2, 'error', 0, 0, 0, ?3)",
         params![started_at, finished_at, message],
     )?;
@@ -530,31 +515,31 @@ fn record_cap_exceeded_run(
     let finished_at = crate::services::git_state::unix_now_secs();
     let message = format!("projected {projected} repos exceeds max {max}");
     conn.execute(
-        "INSERT INTO local_catalog_sync_runs (started_at, finished_at, status, added_count, removed_count, skipped_count, message)
+        "INSERT INTO index_runs (started_at, finished_at, status, added_count, removed_count, skipped_count, message)
          VALUES (?1, ?2, 'cap_exceeded', 0, 0, 0, ?3)",
         params![started_at, finished_at, message],
     )?;
     Ok(())
 }
 
-fn insert_sync_run(tx: &Transaction<'_>, started_at: i64) -> Result<i64> {
+fn insert_index_run(tx: &Transaction<'_>, started_at: i64) -> Result<i64> {
     tx.execute(
-        "INSERT INTO local_catalog_sync_runs (started_at, status) VALUES (?1, 'ok')",
+        "INSERT INTO index_runs (started_at, status) VALUES (?1, 'ok')",
         params![started_at],
     )?;
     Ok(tx.last_insert_rowid())
 }
 
-fn finish_sync_run(
+fn finish_index_run(
     tx: &Transaction<'_>,
     run_id: i64,
     status: &str,
-    summary: &LocalCatalogSyncSummary,
+    summary: &IndexSummary,
     message: Option<&str>,
 ) -> Result<()> {
     let finished_at = crate::services::git_state::unix_now_secs();
     tx.execute(
-        "UPDATE local_catalog_sync_runs SET finished_at = ?1, status = ?2, added_count = ?3, removed_count = ?4, skipped_count = ?5, message = ?6
+        "UPDATE index_runs SET finished_at = ?1, status = ?2, added_count = ?3, removed_count = ?4, skipped_count = ?5, message = ?6
          WHERE id = ?7",
         params![
             finished_at,

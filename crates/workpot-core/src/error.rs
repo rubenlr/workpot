@@ -48,8 +48,8 @@ pub enum WorkpotError {
     #[error("watch root already exists: {0}")]
     WatchRootAlreadyExists(String),
 
-    #[error("local catalog sync cap exceeded: projected {projected} repos (max {max})")]
-    LocalCatalogSyncCapExceeded { projected: u32, max: u32 },
+    #[error("index cap exceeded: projected {projected} repos (max {max})")]
+    IndexCapExceeded { projected: u32, max: u32 },
 
     #[error("conversion preflight failed: {0}")]
     ConversionPreflight(String),

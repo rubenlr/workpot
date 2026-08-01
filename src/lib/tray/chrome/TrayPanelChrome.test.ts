@@ -115,7 +115,7 @@ describe("TrayPanelChrome", () => {
 
   it("shows_list_body_when_no_detail_repo", () => {
     const { queryByText } = renderChrome({ detailRepo: null });
-    expect(queryByText("No repos in catalog yet.")).toBeTruthy();
+    expect(queryByText("No repos indexed yet.")).toBeTruthy();
   });
 
   it("shows_detail_pane_when_detailRepo_provided", () => {
@@ -125,7 +125,7 @@ describe("TrayPanelChrome", () => {
 
   it("hides_list_body_when_detail_pane_active", () => {
     const { queryByText } = renderChrome({ detailRepo: baseRepo });
-    expect(queryByText("No repos in catalog yet.")).toBeNull();
+    expect(queryByText("No repos indexed yet.")).toBeNull();
   });
 
   it("hides_filter_bar_when_detail_pane_active", () => {

@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-last_updated: "2026-07-24T18:25:00.000Z"
+last_updated: "2026-06-10T20:44:42.091Z"
 progress:
   total_phases: 11
   completed_phases: 10
@@ -100,11 +100,3 @@ None — install/update and DMG scope live in [Phase 06.1](phases/06.1-release-d
 ## Blockers
 
 None.
-
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260724-tnk | Document workpot index under docs/indexing.md and link from SETTINGS.md Discovery section | 2026-07-24 | bb65165 | [260724-tnk-document-workpot-index-under-docs-indexi](./quick/260724-tnk-document-workpot-index-under-docs-indexi/) |
-
-Last activity: 2026-07-24 - Completed quick task 260724-tnk: Document workpot index under docs/indexing.md and link from SETTINGS.md Discovery section

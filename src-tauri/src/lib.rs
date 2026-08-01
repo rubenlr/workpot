@@ -98,7 +98,7 @@ pub fn run() {
             commands::list_repos,
             commands::get_tray_config,
             commands::refresh_all_git_state,
-            commands::refresh_sync,
+            commands::refresh_index,
             commands::checkout_repo_branch,
             commands::get_repo_sync_status,
             commands::sync_repo_branch,

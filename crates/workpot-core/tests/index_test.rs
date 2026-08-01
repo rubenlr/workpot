@@ -8,7 +8,7 @@ use workpot_core::WorkpotError;
 use workpot_core::domain::{Config, GitState};
 use workpot_core::infra::store;
 use workpot_core::services::git_state::GitRefreshResult;
-use workpot_core::services::{catalog, local_catalog_sync};
+use workpot_core::services::{catalog, index};
 
 fn git_worktree(parent: &Path, name: &str) -> PathBuf {
     let repo = parent.join(name);
@@ -45,7 +45,7 @@ fn open_index_fixture(max_repos: Option<u32>) -> (tempfile::TempDir, rusqlite::C
 }
 
 #[test]
-fn local_catalog_sync_purges_orphan_scan_repos() {
+fn index_purges_orphan_scan_repos() {
     let dir = tempfile::tempdir().expect("tempdir");
     let watch_root = dir.path().join("watch");
     fs::create_dir_all(&watch_root).expect("watch root");
@@ -68,7 +68,7 @@ fn local_catalog_sync_purges_orphan_scan_repos() {
     )
     .expect("insert orphan scan row");
 
-    let summary = local_catalog_sync::run_full_connection(&conn, &config).expect("run_full");
+    let summary = index::run_full_connection(&conn, &config).expect("run_full");
     assert_eq!(
         summary.removed, 1,
         "scan repo outside configured watch roots must be purged"
@@ -83,13 +83,13 @@ fn local_catalog_sync_purges_orphan_scan_repos() {
 }
 
 #[test]
-fn local_catalog_sync_full_rescan() {
+fn index_full_rescan() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     git_worktree(&watch_root, "repo-a");
     git_worktree(&watch_root, "repo-b");
 
-    local_catalog_sync::run_full_connection(&conn, &config).expect("first run_full");
+    index::run_full_connection(&conn, &config).expect("first run_full");
     let count_after_first: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
             row.get(0)
@@ -97,7 +97,7 @@ fn local_catalog_sync_full_rescan() {
         .expect("count repos");
     assert_eq!(count_after_first, 2);
 
-    local_catalog_sync::run_full_connection(&conn, &config).expect("second run_full");
+    index::run_full_connection(&conn, &config).expect("second run_full");
     let count_after_second: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
             row.get(0)
@@ -107,13 +107,13 @@ fn local_catalog_sync_full_rescan() {
 }
 
 #[test]
-fn local_catalog_sync_skips_on_git_failure() {
+fn index_skips_on_git_failure() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     git_worktree(&watch_root, "good-repo");
     fake_git_dir(&watch_root, "fake-repo");
 
-    let summary = local_catalog_sync::run_full_connection(&conn, &config).expect("run_full");
+    let summary = index::run_full_connection(&conn, &config).expect("run_full");
     assert_eq!(summary.skipped, 1, "fake repo should be skipped");
 
     let count: i64 = conn
@@ -125,7 +125,7 @@ fn local_catalog_sync_skips_on_git_failure() {
 }
 
 #[test]
-fn local_catalog_sync_backfills_git_common_dir() {
+fn index_backfills_git_common_dir() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     let repo = git_worktree(&watch_root, "backfill-me");
@@ -138,7 +138,7 @@ fn local_catalog_sync_backfills_git_common_dir() {
     )
     .expect("seed row");
 
-    local_catalog_sync::run_full_connection(&conn, &config).expect("run_full");
+    index::run_full_connection(&conn, &config).expect("run_full");
 
     let gcd: String = conn
         .query_row(
@@ -151,13 +151,13 @@ fn local_catalog_sync_backfills_git_common_dir() {
 }
 
 #[test]
-fn local_catalog_sync_preserves_manual_source() {
+fn index_preserves_manual_source() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     let repo = git_worktree(&watch_root, "manual-repo");
     catalog::register_manual(&conn, &config, &repo).expect("manual register");
 
-    local_catalog_sync::run_full_connection(&conn, &config).expect("run_full");
+    index::run_full_connection(&conn, &config).expect("run_full");
 
     let source: String = conn
         .query_row(
@@ -170,27 +170,27 @@ fn local_catalog_sync_preserves_manual_source() {
 }
 
 #[test]
-fn local_catalog_sync_removes_stale_path() {
+fn index_removes_stale_path() {
     let (dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     let repo = git_worktree(&watch_root, "gone-repo");
-    local_catalog_sync::run_full_connection(&conn, &config).expect("first index");
+    index::run_full_connection(&conn, &config).expect("first index");
 
     fs::remove_dir_all(&repo).expect("remove repo dir");
 
-    let summary = local_catalog_sync::run_full_connection(&conn, &config).expect("second index");
+    let summary = index::run_full_connection(&conn, &config).expect("second index");
     assert_eq!(summary.removed, 1);
 
     let removed_changes: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM local_catalog_sync_changes WHERE action = 'removed'",
+            "SELECT COUNT(*) FROM index_changes WHERE action = 'removed'",
             [],
             |row| row.get(0),
         )
         .expect("removed changes");
     assert_eq!(
         removed_changes, 1,
-        "stale path must appear in local_catalog_sync_changes"
+        "stale path must appear in index_changes"
     );
 
     let count: i64 = conn
@@ -203,7 +203,7 @@ fn local_catalog_sync_removes_stale_path() {
 }
 
 #[test]
-fn local_catalog_sync_validates_manual_outside_roots() {
+fn index_validates_manual_outside_roots() {
     let dir = tempfile::tempdir().expect("tempdir");
     let watch_root = dir.path().join("watch");
     fs::create_dir_all(&watch_root).expect("watch");
@@ -216,7 +216,7 @@ fn local_catalog_sync_validates_manual_outside_roots() {
     let conn = store::open_connection(&db_path).expect("open");
 
     catalog::register_manual(&conn, &config, &repo).expect("manual outside roots");
-    local_catalog_sync::run_full_connection(&conn, &config).expect("index keeps valid manual");
+    index::run_full_connection(&conn, &config).expect("index keeps valid manual");
 
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
@@ -227,17 +227,14 @@ fn local_catalog_sync_validates_manual_outside_roots() {
 }
 
 #[test]
-fn local_catalog_sync_cap_abort() {
+fn index_cap_abort() {
     let (_dir, conn, config) = open_index_fixture(Some(1));
     let watch_root = config.watch_roots[0].clone();
     git_worktree(&watch_root, "one");
     git_worktree(&watch_root, "two");
 
-    let err = local_catalog_sync::run_full_connection(&conn, &config).unwrap_err();
-    assert!(matches!(
-        err,
-        WorkpotError::LocalCatalogSyncCapExceeded { .. }
-    ));
+    let err = index::run_full_connection(&conn, &config).unwrap_err();
+    assert!(matches!(err, WorkpotError::IndexCapExceeded { .. }));
 
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
@@ -248,7 +245,7 @@ fn local_catalog_sync_cap_abort() {
 
     let cap_runs: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM local_catalog_sync_runs WHERE status = 'cap_exceeded'",
+            "SELECT COUNT(*) FROM index_runs WHERE status = 'cap_exceeded'",
             [],
             |row| row.get(0),
         )
@@ -257,17 +254,17 @@ fn local_catalog_sync_cap_abort() {
 }
 
 #[test]
-fn local_catalog_sync_writes_history() {
+fn index_writes_history() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     git_worktree(&watch_root, "hist-repo");
 
-    let summary = local_catalog_sync::run_full_connection(&conn, &config).expect("run_full");
+    let summary = index::run_full_connection(&conn, &config).expect("run_full");
     assert_eq!(summary.added, 1);
 
     let runs: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM local_catalog_sync_runs WHERE status = 'ok'",
+            "SELECT COUNT(*) FROM index_runs WHERE status = 'ok'",
             [],
             |row| row.get(0),
         )
@@ -275,23 +272,19 @@ fn local_catalog_sync_writes_history() {
     assert_eq!(runs, 1);
 
     let changes: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM local_catalog_sync_changes",
-            [],
-            |row| row.get(0),
-        )
+        .query_row("SELECT COUNT(*) FROM index_changes", [], |row| row.get(0))
         .expect("changes");
     assert!(changes >= 1);
 }
 
 #[test]
-fn local_catalog_sync_git_summary_accounts_for_all_non_excluded_repos() {
+fn index_git_summary_accounts_for_all_non_excluded_repos() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     git_worktree(&watch_root, "repo-a");
     git_worktree(&watch_root, "repo-b");
 
-    let summary = local_catalog_sync::run_full_connection(&conn, &config).expect("run_full");
+    let summary = index::run_full_connection(&conn, &config).expect("run_full");
 
     let non_excluded: i64 = conn
         .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
@@ -313,7 +306,7 @@ fn local_catalog_sync_git_summary_accounts_for_all_non_excluded_repos() {
 }
 
 #[test]
-fn local_catalog_sync_second_pass_persists_git_state() {
+fn index_second_pass_persists_git_state() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     let repo_path = git_worktree(&watch_root, "git-state-repo");
@@ -323,7 +316,7 @@ fn local_catalog_sync_second_pass_persists_git_state() {
         .display()
         .to_string();
 
-    let summary = local_catalog_sync::run_full_connection(&conn, &config).expect("run_full");
+    let summary = index::run_full_connection(&conn, &config).expect("run_full");
     assert!(
         summary.git_refreshed >= 1,
         "expected at least one successful git refresh, got {:?}",
@@ -343,7 +336,7 @@ fn local_catalog_sync_second_pass_persists_git_state() {
 }
 
 #[test]
-fn local_catalog_sync_git_pass_counts_refresh_errors() {
+fn index_git_pass_counts_refresh_errors() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     git_worktree(&watch_root, "good");
@@ -351,7 +344,7 @@ fn local_catalog_sync_git_pass_counts_refresh_errors() {
     let plain = watch_root.join("not-git");
     fs::create_dir_all(&plain).expect("plain dir");
 
-    local_catalog_sync::run_full_connection(&conn, &config).expect("first index");
+    index::run_full_connection(&conn, &config).expect("first index");
 
     let plain_key = plain
         .canonicalize()
@@ -365,7 +358,7 @@ fn local_catalog_sync_git_pass_counts_refresh_errors() {
     )
     .expect("seed non-git row for git pass");
 
-    let summary = local_catalog_sync::run_full_connection(&conn, &config).expect("second index");
+    let summary = index::run_full_connection(&conn, &config).expect("second index");
     assert!(
         summary.git_refreshed >= 1,
         "healthy repo should refresh: {summary:?}"
@@ -399,7 +392,7 @@ fn discover_phase_includes_missing_repo_paths_in_removes() {
     )
     .expect("seed missing row");
 
-    let plan = local_catalog_sync::discover_phase(&conn, &config).expect("discover");
+    let plan = index::discover_phase(&conn, &config).expect("discover");
     assert!(
         plan.removes.iter().any(|p| p == gone_key),
         "missing path should be scheduled for removal: {:?}",
@@ -422,8 +415,8 @@ fn merge_catalog_phase_applies_discovery_plan() {
         .display()
         .to_string();
 
-    let plan = local_catalog_sync::discover_phase(&conn, &config).expect("discover");
-    let summary = local_catalog_sync::merge_catalog_phase(&conn, &config, plan).expect("merge");
+    let plan = index::discover_phase(&conn, &config).expect("discover");
+    let summary = index::merge_catalog_phase(&conn, &config, plan).expect("merge");
     assert_eq!(summary.added, 1);
 
     let count: i64 = conn
@@ -446,7 +439,7 @@ fn merge_catalog_phase_applies_discovery_plan() {
 }
 
 #[test]
-fn persist_local_catalog_git_phase_updates_repo_git_columns() {
+fn persist_index_git_phase_updates_repo_git_columns() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     let repo_path = git_worktree(&watch_root, "persist-git");
@@ -456,9 +449,9 @@ fn persist_local_catalog_git_phase_updates_repo_git_columns() {
         .display()
         .to_string();
 
-    local_catalog_sync::run_full_connection(&conn, &config).expect("seed catalog row");
+    index::run_full_connection(&conn, &config).expect("seed catalog row");
 
-    let mut summary = local_catalog_sync::LocalCatalogSyncSummary::default();
+    let mut summary = index::IndexSummary::default();
     let git_results = vec![GitRefreshResult {
         path: path_key.clone(),
         state: GitState {
@@ -470,8 +463,7 @@ fn persist_local_catalog_git_phase_updates_repo_git_columns() {
         },
     }];
 
-    local_catalog_sync::persist_local_catalog_git_phase(&conn, &config, &mut summary, git_results)
-        .expect("persist git");
+    index::persist_index_git_phase(&conn, &config, &mut summary, git_results).expect("persist git");
     assert_eq!(summary.git_refreshed, 1);
     assert_eq!(summary.git_errors, 0);
 
@@ -489,17 +481,17 @@ fn persist_local_catalog_git_phase_updates_repo_git_columns() {
 }
 
 #[test]
-fn local_catalog_sync_git_failure_writes_skipped() {
+fn index_git_failure_writes_skipped() {
     let (_dir, conn, config) = open_index_fixture(None);
     let watch_root = config.watch_roots[0].clone();
     git_worktree(&watch_root, "good");
     fake_git_dir(&watch_root, "bad");
 
-    local_catalog_sync::run_full_connection(&conn, &config).expect("run_full");
+    index::run_full_connection(&conn, &config).expect("run_full");
 
     let skipped: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM local_catalog_sync_changes WHERE action = 'skipped'",
+            "SELECT COUNT(*) FROM index_changes WHERE action = 'skipped'",
             [],
             |row| row.get(0),
         )
@@ -533,7 +525,7 @@ fn seed_committed_repo(repo: &Path) {
 }
 
 #[test]
-fn local_catalog_sync_persists_null_structural_block_for_volatile_dirty_repo() {
+fn index_persists_null_structural_block_for_volatile_dirty_repo() {
     let (_dir, conn, mut config) = open_index_fixture(None);
     config.migration.allow_conversion_to_bare_repo = true;
     let watch_root = config.watch_roots[0].clone();
@@ -541,7 +533,7 @@ fn local_catalog_sync_persists_null_structural_block_for_volatile_dirty_repo() {
     seed_committed_repo(&repo_path);
     fs::write(repo_path.join("README"), "dirty\n").expect("dirty");
 
-    local_catalog_sync::run_full_connection(&conn, &config).expect("index");
+    index::run_full_connection(&conn, &config).expect("index");
 
     let path_key = repo_path
         .canonicalize()
@@ -560,7 +552,7 @@ fn local_catalog_sync_persists_null_structural_block_for_volatile_dirty_repo() {
 }
 
 #[test]
-fn local_catalog_sync_persists_structural_linked_worktree_block() {
+fn index_persists_structural_linked_worktree_block() {
     let (_dir, conn, mut config) = open_index_fixture(None);
     config.migration.allow_conversion_to_bare_repo = true;
     let watch_root = config.watch_roots[0].clone();
@@ -589,7 +581,7 @@ fn local_catalog_sync_persists_structural_linked_worktree_block() {
         .expect("worktree add");
     assert!(status.success());
 
-    local_catalog_sync::run_full_connection(&conn, &config).expect("index");
+    index::run_full_connection(&conn, &config).expect("index");
 
     let path_key = wt_path.canonicalize().expect("canon").display().to_string();
     let block_reason: Option<String> = conn

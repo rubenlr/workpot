@@ -7,5 +7,5 @@ export const SECTION_META = [
 
 export const DEFAULT_MAX_VISIBLE_ROWS = 15;
 
-export const TRAY_EMPTY_LIST_MESSAGE = "No repos in catalog yet.";
+export const TRAY_EMPTY_LIST_MESSAGE = "No repos indexed yet.";
 export const TRAY_NO_MATCH_MESSAGE = "No repos match";

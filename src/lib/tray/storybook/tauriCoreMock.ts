@@ -26,7 +26,7 @@ export async function invoke(cmd: string, _args?: unknown): Promise<unknown> {
     case "list_branches":
       return storyBranches();
     case "set_branch_hidden":
-    case "refresh_sync":
+    case "refresh_index":
     case "refresh_all_git_state":
     case "open_in_cursor":
     case "open_in_finder":
