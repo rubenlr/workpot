@@ -48,11 +48,11 @@ export function createTrayRepoData(options: TrayRepoDataOptions = {}) {
   }
 
   async function startBackgroundRefresh(): Promise<void> {
-    trayTrace("invoke refresh_all_git_state");
+    trayTrace("invoke refresh_sync");
     try {
-      await invoke("refresh_all_git_state");
+      await invoke("refresh_sync");
     } catch (e) {
-      trayTrace("refresh_all_git_state failed", e);
+      trayTrace("refresh_sync failed", e);
       setListError(String(e));
     }
   }

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 use tauri::{
     Emitter, Manager, PhysicalPosition,
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -6,6 +7,11 @@ use tauri::{
 };
 use workpot_core::AppState;
 use workpot_core::services::local_catalog_sync::LocalCatalogSyncSummary;
+
+use crate::commands::{
+    CatalogSyncGuard, reset_tray_icon_after_sync, start_tray_sync_animation,
+    stop_tray_sync_animation, update_tray_icon_state,
+};
 
 /// Tray status icons loaded at setup (default, stale-dirty, syncing animation frames).
 pub struct TrayIcons {
@@ -108,17 +114,39 @@ fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
         log::warn!("failed to emit panel-opened: {e}");
     }
     if let Some(state) = app.try_state::<Arc<AppState>>() {
-        crate::commands::spawn_background_git_refresh(app.clone(), state.inner().clone());
+        spawn_background_sync(app.clone(), state.inner().clone());
     }
 }
 
 pub(crate) fn spawn_background_sync(app: tauri::AppHandle, state: Arc<AppState>) {
+    let guard = app
+        .try_state::<CatalogSyncGuard>()
+        .map(|g| g.inner().clone());
+    let Some(guard) = guard else {
+        spawn_background_sync_inner(app, state, None);
+        return;
+    };
+    if !guard.try_start() {
+        log::debug!("background sync: skipped (already running)");
+        return;
+    }
+    spawn_background_sync_inner(app, state, Some(guard));
+}
+
+fn spawn_background_sync_inner(
+    app: tauri::AppHandle,
+    state: Arc<AppState>,
+    guard: Option<CatalogSyncGuard>,
+) {
+    let stale_dirty_days = state.config().map(|c| c.stale_dirty_days).unwrap_or(7);
+    update_tray_icon_state(&app, &[], stale_dirty_days, true);
+    let animation_cancel = start_tray_sync_animation(&app);
     log::info!("background sync: started");
     if let Err(e) = app.emit("sync-started", ()) {
         log::warn!("failed to emit sync-started: {e}");
     }
     tauri::async_runtime::spawn(async move {
-        let started = std::time::Instant::now();
+        let started = Instant::now();
         let state_for_blocking = Arc::clone(&state);
         let blocking_result = tauri::async_runtime::spawn_blocking(move || {
             state_for_blocking.run_sync().map_err(|e| e.to_string())
@@ -126,6 +154,12 @@ pub(crate) fn spawn_background_sync(app: tauri::AppHandle, state: Arc<AppState>)
         .await;
 
         let elapsed_ms = started.elapsed().as_millis();
+        stop_tray_sync_animation(animation_cancel);
+        reset_tray_icon_after_sync(&app, &state, stale_dirty_days);
+        if let Some(guard) = guard {
+            guard.finish();
+        }
+
         match blocking_result {
             Ok(Ok(summary)) => {
                 log::info!(

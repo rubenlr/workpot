@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { subscribeTrayPanelEvents, type ListenFn } from "./trayPanelEvents";
-import type { GitRefreshSummary, SyncSummary, RepoSyncEvent } from "$lib/types";
+import type { SyncSummary, RepoSyncEvent } from "$lib/types";
 
 function mockListen(): {
   listen: ListenFn;
@@ -21,13 +21,10 @@ function mockListen(): {
 }
 
 describe("subscribeTrayPanelEvents", () => {
-  it("registers listeners and unsubscribes all", async () => {
+  it("registers sync listeners without git-refresh events", async () => {
     const { listen, unsubs, handlers } = mockListen();
     const onPanelOpened = vi.fn();
     const onPanelClosed = vi.fn();
-    const onGitRefreshStarted = vi.fn();
-    const onGitRefreshComplete = vi.fn();
-    const onGitRefreshFailed = vi.fn();
     const onSyncStarted = vi.fn();
     const onSyncComplete = vi.fn();
     const onSyncFailed = vi.fn();
@@ -43,9 +40,6 @@ describe("subscribeTrayPanelEvents", () => {
       {
         onPanelOpened,
         onPanelClosed,
-        onGitRefreshStarted,
-        onGitRefreshComplete,
-        onGitRefreshFailed,
         onSyncStarted,
         onSyncComplete,
         onSyncFailed,
@@ -60,27 +54,16 @@ describe("subscribeTrayPanelEvents", () => {
       listen,
     );
 
-    expect(listen).toHaveBeenCalledTimes(15);
+    expect(listen).toHaveBeenCalledTimes(12);
+    expect(handlers.has("git-refresh-started")).toBe(false);
+    expect(handlers.has("git-refresh-complete")).toBe(false);
+    expect(handlers.has("git-refresh-failed")).toBe(false);
 
     handlers.get("panel-opened")!({ payload: undefined });
     expect(onPanelOpened).toHaveBeenCalledOnce();
 
     handlers.get("panel-closed")!({ payload: undefined });
     expect(onPanelClosed).toHaveBeenCalledOnce();
-
-    handlers.get("git-refresh-started")!({ payload: undefined });
-    expect(onGitRefreshStarted).toHaveBeenCalledOnce();
-
-    const summary: GitRefreshSummary = {
-      refreshed: 1,
-      errors: 0,
-      any_dirty: false,
-    };
-    handlers.get("git-refresh-complete")!({ payload: summary });
-    expect(onGitRefreshComplete).toHaveBeenCalledWith(summary);
-
-    handlers.get("git-refresh-failed")!({ payload: "boom" });
-    expect(onGitRefreshFailed).toHaveBeenCalledWith("boom");
 
     handlers.get("sync-started")!({ payload: undefined });
     expect(onSyncStarted).toHaveBeenCalledOnce();

@@ -1,22 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  armGitRefreshWatchdog,
-  clearGitRefreshWatchdog,
-} from "./gitRefreshWatchdog";
+import { armSyncWatchdog, clearSyncWatchdog } from "./syncWatchdog";
 
-describe("gitRefreshWatchdog", () => {
+describe("syncWatchdog", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
 
   afterEach(() => {
-    clearGitRefreshWatchdog();
+    clearSyncWatchdog();
     vi.useRealTimers();
   });
 
   it("fires onTimeout after 90 seconds", () => {
     const onTimeout = vi.fn();
-    armGitRefreshWatchdog(onTimeout);
+    armSyncWatchdog(onTimeout);
 
     vi.advanceTimersByTime(89_999);
     expect(onTimeout).not.toHaveBeenCalled();
@@ -25,10 +22,10 @@ describe("gitRefreshWatchdog", () => {
     expect(onTimeout).toHaveBeenCalledOnce();
   });
 
-  it("clearGitRefreshWatchdog cancels pending timeout", () => {
+  it("clearSyncWatchdog cancels pending timeout", () => {
     const onTimeout = vi.fn();
-    armGitRefreshWatchdog(onTimeout);
-    clearGitRefreshWatchdog();
+    armSyncWatchdog(onTimeout);
+    clearSyncWatchdog();
 
     vi.advanceTimersByTime(90_000);
     expect(onTimeout).not.toHaveBeenCalled();
@@ -37,9 +34,9 @@ describe("gitRefreshWatchdog", () => {
   it("re-arm replaces previous watchdog", () => {
     const first = vi.fn();
     const second = vi.fn();
-    armGitRefreshWatchdog(first);
+    armSyncWatchdog(first);
     vi.advanceTimersByTime(30_000);
-    armGitRefreshWatchdog(second);
+    armSyncWatchdog(second);
 
     vi.advanceTimersByTime(89_999);
     expect(first).not.toHaveBeenCalled();

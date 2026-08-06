@@ -69,7 +69,7 @@ pub fn run() {
     init_logging();
     tauri::Builder::default()
         .manage(commands::ContextMenuRepo(Arc::new(Mutex::new(None))))
-        .manage(commands::GitRefreshGuard::new())
+        .manage(commands::CatalogSyncGuard::new())
         .manage(commands::RepoSyncGuard::new())
         .manage(commands::RepoConvertGuard::new())
         .setup(|app| {

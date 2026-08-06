@@ -1,11 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import type {
-  GitRefreshSummary,
-  SyncSummary,
-  RepoConvertEvent,
-  RepoSyncEvent,
-} from "$lib/types";
+import type { SyncSummary, RepoConvertEvent, RepoSyncEvent } from "$lib/types";
 import { trayTrace } from "./trayTrace";
 
 export type ListenFn = <T>(
@@ -16,9 +11,6 @@ export type ListenFn = <T>(
 export interface TrayPanelEventHandlers {
   onPanelOpened: () => void;
   onPanelClosed: () => void;
-  onGitRefreshStarted: () => void;
-  onGitRefreshComplete: (summary: GitRefreshSummary) => void;
-  onGitRefreshFailed: (message: string) => void;
   onSyncStarted: () => void;
   onSyncComplete: (summary: SyncSummary) => void;
   onSyncFailed: (message: string) => void;
@@ -40,13 +32,6 @@ export async function subscribeTrayPanelEvents(
   const unsubs = await Promise.all([
     listenFn("panel-opened", () => handlers.onPanelOpened()),
     listenFn("panel-closed", () => handlers.onPanelClosed()),
-    listenFn("git-refresh-started", () => handlers.onGitRefreshStarted()),
-    listenFn<GitRefreshSummary>("git-refresh-complete", (event) =>
-      handlers.onGitRefreshComplete(event.payload),
-    ),
-    listenFn<string>("git-refresh-failed", (event) =>
-      handlers.onGitRefreshFailed(event.payload),
-    ),
     listenFn("sync-started", () => handlers.onSyncStarted()),
     listenFn<SyncSummary>("sync-complete", (event) =>
       handlers.onSyncComplete(event.payload),

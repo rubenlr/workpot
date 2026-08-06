@@ -12,18 +12,18 @@ use workpot_core::services::repo_convert::{
     ConvertResult, ConvertTarget, PreflightResult, convert_target_for_record, preflight_message,
     run_volatile_preflight,
 };
-use workpot_core::{AppState, GitRefreshSummary, RepoRecord, SyncDirection, run_repo_sync};
+use workpot_core::{AppState, RepoRecord, SyncDirection, run_repo_sync};
 
-/// Prevents overlapping background git refresh jobs (panel open + Cmd+R).
+/// Prevents overlapping catalog sync jobs (panel open + Cmd+R / menu Sync).
 #[derive(Clone)]
-pub struct GitRefreshGuard(pub Arc<AtomicBool>);
+pub struct CatalogSyncGuard(pub Arc<AtomicBool>);
 
-impl GitRefreshGuard {
+impl CatalogSyncGuard {
     pub fn new() -> Self {
         Self(Arc::new(AtomicBool::new(false)))
     }
 
-    /// Returns true when this call acquired the refresh slot.
+    /// Returns true when this call acquired the sync slot.
     pub fn try_start(&self) -> bool {
         self.0
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -159,7 +159,7 @@ pub struct RepoSyncEventDto {
     pub error: Option<String>,
 }
 
-struct TraySyncAnimationCancel(Arc<AtomicBool>);
+pub(crate) struct TraySyncAnimationCancel(Arc<AtomicBool>);
 
 fn log_emit_err(event: &str, err: tauri::Error) {
     log::warn!("failed to emit {event}: {err}");
@@ -1011,7 +1011,7 @@ fn set_tray_syncing_frame(app: &AppHandle, frame_idx: usize) {
     }
 }
 
-fn start_tray_sync_animation(app: &AppHandle) -> TraySyncAnimationCancel {
+pub(crate) fn start_tray_sync_animation(app: &AppHandle) -> TraySyncAnimationCancel {
     let cancel = Arc::new(AtomicBool::new(false));
     let cancel_flag = Arc::clone(&cancel);
     let app = app.clone();
@@ -1030,7 +1030,7 @@ fn start_tray_sync_animation(app: &AppHandle) -> TraySyncAnimationCancel {
     TraySyncAnimationCancel(cancel)
 }
 
-fn stop_tray_sync_animation(cancel: TraySyncAnimationCancel) {
+pub(crate) fn stop_tray_sync_animation(cancel: TraySyncAnimationCancel) {
     cancel.0.store(true, Ordering::Relaxed);
 }
 
@@ -1067,7 +1067,7 @@ pub(crate) fn update_tray_icon_state(
     }
 }
 
-fn reset_tray_icon_after_git_refresh(
+pub(crate) fn reset_tray_icon_after_sync(
     app: &AppHandle,
     state: &Arc<AppState>,
     stale_dirty_days: u32,
@@ -1086,118 +1086,6 @@ fn reset_tray_icon_after_git_refresh(
         return;
     }
     update_tray_icon_state(app, &[], stale_dirty_days, false);
-}
-
-/// Git refresh on a blocking pool so libgit2 cannot stall the async runtime.
-/// Always resets tray icon and emits completion/failure events.
-pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<AppState>) {
-    let guard = app
-        .try_state::<GitRefreshGuard>()
-        .map(|g| g.inner().clone());
-    let Some(guard) = guard else {
-        spawn_background_git_refresh_inner(app, state, None);
-        return;
-    };
-    if !guard.try_start() {
-        log::debug!("background git refresh: skipped (already running)");
-        return;
-    }
-    spawn_background_git_refresh_inner(app, state, Some(guard));
-}
-
-fn spawn_background_git_refresh_inner(
-    app: AppHandle,
-    state: Arc<AppState>,
-    guard: Option<GitRefreshGuard>,
-) {
-    let stale_dirty_days = state.config().map(|c| c.stale_dirty_days).unwrap_or(7);
-    update_tray_icon_state(&app, &[], stale_dirty_days, true);
-    let animation_cancel = start_tray_sync_animation(&app);
-    log::info!("background git refresh: started");
-    if let Err(e) = app.emit("git-refresh-started", ()) {
-        log_emit_err("git-refresh-started", e);
-    }
-
-    tauri::async_runtime::spawn(async move {
-        let started = Instant::now();
-        let state_for_blocking = Arc::clone(&state);
-
-        let blocking_result = tauri::async_runtime::spawn_blocking(move || {
-            let paths = state_for_blocking
-                .git_refresh_paths()
-                .map_err(|e| e.to_string())?;
-            let repo_count = paths.len();
-            log::info!("background git refresh: refreshing {repo_count} repos");
-            let paths_acquire_ms = started.elapsed().as_millis();
-            log::debug!(
-                "background git refresh: paths lock released elapsed_ms={paths_acquire_ms}"
-            );
-            let fetch_cmd = state_for_blocking
-                .config()
-                .map_err(|e| e.to_string())?
-                .fetch
-                .clone();
-            let git_results = workpot_core::services::git_state::refresh_all(paths, &fetch_cmd);
-            log::debug!("background git refresh: persist lock acquire");
-            let summary = state_for_blocking
-                .persist_git_refresh_results(git_results)
-                .map_err(|e| e.to_string())?;
-            log::debug!("background git refresh: persist complete");
-            Ok::<GitRefreshSummary, String>(summary)
-        })
-        .await;
-
-        let elapsed_ms = started.elapsed().as_millis();
-        stop_tray_sync_animation(animation_cancel);
-        reset_tray_icon_after_git_refresh(&app, &state, stale_dirty_days);
-        if let Some(guard) = guard {
-            guard.finish();
-        }
-
-        match blocking_result {
-            Ok(Ok(summary)) => {
-                log::info!(
-                    "background git refresh: complete elapsed_ms={elapsed_ms} refreshed={} errors={} any_dirty={}",
-                    summary.refreshed,
-                    summary.errors,
-                    summary.any_dirty
-                );
-                if let Err(e) = app.emit("git-refresh-complete", &summary) {
-                    log_emit_err("git-refresh-complete", e);
-                }
-            }
-            Ok(Err(e)) => {
-                log::warn!("background git refresh: failed elapsed_ms={elapsed_ms}: {e}");
-                let fallback = GitRefreshSummary {
-                    refreshed: 0,
-                    errors: 1,
-                    any_dirty: false,
-                };
-                if let Err(err) = app.emit("git-refresh-failed", e.clone()) {
-                    log_emit_err("git-refresh-failed", err);
-                }
-                if let Err(err) = app.emit("git-refresh-complete", &fallback) {
-                    log_emit_err("git-refresh-complete", err);
-                }
-            }
-            Err(join_err) => {
-                let msg =
-                    format!("background git refresh task panicked or was cancelled: {join_err}");
-                log::error!("background git refresh: failed elapsed_ms={elapsed_ms}: {msg}");
-                let fallback = GitRefreshSummary {
-                    refreshed: 0,
-                    errors: 1,
-                    any_dirty: false,
-                };
-                if let Err(err) = app.emit("git-refresh-failed", msg.clone()) {
-                    log_emit_err("git-refresh-failed", err);
-                }
-                if let Err(err) = app.emit("git-refresh-complete", &fallback) {
-                    log_emit_err("git-refresh-complete", err);
-                }
-            }
-        }
-    });
 }
 
 #[tauri::command]
@@ -1225,12 +1113,13 @@ pub async fn refresh_sync(app: AppHandle, state: State<'_, Arc<AppState>>) -> Re
     Ok(())
 }
 
+/// Thin-wrap legacy IPC onto the shared catalog sync pipeline.
 #[tauri::command]
 pub async fn refresh_all_git_state(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    spawn_background_git_refresh(app, state.inner().clone());
+    crate::tray::spawn_background_sync(app, state.inner().clone());
     Ok(())
 }
 
@@ -1803,8 +1692,8 @@ mod tests {
     }
 
     #[test]
-    fn git_refresh_guard_skips_second_concurrent_start() {
-        let guard = GitRefreshGuard::new();
+    fn catalog_sync_guard_skips_second_concurrent_start() {
+        let guard = CatalogSyncGuard::new();
         assert!(guard.try_start());
         assert!(!guard.try_start());
         guard.finish();
