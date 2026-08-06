@@ -328,6 +328,12 @@ impl AppState {
             .with_read(|conn| org::list_hidden_branches(conn, path))
     }
 
+    /// Persisted branch refs for a catalog location. Empty means never synced — tray falls back to git2.
+    pub fn list_location_branches(&self, path: &str) -> Result<Vec<crate::infra::git::BranchRef>> {
+        self.db
+            .with_read(|conn| catalog::list_location_branches(conn, path))
+    }
+
     pub fn set_branch_hidden(&self, path: &str, branch: &str, hidden: bool) -> Result<()> {
         self.db
             .with_write(|conn| org::set_branch_hidden(conn, path, branch, hidden))

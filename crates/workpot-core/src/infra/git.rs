@@ -483,6 +483,15 @@ impl BranchKind {
             Self::Remote => "remote",
         }
     }
+
+    /// Parse `branches.kind` column values (`local` / `remote`).
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "local" => Some(Self::Local),
+            "remote" => Some(Self::Remote),
+            _ => None,
+        }
+    }
 }
 
 /// A local or remote branch tip suitable for the `branches` catalog table.

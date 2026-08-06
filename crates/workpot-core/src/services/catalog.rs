@@ -1,6 +1,6 @@
 use crate::domain::{Config, RepoRecord, SOURCE_MANUAL, SOURCE_SCAN};
 use crate::error::{Result, WorkpotError};
-use crate::infra::git::{self, resolve_git_common_dir};
+use crate::infra::git::{self, BranchKind, BranchRef, resolve_git_common_dir};
 use crate::save_config;
 use crate::services::git_state::unix_now_secs;
 use rusqlite::{Connection, Row, params};
@@ -503,4 +503,40 @@ pub fn upsert_scan(conn: &Connection, path: &Path, git_common_dir: &str) -> Resu
     )?;
 
     Ok(!existed)
+}
+
+/// Catalog branch rows for a location (`branches` table). Empty when never synced (Wave 4 fallback).
+pub fn list_location_branches(conn: &Connection, location_path: &str) -> Result<Vec<BranchRef>> {
+    let mut stmt = conn.prepare(
+        "SELECT name, kind, tip_oid, remote_name
+         FROM branches
+         WHERE location_path = ?1
+         ORDER BY kind, name COLLATE NOCASE, remote_name COLLATE NOCASE",
+    )?;
+    let rows = stmt
+        .query_map(params![location_path], |row| {
+            let name: String = row.get(0)?;
+            let kind_raw: String = row.get(1)?;
+            let tip_oid: Option<String> = row.get(2)?;
+            let remote_name: String = row.get(3)?;
+            Ok((name, kind_raw, tip_oid, remote_name))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    let mut out = Vec::with_capacity(rows.len());
+    for (name, kind_raw, tip_oid, remote_name) in rows {
+        let Some(kind) = BranchKind::parse(&kind_raw) else {
+            log::warn!(
+                "skipping branches row with unknown kind={kind_raw} at {location_path}/{name}"
+            );
+            continue;
+        };
+        out.push(BranchRef {
+            name,
+            kind,
+            tip_oid,
+            remote_name,
+        });
+    }
+    Ok(out)
 }

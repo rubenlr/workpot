@@ -269,6 +269,16 @@ fn sync_persists_branches_and_worktrees_for_normal_repo() {
         "expected at least one local branch row, got {branch_count}"
     );
 
+    let catalog_refs =
+        workpot_core::services::catalog::list_location_branches(&conn, &key).expect("list");
+    assert_eq!(catalog_refs.len() as i64, branch_count);
+    assert!(
+        catalog_refs
+            .iter()
+            .any(|b| b.kind == workpot_core::infra::git::BranchKind::Local && b.name == "main"),
+        "expected local main in catalog refs: {catalog_refs:?}"
+    );
+
     let wt_count: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM worktrees WHERE location_path = ?1",

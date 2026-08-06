@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use tauri::menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, LogicalPosition, Manager, State, Window};
 use workpot_core::domain::config::MigrationConfig;
+use workpot_core::infra::git::{BranchKind, BranchRef};
 use workpot_core::services::repo_convert::{
     ConvertResult, ConvertTarget, PreflightResult, convert_target_for_record, preflight_message,
     run_volatile_preflight,
@@ -517,14 +518,20 @@ pub async fn list_branches(
             .catalog_launch_path(Path::new(&repo_path))
             .map_err(|e| e.to_string())?;
     }
+    let catalog_refs = state
+        .inner()
+        .list_location_branches(&repo_path)
+        .map_err(|e| e.to_string())?;
     let hidden = state
         .inner()
         .list_hidden_branches(&repo_path)
         .map_err(|e| e.to_string())?;
     let hidden_set: HashSet<String> = hidden.into_iter().collect();
-    let mut items = tauri::async_runtime::spawn_blocking(move || list_branches_sync(&repo_path))
-        .await
-        .map_err(|e| e.to_string())??;
+    let mut items = tauri::async_runtime::spawn_blocking(move || {
+        list_branches_prefer_catalog(&repo_path, catalog_refs)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     for item in &mut items {
         item.hidden = hidden_set.contains(&item.name);
     }
@@ -726,6 +733,93 @@ fn branch_tip_time(repo: &git2::Repository, name: &str, tracking: BranchTracking
         }
         BranchTrackingDto::RemoteOnly => remote_only_branch_tip_time(repo, name),
     }
+}
+
+/// Prefer catalog `branches` rows when present; otherwise enumerate via git2 (never synced).
+fn list_branches_prefer_catalog(
+    repo_path: &str,
+    catalog_refs: Vec<BranchRef>,
+) -> Result<Vec<BranchListItemDto>, String> {
+    if catalog_refs.is_empty() {
+        list_branches_sync(repo_path)
+    } else {
+        list_branches_from_catalog(repo_path, &catalog_refs)
+    }
+}
+
+fn catalog_tracking(is_local: bool, is_remote: bool) -> BranchTrackingDto {
+    match (is_local, is_remote) {
+        (false, true) => BranchTrackingDto::RemoteOnly,
+        (true, true) => BranchTrackingDto::LocalRemote,
+        _ => BranchTrackingDto::LocalOnly,
+    }
+}
+
+/// Build tray DTOs from persisted branch rows. Hybrid: ahead/behind + tip sort via git2 when openable.
+fn list_branches_from_catalog(
+    repo_path: &str,
+    refs: &[BranchRef],
+) -> Result<Vec<BranchListItemDto>, String> {
+    let mut local_names = HashSet::new();
+    let mut remote_names = HashSet::new();
+    for branch in refs {
+        match branch.kind {
+            BranchKind::Local => {
+                local_names.insert(branch.name.clone());
+            }
+            BranchKind::Remote => {
+                remote_names.insert(branch.name.clone());
+            }
+        }
+    }
+
+    let mut all_names: HashSet<String> = local_names.clone();
+    all_names.extend(remote_names.iter().cloned());
+
+    let repo = git2::Repository::open(repo_path).ok();
+    let current = repo.as_ref().and_then(|r| {
+        r.head()
+            .ok()
+            .filter(|head| head.is_branch())
+            .and_then(|head| head.shorthand().ok().map(str::to_string))
+    });
+
+    let mut items: Vec<BranchListItemDto> = all_names
+        .into_iter()
+        .map(|name| {
+            let is_local = local_names.contains(&name);
+            let is_remote = remote_names.contains(&name);
+            let tracking = catalog_tracking(is_local, is_remote);
+            let checked_out = current.as_ref() == Some(&name);
+            let (ahead, behind) = match (&repo, tracking) {
+                (Some(repo), BranchTrackingDto::LocalRemote) => {
+                    ahead_behind_for_local_branch(repo, &name)
+                }
+                _ => (None, None),
+            };
+            BranchListItemDto {
+                name,
+                checked_out,
+                tracking,
+                ahead,
+                behind,
+                hidden: false,
+            }
+        })
+        .collect();
+
+    items.sort_by(|a, b| {
+        tracking_sort_order(a.tracking)
+            .cmp(&tracking_sort_order(b.tracking))
+            .then_with(|| match &repo {
+                Some(repo) => branch_tip_time(repo, &b.name, b.tracking)
+                    .cmp(&branch_tip_time(repo, &a.name, a.tracking)),
+                None => std::cmp::Ordering::Equal,
+            })
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    Ok(items)
 }
 
 fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String> {
@@ -1888,6 +1982,155 @@ mod tests {
         assert!(feature.hidden);
         let default_branch = items.iter().find(|i| i.checked_out).expect("default");
         assert!(!default_branch.hidden);
+    }
+
+    #[test]
+    fn list_branches_prefer_catalog_falls_back_when_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo_path = dir.path().join("repo");
+        let repo = git2::Repository::init(&repo_path).expect("init");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        let tree_id = repo.index().expect("index").write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+
+        let path = repo_path.to_str().expect("utf8");
+        let from_git = list_branches_sync(path).expect("git");
+        let from_prefer = list_branches_prefer_catalog(path, Vec::new()).expect("prefer");
+        assert_eq!(from_prefer, from_git);
+    }
+
+    #[test]
+    fn list_branches_from_catalog_joins_local_and_remote() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo_path = dir.path().join("repo");
+        let repo = git2::Repository::init(&repo_path).expect("init");
+        repo.remote("origin", "/tmp/unused-remote")
+            .expect("add remote");
+
+        commit_on_ref(&repo, "HEAD", "main", 1_000);
+        commit_on_ref(&repo, "refs/heads/alpha", "alpha", 5_000);
+        let tracked_oid = commit_on_ref(&repo, "refs/heads/tracked", "tracked", 4_000);
+        repo.reference(
+            "refs/remotes/origin/tracked",
+            tracked_oid,
+            true,
+            "create remote tracked",
+        )
+        .expect("remote tracked");
+        let mut tracked = repo
+            .find_branch("tracked", git2::BranchType::Local)
+            .expect("tracked branch");
+        tracked
+            .set_upstream(Some("origin/tracked"))
+            .expect("set upstream");
+        commit_on_ref(
+            &repo,
+            "refs/remotes/origin/remote-only",
+            "remote-only",
+            6_000,
+        );
+
+        let default_branch = repo
+            .head()
+            .expect("head")
+            .shorthand()
+            .expect("default branch")
+            .to_string();
+
+        let refs = vec![
+            BranchRef {
+                name: default_branch.clone(),
+                kind: BranchKind::Local,
+                tip_oid: None,
+                remote_name: String::new(),
+            },
+            BranchRef {
+                name: "alpha".into(),
+                kind: BranchKind::Local,
+                tip_oid: None,
+                remote_name: String::new(),
+            },
+            BranchRef {
+                name: "tracked".into(),
+                kind: BranchKind::Local,
+                tip_oid: None,
+                remote_name: String::new(),
+            },
+            BranchRef {
+                name: "tracked".into(),
+                kind: BranchKind::Remote,
+                tip_oid: None,
+                remote_name: "origin".into(),
+            },
+            BranchRef {
+                name: "remote-only".into(),
+                kind: BranchKind::Remote,
+                tip_oid: None,
+                remote_name: "origin".into(),
+            },
+        ];
+
+        let path = repo_path.to_str().expect("utf8");
+        let items = list_branches_prefer_catalog(path, refs).expect("catalog");
+        let by_name: std::collections::HashMap<_, _> =
+            items.iter().map(|i| (i.name.as_str(), i)).collect();
+
+        assert_eq!(
+            by_name.get("alpha").expect("alpha").tracking,
+            BranchTrackingDto::LocalOnly
+        );
+        assert_eq!(
+            by_name.get("tracked").expect("tracked").tracking,
+            BranchTrackingDto::LocalRemote
+        );
+        assert_eq!(
+            by_name.get("remote-only").expect("remote-only").tracking,
+            BranchTrackingDto::RemoteOnly
+        );
+        assert!(
+            by_name
+                .get(default_branch.as_str())
+                .expect("default")
+                .checked_out
+        );
+
+        let names: Vec<_> = items.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["alpha", default_branch.as_str(), "tracked", "remote-only"]
+        );
+    }
+
+    #[test]
+    fn list_location_branches_empty_until_synced() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("config.toml");
+        let db_path = dir.path().join("workpot.db");
+        std::fs::write(&config_path, "watch_roots = []\nexcludes = []\n").expect("config");
+        let ctx = AppState::open_with_paths(config_path, db_path).expect("open");
+        let repo_path = dir.path().join("sample");
+        std::fs::create_dir_all(&repo_path).expect("mkdir");
+        let repo = git2::Repository::init(&repo_path).expect("init");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        let tree_id = repo.index().expect("index").write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+        let record = ctx.register_manual(&repo_path).expect("register");
+        let path_str = record.path.display().to_string();
+
+        assert!(
+            ctx.list_location_branches(&path_str)
+                .expect("list")
+                .is_empty(),
+            "manual register does not populate branches — list_branches falls back to git2"
+        );
+
+        let git_items = list_branches_prefer_catalog(&path_str, Vec::new()).expect("fallback");
+        assert!(!git_items.is_empty());
+        assert!(git_items.iter().any(|i| i.checked_out));
     }
 
     #[test]
