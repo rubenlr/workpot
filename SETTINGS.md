@@ -7,6 +7,8 @@ All settings live in `config.toml`. On first run, workpot creates the file with 
 
 Run `workpot paths` to print the resolved paths on your machine.
 
+To wipe the SQLite catalog (and WAL/SHM) after a schema bootstrap change — quit the tray first if the DB may be locked — use `workpot db reset` or `just db-reset`. See [docs/sync.md](docs/sync.md#database-wipe-schema-bootstrap).
+
 Explicit bootstrap and documentation backfill:
 
 - `workpot settings init` — write a documented default `config.toml` (fails if the file already exists; use `--force` to overwrite)
@@ -51,7 +53,7 @@ project_name_source = "folder_name"
 | `limits.max_watch_roots` | `100`   | Maximum number of watch roots allowed.                                                                              |
 | `limits.max_repos`       | `1000`  | Maximum number of cataloged repositories.                                                                           |
 
-See also [docs/sync.md](docs/sync.md) for sync scopes (`sync`, `sync local`, fetch-repo) and how tray Sync walks roots, merges the catalog, and refreshes git state.
+See also [docs/sync.md](docs/sync.md) for sync scopes (`sync`, `sync local`, fetch-repo) and how panel open / tray Sync / Cmd+R run the full pipeline (locations merge, project attach, git refresh, worktrees/branches persist).
 
 ## Tray settings
 

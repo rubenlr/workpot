@@ -6,7 +6,7 @@ Workpot sync keeps the local catalog and git metadata up to date. Sync is not au
 
 | Scope                 | Meaning                                                    | Status                                    |
 | --------------------- | ---------------------------------------------------------- | ----------------------------------------- |
-| `sync-local-catalog`  | Today's watch-root scan + catalog merge + git refresh      | Implemented (`workpot sync local`)        |
+| `sync-local-catalog`  | Watch-root scan + catalog merge + project attach + git     | Implemented (`workpot sync local`)        |
 | `sync-remote-catalog` | Future remote directory index                              | Documented only — not implemented         |
 | `fetch-repo`          | Per-repo fetch via `Config.fetch` before git-state refresh | Implemented                               |
 | `sync` (full)         | Orchestrator: runs local catalog (+ later remote)          | Implemented thin wrapper (`workpot sync`) |
@@ -18,9 +18,18 @@ workpot sync         # full orchestrator (v1: local catalog only)
 workpot sync local   # local catalog sync only
 ```
 
-The tray **Sync** action runs the same full pipeline as `workpot sync`.
+Tray **panel open**, tray **Sync** / Cmd+R, and `workpot sync` all run the **same** full catalog sync (not a git-only refresh). Concurrent runs are guarded so overlapping triggers skip.
 
 ## Local catalog sync (`sync-local-catalog`)
+
+### Pipeline
+
+Phased run (locks released between phases):
+
+1. **Discover** — walk watch roots; plan upserts/removes
+2. **Merge** — write locations into the catalog, then **attach** each location to a project and **merge** projects whose remote sets overlap
+3. **Fetch + git refresh** — optional `Config.fetch`, then parallel HEAD/dirty/ahead/behind
+4. **Persist** — write git columns on locations; replace per-location **worktrees** and **branches**; prune empty projects
 
 ### When to run it
 
@@ -43,17 +52,19 @@ Workpot walks each path in `watch_roots` (see [SETTINGS.md](../SETTINGS.md#disco
 
 ### What gets into the catalog
 
-After the walk, Workpot merges candidates into the local catalog:
+After the walk, Workpot merges candidates into `locations`:
 
-- **New** scan repos are added.
-- **Existing** scan repos are updated (path metadata such as name / git common dir).
+- **New** scan paths are added.
+- **Existing** scan paths are updated (name / git common dir).
 - **Manual** registrations (`workpot repo add`) stay manual even if the same path is rediscovered under a watch root.
 - Rows are removed when a path has vanished from disk, when a scan-sourced repo is no longer under any configured watch root (orphan after editing roots), or when it was under a scannable root but was not seen this run (deleted, excluded, or no longer a git repo).
 - Manual repos **outside** all watch roots are kept if they still exist and are valid git; otherwise they are cleaned up.
 
+Then each location is attached to a **project** (remote-rooted identity). See [Projects](#projects-and-schema) below.
+
 ### Fetch + git refresh
 
-After the catalog merge commits, Workpot optionally fetches remotes (`Config.fetch`, see below), then re-reads branch, dirty, ahead, and behind for all non-excluded repos (in parallel).
+After the catalog merge commits, Workpot optionally fetches remotes (`Config.fetch`, see below), then re-reads branch, dirty, ahead, and behind for all non-excluded locations (in parallel). Persist then replaces `worktrees` / `branches` for each location.
 
 - Empty `fetch` disables the fetch step.
 - A failure on one repo counts as a git error in the summary and does **not** abort the rest of the refresh.
@@ -69,13 +80,13 @@ sync: +N -M skipped K / git: R refreshed, E errors
 
 (`workpot sync local` prints `sync local:` with the same fields.)
 
-| Field         | Meaning                                          |
-| ------------- | ------------------------------------------------ |
-| `+N`          | Repos newly added                                |
-| `-M`          | Repos removed                                    |
-| `skipped K`   | Candidates skipped (for example git unavailable) |
-| `R refreshed` | Repos whose git state was refreshed successfully |
-| `E errors`    | Per-repo git refresh failures                    |
+| Field         | Meaning                                              |
+| ------------- | ---------------------------------------------------- |
+| `+N`          | Locations newly added                                |
+| `-M`          | Locations removed                                    |
+| `skipped K`   | Candidates skipped (for example git unavailable)     |
+| `R refreshed` | Locations whose git state was refreshed successfully |
+| `E errors`    | Per-location git refresh failures                    |
 
 Exit codes:
 
@@ -85,9 +96,33 @@ Exit codes:
 
 If the catalog merge succeeds but a later git-persist step fails, the merge may already be committed while git columns stay as they were. Re-run `workpot sync` after fixing the problem.
 
+## Projects and schema
+
+Catalog identity is **project + locations**, not one row collapsed by remote URL.
+
+| Table             | Role                                                                 |
+| ----------------- | -------------------------------------------------------------------- |
+| `projects`        | Remote-rooted identity (`id` = sha256 of root remote; name, created) |
+| `project_remotes` | Root + fork/alias URLs (`role` = `root` \| `fork`)                   |
+| `locations`       | Checkout paths (path-as-identity; git HEAD columns; `project_id`)    |
+| `worktrees`       | Linked worktrees per location (`path`, `head_branch`)                |
+| `branches`        | Local/remote refs per location (`kind`, `tip_oid`, `remote_name`)    |
+
+### Root election and merge
+
+On attach (create):
+
+- **Root election:** named remote `upstream` → `origin` → first by remote name. No usable remotes → `local:{git_common_dir}`.
+- Non-root remotes are stored as **forks** on `project_remotes`.
+- Attach matches if any location remote equals a project's root or any known fork/alias. Multi-project conflict picks a winner; it does **not** merge during attach.
+
+After all attaches:
+
+- Projects whose remote URL sets **overlap** are merged (connected components). Upstream-rooted survivors keep their root sticky across fork overlap.
+
 ## Fetch-repo (`fetch-repo`)
 
-`Config.fetch` defaults to `git -C {path} fetch --prune --no-tags`. During batch git refresh (local catalog sync and tray background git refresh), Workpot runs this template per repo before querying git state.
+`Config.fetch` defaults to `git -C {path} fetch --prune --no-tags`. During batch git refresh (local catalog sync / tray background sync), Workpot runs this template per location before querying git state.
 
 - Set `fetch = ""` to disable.
 - Non-empty values must include `{path}`.
@@ -96,7 +131,7 @@ If the catalog merge succeeds but a later git-persist step fails, the merge may 
 
 ## Full sync (`sync`)
 
-`workpot sync` / tray Sync call the orchestrator. In v1 it only runs local catalog sync. Remote catalog sync will plug in here later without changing the CLI/tray entry points.
+`workpot sync`, tray Sync / Cmd+R, and panel open call the same orchestrator. In v1 it only runs local catalog sync. Remote catalog sync will plug in here later without changing the CLI/tray entry points.
 
 ## Remote catalog sync (`sync-remote-catalog`)
 
@@ -114,3 +149,14 @@ Future: index remotes / remote directories into the catalog. Not implemented —
 Run `workpot paths` for the resolved locations on your machine. Settings live in `config.toml`; the catalog is SQLite. Details and defaults are in [SETTINGS.md](../SETTINGS.md).
 
 Each successful (and many failed) local catalog sync runs leave an audit trail in the database (`local_catalog_sync_runs` and per-path `local_catalog_sync_changes`) so you can see what a run added, removed, or skipped without inspecting the schema yourself.
+
+### Database wipe (schema bootstrap)
+
+After a catalog schema bootstrap change (e.g. `repos` → `projects` / `locations`), wipe the local DB so the next start recreates tables:
+
+```bash
+workpot db reset   # deletes workpot.db + WAL/SHM; quit tray first if locked
+just db-reset      # same via justfile
+```
+
+Idempotent if the DB is already absent. Then re-run `workpot sync` (or open the tray) to rebuild the catalog.
