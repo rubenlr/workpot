@@ -1338,3 +1338,89 @@ fn settings_add_comments_backfills_minimal_config() {
         "add-comments should inject documentation:\n{contents}"
     );
 }
+
+fn isolated_database_path(home: &std::path::Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        home.join("Library/Application Support/workpot/workpot.db")
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        home.join(".local/share/workpot/workpot.db")
+    }
+}
+
+#[test]
+fn db_reset_when_missing_succeeds() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let db = isolated_database_path(home.path());
+
+    workpot_cmd(home.path())
+        .args(["db", "reset"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("already absent:")
+                .and(predicate::str::contains(db.to_str().expect("utf8"))),
+        );
+}
+
+#[test]
+fn db_reset_deletes_db_wal_shm_and_reopen_works() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let db = isolated_database_path(home.path());
+    let wal = PathBuf::from(format!("{}-wal", db.display()));
+    let shm = PathBuf::from(format!("{}-shm", db.display()));
+
+    workpot_cmd(home.path())
+        .arg("paths")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("database:"));
+
+    assert!(db.exists(), "paths should create the database");
+    fs::write(&wal, b"wal").expect("wal sidecar");
+    fs::write(&shm, b"shm").expect("shm sidecar");
+
+    workpot_cmd(home.path())
+        .args(["db", "reset"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains(format!("deleted: {}", db.display()))
+                .and(predicate::str::contains(format!(
+                    "deleted: {}",
+                    wal.display()
+                )))
+                .and(predicate::str::contains(format!(
+                    "deleted: {}",
+                    shm.display()
+                ))),
+        );
+
+    assert!(!db.exists());
+    assert!(!wal.exists());
+    assert!(!shm.exists());
+
+    workpot_cmd(home.path())
+        .arg("paths")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(db.to_str().expect("utf8")));
+    assert!(
+        db.exists(),
+        "paths should recreate the database after reset"
+    );
+}
+
+#[test]
+fn db_reset_help_warns_about_tray_lock() {
+    workpot_cmd(tempfile::tempdir().expect("tempdir").path())
+        .args(["db", "reset", "--help"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Quit the Workpot tray app")
+                .and(predicate::str::contains("locked")),
+        );
+}
