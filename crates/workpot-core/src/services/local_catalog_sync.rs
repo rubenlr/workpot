@@ -1,9 +1,12 @@
-use crate::domain::{Config, SOURCE_MANUAL, SOURCE_SCAN};
+use crate::domain::{
+    AttachResult, Config, MergeAction, ProjectSnapshot, RemoteRef, SOURCE_MANUAL, SOURCE_SCAN,
+    attach_location, merge_overlapping_projects, normalize_remote_url,
+};
 use crate::error::{Result, WorkpotError};
-use crate::infra::git::resolve_git_common_dir;
+use crate::infra::git::{self, resolve_git_common_dir};
 use crate::services::{catalog, discovery, git_state, paths};
-use rusqlite::{Connection, Transaction, params};
-use std::collections::HashSet;
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -148,6 +151,9 @@ pub fn merge_catalog_phase(
         }
     }
 
+    // Wave 3: attach locations → projects, then merge overlapping remote sets.
+    sync_project_identity(&tx)?;
+
     for entry in &changelog {
         tx.execute(
             "INSERT INTO local_catalog_sync_changes (run_id, path, action) VALUES (?1, ?2, ?3)",
@@ -211,6 +217,9 @@ pub fn persist_local_catalog_git_phase(
         }
     }
     crate::services::repo_convert::persist_all_structural_preflight(&git_tx, config)?;
+    // Wave 3: replace worktrees/branches after fetch+HEAD query; prune empty projects.
+    persist_location_git_graph(&git_tx)?;
+    prune_empty_projects(&git_tx)?;
     if let Err(e) = git_tx.commit() {
         log::warn!("git refresh commit failed after successful local catalog sync merge: {e}");
         summary.git_errors = summary.git_errors.saturating_add(summary.git_refreshed);
@@ -567,6 +576,434 @@ fn finish_sync_run(
             run_id,
         ],
     )?;
+    Ok(())
+}
+
+/// Attach every location to a project (create/attach/conflict), then apply overlap merges (4A).
+fn sync_project_identity(tx: &Transaction<'_>) -> Result<()> {
+    let locations = load_location_paths(tx)?;
+    for (path_key, git_common_dir) in &locations {
+        if let Err(e) = attach_one_location(tx, path_key, git_common_dir) {
+            log::warn!("project attach failed for {path_key}: {e}");
+        }
+    }
+
+    let snapshots = load_project_snapshots(tx)?;
+    for action in merge_overlapping_projects(&snapshots) {
+        if let Err(e) = apply_merge_action(tx, &action) {
+            log::warn!("project merge failed survivor={}: {e}", action.survivor_id);
+        }
+    }
+
+    prune_empty_projects(tx)?;
+    Ok(())
+}
+
+fn load_location_paths(conn: &Connection) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare("SELECT path, git_common_dir FROM locations WHERE excluded = 0")?;
+    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+fn remotes_for_path(path_key: &str) -> Vec<RemoteRef> {
+    match git::list_remotes(Path::new(path_key)) {
+        Ok(remotes) => remotes
+            .into_iter()
+            .map(|r| RemoteRef {
+                name: r.name,
+                url_raw: r.url,
+            })
+            .collect(),
+        Err(e) => {
+            log::warn!("list_remotes {path_key}: {e}");
+            Vec::new()
+        }
+    }
+}
+
+fn attach_one_location(tx: &Transaction<'_>, path_key: &str, git_common_dir: &str) -> Result<()> {
+    let remotes = remotes_for_path(path_key);
+    let snapshots = load_project_snapshots(tx)?;
+    let result = attach_location(&remotes, git_common_dir, &snapshots);
+
+    let project_id = match result {
+        AttachResult::Create {
+            project_id,
+            root_remote_normalized,
+            root_remote_raw,
+            root_remote_name,
+            remotes_raw,
+            ..
+        } => {
+            insert_project(
+                tx,
+                &project_id,
+                &root_remote_normalized,
+                &root_remote_raw,
+                path_key,
+            )?;
+            insert_project_remotes_on_create(
+                tx,
+                &project_id,
+                &root_remote_normalized,
+                &root_remote_raw,
+                &root_remote_name,
+                &remotes_raw,
+            )?;
+            project_id
+        }
+        AttachResult::Attach { project_id } => {
+            upsert_fork_remotes(tx, &project_id, &remotes)?;
+            project_id
+        }
+        AttachResult::Conflict {
+            winner_id,
+            candidates,
+        } => {
+            log::warn!(
+                "project attach conflict for {path_key}: winner={winner_id} candidates={candidates:?} (5A, no merge)"
+            );
+            upsert_fork_remotes(tx, &winner_id, &remotes)?;
+            winner_id
+        }
+    };
+
+    tx.execute(
+        "UPDATE locations SET project_id = ?1 WHERE path = ?2",
+        params![project_id, path_key],
+    )?;
+    Ok(())
+}
+
+fn insert_project(
+    tx: &Transaction<'_>,
+    project_id: &str,
+    root_remote_normalized: &str,
+    root_remote_raw: &str,
+    location_path: &str,
+) -> Result<()> {
+    let name = Path::new(location_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("project")
+        .to_string();
+    let created_at = crate::services::git_state::unix_now_secs();
+    tx.execute(
+        "INSERT OR IGNORE INTO projects (id, root_remote_normalized, root_remote_raw, name, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            project_id,
+            root_remote_normalized,
+            root_remote_raw,
+            name,
+            created_at
+        ],
+    )?;
+    Ok(())
+}
+
+fn insert_project_remotes_on_create(
+    tx: &Transaction<'_>,
+    project_id: &str,
+    root_normalized: &str,
+    root_raw: &str,
+    root_remote_name: &str,
+    remotes_raw: &[(String, String)],
+) -> Result<()> {
+    tx.execute(
+        "INSERT OR IGNORE INTO project_remotes (project_id, url_normalized, url_raw, role, remote_name)
+         VALUES (?1, ?2, ?3, 'root', ?4)",
+        params![project_id, root_normalized, root_raw, root_remote_name],
+    )?;
+
+    for (name, url_raw) in remotes_raw {
+        let Some(normalized) = normalize_remote_url(url_raw) else {
+            continue;
+        };
+        if normalized == root_normalized {
+            // Already inserted as root; keep remote_name if this is the elected remote.
+            continue;
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO project_remotes (project_id, url_normalized, url_raw, role, remote_name)
+             VALUES (?1, ?2, ?3, 'fork', ?4)",
+            params![project_id, normalized, url_raw, name],
+        )?;
+    }
+    Ok(())
+}
+
+fn upsert_fork_remotes(
+    tx: &Transaction<'_>,
+    project_id: &str,
+    remotes: &[RemoteRef],
+) -> Result<()> {
+    let root_normalized: Option<String> = tx
+        .query_row(
+            "SELECT root_remote_normalized FROM projects WHERE id = ?1",
+            params![project_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    let Some(root_normalized) = root_normalized else {
+        log::warn!("upsert_fork_remotes: missing project {project_id}");
+        return Ok(());
+    };
+
+    for remote in remotes {
+        let Some(normalized) = normalize_remote_url(&remote.url_raw) else {
+            continue;
+        };
+        if normalized == root_normalized {
+            // Do not demote or duplicate root; ensure a root row exists.
+            tx.execute(
+                "INSERT OR IGNORE INTO project_remotes (project_id, url_normalized, url_raw, role, remote_name)
+                 VALUES (?1, ?2, ?3, 'root', ?4)",
+                params![project_id, normalized, remote.url_raw, remote.name],
+            )?;
+            continue;
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO project_remotes (project_id, url_normalized, url_raw, role, remote_name)
+             VALUES (?1, ?2, ?3, 'fork', ?4)",
+            params![project_id, normalized, remote.url_raw, remote.name],
+        )?;
+    }
+    Ok(())
+}
+
+fn load_project_snapshots(conn: &Connection) -> Result<Vec<ProjectSnapshot>> {
+    let mut projects_stmt = conn.prepare(
+        "SELECT id, root_remote_normalized, created_at FROM projects ORDER BY created_at, id",
+    )?;
+    let project_rows: Vec<(String, String, i64)> = projects_stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .collect::<std::result::Result<_, _>>()?;
+
+    let mut remotes_by_project: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut root_via_upstream: HashMap<String, bool> = HashMap::new();
+    let mut remotes_stmt =
+        conn.prepare("SELECT project_id, url_normalized, role, remote_name FROM project_remotes")?;
+    let remote_rows = remotes_stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
+        ))
+    })?;
+    for row in remote_rows {
+        let (project_id, url_normalized, role, remote_name) = row?;
+        remotes_by_project
+            .entry(project_id.clone())
+            .or_default()
+            .insert(url_normalized);
+        if role == "root" {
+            let via = remote_name.as_deref() == Some("upstream");
+            root_via_upstream.insert(project_id, via);
+        }
+    }
+
+    let mut location_counts: HashMap<String, usize> = HashMap::new();
+    let mut count_stmt = conn.prepare(
+        "SELECT project_id, COUNT(*) FROM locations
+         WHERE project_id IS NOT NULL AND excluded = 0
+         GROUP BY project_id",
+    )?;
+    let count_rows = count_stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    for row in count_rows {
+        let (project_id, count) = row?;
+        location_counts.insert(project_id, usize::try_from(count).unwrap_or(usize::MAX));
+    }
+
+    let mut snapshots = Vec::with_capacity(project_rows.len());
+    for (id, root_remote_normalized, created_at) in project_rows {
+        let mut remotes_normalized = remotes_by_project.remove(&id).unwrap_or_default();
+        remotes_normalized.insert(root_remote_normalized.clone());
+        let via = root_via_upstream.get(&id).copied().unwrap_or(false);
+        let location_count = location_counts.get(&id).copied().unwrap_or(0);
+        snapshots.push(ProjectSnapshot {
+            id,
+            root_remote_normalized,
+            remotes_normalized,
+            location_count,
+            created_at,
+            root_via_upstream: via,
+        });
+    }
+    Ok(snapshots)
+}
+
+fn apply_merge_action(tx: &Transaction<'_>, action: &MergeAction) -> Result<()> {
+    ensure_survivor_row(tx, action)?;
+
+    let mut source_ids = action.absorbed_ids.clone();
+    if action.prior_survivor_id != action.survivor_id {
+        source_ids.push(action.prior_survivor_id.clone());
+    }
+
+    for src in &source_ids {
+        if src == &action.survivor_id {
+            continue;
+        }
+        migrate_project_remotes(tx, src, &action.survivor_id)?;
+        tx.execute(
+            "UPDATE locations SET project_id = ?1 WHERE project_id = ?2",
+            params![action.survivor_id, src],
+        )?;
+        tx.execute("DELETE FROM projects WHERE id = ?1", params![src])?;
+    }
+
+    // Keep survivor root metadata sticky to the elected survivor root.
+    tx.execute(
+        "UPDATE projects SET root_remote_normalized = ?1 WHERE id = ?2",
+        params![action.root_remote_normalized, action.survivor_id],
+    )?;
+    Ok(())
+}
+
+fn ensure_survivor_row(tx: &Transaction<'_>, action: &MergeAction) -> Result<()> {
+    let exists: Option<i64> = tx
+        .query_row(
+            "SELECT 1 FROM projects WHERE id = ?1",
+            params![action.survivor_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if exists.is_some() {
+        return Ok(());
+    }
+
+    // Id rewrite: clone prior survivor under the canonical project_id_for_root id.
+    let prior = &action.prior_survivor_id;
+    let (root_raw, name): (Option<String>, Option<String>) = tx
+        .query_row(
+            "SELECT root_remote_raw, name FROM projects WHERE id = ?1",
+            params![prior],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .unwrap_or((None, None));
+
+    tx.execute(
+        "INSERT INTO projects (id, root_remote_normalized, root_remote_raw, name, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            action.survivor_id,
+            action.root_remote_normalized,
+            root_raw,
+            name.unwrap_or_else(|| "project".to_string()),
+            action.created_at
+        ],
+    )?;
+    Ok(())
+}
+
+fn migrate_project_remotes(tx: &Transaction<'_>, from_id: &str, to_id: &str) -> Result<()> {
+    // Drop remotes on the source that would collide on (project_id, url_raw) after move.
+    tx.execute(
+        "DELETE FROM project_remotes
+         WHERE project_id = ?1
+           AND url_raw IN (SELECT url_raw FROM project_remotes WHERE project_id = ?2)",
+        params![from_id, to_id],
+    )?;
+    // Source root remotes become forks on the survivor unless they match survivor root.
+    let survivor_root: String = tx.query_row(
+        "SELECT root_remote_normalized FROM projects WHERE id = ?1",
+        params![to_id],
+        |row| row.get(0),
+    )?;
+    tx.execute(
+        "UPDATE project_remotes
+         SET role = CASE WHEN url_normalized = ?1 THEN 'root' ELSE 'fork' END
+         WHERE project_id = ?2",
+        params![survivor_root, from_id],
+    )?;
+    tx.execute(
+        "UPDATE project_remotes SET project_id = ?1 WHERE project_id = ?2",
+        params![to_id, from_id],
+    )?;
+    Ok(())
+}
+
+fn prune_empty_projects(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "DELETE FROM projects
+         WHERE id NOT IN (
+           SELECT DISTINCT project_id FROM locations
+           WHERE project_id IS NOT NULL
+         )",
+        [],
+    )?;
+    Ok(())
+}
+
+fn persist_location_git_graph(tx: &Transaction<'_>) -> Result<()> {
+    let paths = load_location_paths(tx)?;
+    for (path_key, _) in paths {
+        if let Err(e) = replace_worktrees(tx, &path_key) {
+            log::warn!("replace worktrees for {path_key}: {e}");
+        }
+        if let Err(e) = replace_branches(tx, &path_key) {
+            log::warn!("replace branches for {path_key}: {e}");
+        }
+    }
+    Ok(())
+}
+
+fn replace_worktrees(tx: &Transaction<'_>, location_path: &str) -> Result<()> {
+    tx.execute(
+        "DELETE FROM worktrees WHERE location_path = ?1",
+        params![location_path],
+    )?;
+    let rows = match git::list_worktree_rows(Path::new(location_path)) {
+        Ok(rows) => rows,
+        Err(e) => {
+            log::warn!("list_worktree_rows {location_path}: {e}");
+            return Ok(());
+        }
+    };
+    for (wt_path, head_branch) in rows {
+        tx.execute(
+            "INSERT OR REPLACE INTO worktrees (path, location_path, head_branch) VALUES (?1, ?2, ?3)",
+            params![wt_path.display().to_string(), location_path, head_branch],
+        )?;
+    }
+    Ok(())
+}
+
+fn replace_branches(tx: &Transaction<'_>, location_path: &str) -> Result<()> {
+    tx.execute(
+        "DELETE FROM branches WHERE location_path = ?1",
+        params![location_path],
+    )?;
+    let refs = match git::list_branch_refs(Path::new(location_path)) {
+        Ok(refs) => refs,
+        Err(e) => {
+            log::warn!("list_branch_refs {location_path}: {e}");
+            return Ok(());
+        }
+    };
+    for branch in refs {
+        tx.execute(
+            "INSERT OR IGNORE INTO branches (location_path, name, kind, tip_oid, remote_name)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                location_path,
+                branch.name,
+                branch.kind.as_str(),
+                branch.tip_oid,
+                branch.remote_name,
+            ],
+        )?;
+    }
     Ok(())
 }
 

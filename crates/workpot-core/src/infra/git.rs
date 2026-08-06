@@ -469,6 +469,123 @@ pub fn ensure_repo_fetch_refspecs(path: &Path) -> Result<usize> {
     Ok(repaired)
 }
 
+/// Kind of branch ref for catalog persistence (`branches.kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BranchKind {
+    Local,
+    Remote,
+}
+
+impl BranchKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::Remote => "remote",
+        }
+    }
+}
+
+/// A local or remote branch tip suitable for the `branches` catalog table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchRef {
+    pub name: String,
+    pub kind: BranchKind,
+    /// Full OID hex, when the tip resolves.
+    pub tip_oid: Option<String>,
+    /// Remote name for remote-tracking branches; empty string for locals.
+    pub remote_name: String,
+}
+
+/// Enumerate local and remote-tracking branches via git2 (Wave 3 catalog persist / Wave 4 read path).
+///
+/// Remote names are split as `remote_name/branch` (skips `*/HEAD`). Does not consult the DB.
+pub fn list_branch_refs(path: &Path) -> Result<Vec<BranchRef>> {
+    let repo =
+        Repository::open(path).map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+
+    let mut out = Vec::new();
+
+    let locals = repo
+        .branches(Some(git2::BranchType::Local))
+        .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+    for item in locals {
+        let (branch, _) = item.map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+        let Some(name) = branch
+            .name()
+            .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?
+        else {
+            continue;
+        };
+        out.push(BranchRef {
+            name: name.to_string(),
+            kind: BranchKind::Local,
+            tip_oid: branch.get().target().map(|oid| oid.to_string()),
+            remote_name: String::new(),
+        });
+    }
+
+    let remotes = repo
+        .branches(Some(git2::BranchType::Remote))
+        .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+    for item in remotes {
+        let (branch, _) = item.map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+        let Some(full_name) = branch
+            .name()
+            .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?
+        else {
+            continue;
+        };
+        if full_name.ends_with("/HEAD") {
+            continue;
+        }
+        let Some((remote_name, short)) = full_name.split_once('/') else {
+            continue;
+        };
+        if short.is_empty() {
+            continue;
+        }
+        out.push(BranchRef {
+            name: short.to_string(),
+            kind: BranchKind::Remote,
+            tip_oid: branch.get().target().map(|oid| oid.to_string()),
+            remote_name: remote_name.to_string(),
+        });
+    }
+
+    Ok(out)
+}
+
+/// Worktree checkout paths to persist for a catalog location.
+///
+/// Non-bare: the location itself plus any linked worktrees.
+/// Bare: linked worktrees only (omits the bare store path).
+pub fn list_worktree_rows(location_path: &Path) -> Result<Vec<(PathBuf, Option<String>)>> {
+    let repo = Repository::open(location_path)
+        .map_err(|_| WorkpotError::GitUnavailable(location_path.to_path_buf()))?;
+
+    let mut rows = Vec::new();
+    if repo.is_bare() {
+        for wt in list_worktree_paths(location_path)? {
+            let head = open_and_query(&wt).ok().and_then(|s| s.branch);
+            rows.push((wt, head));
+        }
+    } else {
+        let canon = location_path
+            .canonicalize()
+            .map_err(|_| WorkpotError::GitUnavailable(location_path.to_path_buf()))?;
+        let head = open_and_query(&canon).ok().and_then(|s| s.branch);
+        rows.push((canon.clone(), head));
+        for wt in list_worktree_paths(location_path)? {
+            if wt == canon {
+                continue;
+            }
+            let head = open_and_query(&wt).ok().and_then(|s| s.branch);
+            rows.push((wt, head));
+        }
+    }
+    Ok(rows)
+}
+
 /// List configured remotes for a repository.
 pub fn list_remotes(path: &Path) -> Result<Vec<RemoteConfig>> {
     let repo =
@@ -794,6 +911,51 @@ mod tests {
         let repo = Repository::open(&path).expect("open");
         let specs = read_fetch_refspecs(&repo, "origin").expect("read");
         assert_eq!(specs, vec![standard_fetch_refspec("origin")]);
+    }
+
+    #[test]
+    fn list_branch_refs_local_and_remote() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        let repo = Repository::init(&path).expect("init");
+        std::fs::write(path.join("README"), "hello").expect("write");
+        let mut index = repo.index().expect("index");
+        index.add_path(std::path::Path::new("README")).expect("add");
+        index.write().expect("write index");
+        let tree_id = index.write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+        repo.remote("origin", "https://example.com/foo.git")
+            .expect("remote");
+        // Create a remote-tracking ref without fetch.
+        let head = repo.head().expect("head").target().expect("oid");
+        repo.reference("refs/remotes/origin/main", head, true, "test")
+            .expect("remote ref");
+
+        let refs = list_branch_refs(&path).expect("list");
+        assert!(
+            refs.iter()
+                .any(|b| b.kind == BranchKind::Local && !b.name.is_empty()),
+            "expected local branch: {refs:?}"
+        );
+        assert!(
+            refs.iter().any(|b| {
+                b.kind == BranchKind::Remote && b.remote_name == "origin" && b.name == "main"
+            }),
+            "expected origin/main: {refs:?}"
+        );
+    }
+
+    #[test]
+    fn list_worktree_rows_includes_non_bare_checkout() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        Repository::init(&path).expect("init");
+        let rows = list_worktree_rows(&path).expect("rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, path);
     }
 
     #[test]
