@@ -16,10 +16,10 @@ fn temp_db() -> (tempfile::TempDir, Connection) {
 }
 
 #[test]
-fn tray_migration_adds_last_opened_at_column() {
+fn bootstrap_locations_has_last_opened_at() {
     let (_dir, conn) = temp_db();
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES ('/tmp/tray-test-repo', 'tray-test-repo', 1, 'manual', '/tmp/tray-test-repo/.git', 0)",
         [],
     )
@@ -27,7 +27,7 @@ fn tray_migration_adds_last_opened_at_column() {
 
     let last_opened: Option<i64> = conn
         .query_row(
-            "SELECT last_opened_at FROM repos WHERE path = '/tmp/tray-test-repo'",
+            "SELECT last_opened_at FROM locations WHERE path = '/tmp/tray-test-repo'",
             [],
             |row| row.get(0),
         )
@@ -158,7 +158,7 @@ fn touch_last_opened_at_updates_row() {
     let (_dir, conn) = temp_db();
     let path = PathBuf::from("/tmp/tray-touch-repo");
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'tray-touch-repo', 1, 'manual', '/tmp/.git', 0)",
         rusqlite::params![path.display().to_string()],
     )
@@ -167,7 +167,7 @@ fn touch_last_opened_at_updates_row() {
     catalog::touch_last_opened_at(&conn, &path).expect("touch");
     let updated: Option<i64> = conn
         .query_row(
-            "SELECT last_opened_at FROM repos WHERE path = ?1",
+            "SELECT last_opened_at FROM locations WHERE path = ?1",
             rusqlite::params![path.display().to_string()],
             |row| row.get(0),
         )
@@ -180,7 +180,7 @@ fn catalog_launch_path_resolves_non_excluded_repo() {
     let (_dir, conn) = temp_db();
     let path_key = "/tmp/tray-indexed-launch-ok";
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'ok', 1, 'manual', '/tmp/.git', 0)",
         rusqlite::params![path_key],
     )
@@ -206,7 +206,7 @@ fn catalog_launch_path_rejects_excluded_repo() {
     let (_dir, conn) = temp_db();
     let path_key = "/tmp/tray-indexed-launch-excluded";
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'excluded', 1, 'manual', '/tmp/.git', 1)",
         rusqlite::params![path_key],
     )

@@ -5,7 +5,7 @@ const MAX_NOTES_CHARS: usize = 500;
 
 fn ensure_repo_exists(conn: &Connection, repo_path: &str) -> Result<()> {
     let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM repos WHERE path = ?1",
+        "SELECT COUNT(*) FROM locations WHERE path = ?1",
         params![repo_path],
         |row| row.get(0),
     )?;
@@ -90,8 +90,8 @@ pub fn list_tags_for_repo(conn: &Connection, repo_path: &str) -> Result<Vec<Stri
 pub fn list_all_tags(conn: &Connection) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT tag FROM repo_tags
-         JOIN repos ON repo_tags.repo_path = repos.path
-         WHERE repos.excluded = 0
+         JOIN locations ON repo_tags.repo_path = locations.path
+         WHERE locations.excluded = 0
          ORDER BY tag COLLATE NOCASE",
     )?;
     let tags = stmt
@@ -118,7 +118,7 @@ pub fn set_alias(conn: &Connection, repo_path: &str, alias: Option<&str>) -> Res
         }
     };
     let updated = conn.execute(
-        "UPDATE repos SET alias = ?1 WHERE path = ?2",
+        "UPDATE locations SET alias = ?1 WHERE path = ?2",
         params![db_value, repo_path],
     )?;
     if updated == 0 {
@@ -137,7 +137,7 @@ pub fn set_notes(conn: &Connection, repo_path: &str, notes: Option<&str>) -> Res
         )));
     }
     let updated = conn.execute(
-        "UPDATE repos SET notes = ?1 WHERE path = ?2",
+        "UPDATE locations SET notes = ?1 WHERE path = ?2",
         params![notes, repo_path],
     )?;
     if updated == 0 {
@@ -149,7 +149,7 @@ pub fn set_notes(conn: &Connection, repo_path: &str, notes: Option<&str>) -> Res
 pub fn set_pin(conn: &Connection, repo_path: &str, pinned: bool, max_pinned: u32) -> Result<()> {
     let current_pinned: i64 = conn
         .query_row(
-            "SELECT pinned FROM repos WHERE path = ?1",
+            "SELECT pinned FROM locations WHERE path = ?1",
             params![repo_path],
             |row| row.get(0),
         )
@@ -161,7 +161,7 @@ pub fn set_pin(conn: &Connection, repo_path: &str, pinned: bool, max_pinned: u32
             return Ok(());
         }
         let pinned_count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM repos WHERE pinned = 1 AND excluded = 0",
+            "SELECT COUNT(*) FROM locations WHERE pinned = 1 AND excluded = 0",
             [],
             |row| row.get(0),
         )?;
@@ -169,12 +169,12 @@ pub fn set_pin(conn: &Connection, repo_path: &str, pinned: bool, max_pinned: u32
             return Err(WorkpotError::PinCapExceeded { max: max_pinned });
         }
         let next: i64 = conn.query_row(
-            "SELECT COALESCE(MAX(pin_order), -1) + 1 FROM repos WHERE pinned = 1",
+            "SELECT COALESCE(MAX(pin_order), -1) + 1 FROM locations WHERE pinned = 1",
             [],
             |row| row.get(0),
         )?;
         let updated = conn.execute(
-            "UPDATE repos SET pinned = 1, pin_order = ?1 WHERE path = ?2",
+            "UPDATE locations SET pinned = 1, pin_order = ?1 WHERE path = ?2",
             params![next, repo_path],
         )?;
         if updated == 0 {
@@ -184,7 +184,7 @@ pub fn set_pin(conn: &Connection, repo_path: &str, pinned: bool, max_pinned: u32
     }
 
     let updated = conn.execute(
-        "UPDATE repos SET pinned = 0, pin_order = NULL WHERE path = ?1",
+        "UPDATE locations SET pinned = 0, pin_order = NULL WHERE path = ?1",
         params![repo_path],
     )?;
     if updated == 0 {
@@ -236,7 +236,7 @@ pub fn set_pin_order(conn: &Connection, items: &[(&str, i64)]) -> Result<()> {
     for (path, order) in items {
         let pinned: i64 = tx
             .query_row(
-                "SELECT pinned FROM repos WHERE path = ?1",
+                "SELECT pinned FROM locations WHERE path = ?1",
                 params![path],
                 |row| row.get(0),
             )
@@ -248,7 +248,7 @@ pub fn set_pin_order(conn: &Connection, items: &[(&str, i64)]) -> Result<()> {
             )));
         }
         let updated = tx.execute(
-            "UPDATE repos SET pin_order = ?1 WHERE path = ?2 AND pinned = 1",
+            "UPDATE locations SET pin_order = ?1 WHERE path = ?2 AND pinned = 1",
             params![order, path],
         )?;
         if updated == 0 {

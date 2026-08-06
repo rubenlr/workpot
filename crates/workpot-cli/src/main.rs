@@ -513,7 +513,7 @@ fn run_open(identifier: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Resolve CLI `repo` argument to SQLite `repos.path` (exact key, canonical path, or unique name).
+/// Resolve CLI `repo` argument to SQLite `locations.path` (exact key, canonical path, or unique name).
 fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result<String> {
     let identifier = identifier.trim();
     if identifier.is_empty() {

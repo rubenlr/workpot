@@ -443,13 +443,13 @@ fn roots_remove_rolls_back_when_prune_fails() {
 
     let lock_conn = rusqlite::Connection::open(&db_path).expect("lock conn");
     lock_conn
-        .execute("DROP TABLE repos", [])
-        .expect("drop repos to force prune failure");
+        .execute("DROP TABLE locations", [])
+        .expect("drop locations to force prune failure");
 
     let result = ctx.roots_remove(&watch_root, false);
     assert!(
         result.is_err(),
-        "prune should fail when repos table is gone"
+        "prune should fail when locations table is gone"
     );
 
     assert_eq!(ctx.roots_list().expect("roots").len(), 1);

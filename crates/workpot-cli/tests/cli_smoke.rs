@@ -906,7 +906,7 @@ fn set_repo_git_state_error(home: &std::path::Path, repo_path: &std::path::Path,
     let path_key = canon.to_string_lossy().into_owned();
     let conn = workpot_core::infra::store::open_connection(&db).expect("open test db");
     conn.execute(
-        "UPDATE repos SET git_refreshed_at = 1, git_state_error = ?1 WHERE path = ?2",
+        "UPDATE locations SET git_refreshed_at = 1, git_state_error = ?1 WHERE path = ?2",
         (message, path_key.as_str()),
     )
     .expect("set git_state_error");

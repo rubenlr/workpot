@@ -94,10 +94,11 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
         .unwrap_or("unknown")
         .to_string();
 
-    let count: i64 =
-        conn.query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
-            row.get(0)
-        })?;
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM locations WHERE excluded = 0",
+        [],
+        |row| row.get(0),
+    )?;
     let count = u32::try_from(count).unwrap_or(u32::MAX);
     if count >= config.limits.max_repos {
         return Err(WorkpotError::LocalCatalogSyncCapExceeded {
@@ -111,7 +112,7 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
     let git_common_dir = resolve_git_common_dir(&canonical)?.display().to_string();
 
     let rows = conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir) VALUES (?1, ?2, ?3, ?4, ?5)",
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir) VALUES (?1, ?2, ?3, ?4, ?5)",
         params![path_key, name, registered_at, SOURCE_MANUAL, git_common_dir],
     );
 
@@ -134,7 +135,7 @@ pub fn register_manual(conn: &Connection, config: &Config, path: &Path) -> Resul
 
 pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
     let mut stmt = conn.prepare(&format!(
-        "{REPO_ROW_SELECT} FROM repos WHERE excluded = 0 ORDER BY registered_at, path"
+        "{REPO_ROW_SELECT} FROM locations WHERE excluded = 0 ORDER BY registered_at, path"
     ))?;
 
     let mut order: Vec<String> = Vec::new();
@@ -152,8 +153,8 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
     let mut tag_stmt = conn.prepare(
         "SELECT repo_tags.repo_path, repo_tags.tag
          FROM repo_tags
-         JOIN repos ON repo_tags.repo_path = repos.path
-         WHERE repos.excluded = 0
+         JOIN locations ON repo_tags.repo_path = locations.path
+         WHERE locations.excluded = 0
          ORDER BY repo_tags.repo_path, repo_tags.tag COLLATE NOCASE",
     )?;
 
@@ -177,7 +178,7 @@ pub fn list_repos(conn: &Connection) -> Result<Vec<RepoRecord>> {
 /// Look up a registered repo by its SQLite path key.
 pub fn get_repo_by_path(conn: &Connection, path_key: &str) -> Result<RepoRecord> {
     conn.query_row(
-        &format!("{REPO_ROW_SELECT} FROM repos WHERE path = ?1 AND excluded = 0"),
+        &format!("{REPO_ROW_SELECT} FROM locations WHERE path = ?1 AND excluded = 0"),
         params![path_key],
         repo_record_from_row,
     )
@@ -221,7 +222,7 @@ pub fn touch_last_opened_at(conn: &Connection, path: &Path) -> Result<()> {
     let path_key = repo_path_key(conn, path)?;
     let now = crate::services::git_state::unix_now_secs();
     let updated = conn.execute(
-        "UPDATE repos SET last_opened_at = ?1 WHERE path = ?2",
+        "UPDATE locations SET last_opened_at = ?1 WHERE path = ?2",
         params![now, path_key],
     )?;
     if updated == 0 {
@@ -248,7 +249,7 @@ fn escape_like(s: &str) -> String {
         .replace('_', "\\_")
 }
 
-/// SQLite `repos.path` key for remove/lookup (canonical when the directory exists).
+/// SQLite `locations.path` key for remove/lookup (canonical when the directory exists).
 pub(crate) fn repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
     match path.canonicalize() {
         Ok(c) => Ok(c.display().to_string()),
@@ -256,7 +257,7 @@ pub(crate) fn repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
             let display_key = path.display().to_string();
             if conn
                 .query_row(
-                    "SELECT 1 FROM repos WHERE path = ?1",
+                    "SELECT 1 FROM locations WHERE path = ?1",
                     params![display_key],
                     |_| Ok(()),
                 )
@@ -269,7 +270,7 @@ pub(crate) fn repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
                 // matching a lookup for `foo`.
                 let suffix_pattern = format!("/{}", escape_like(name));
                 let mut stmt = conn.prepare(
-                    "SELECT path FROM repos WHERE path = ?1 OR path LIKE '%' || ?2 ESCAPE '\\'",
+                    "SELECT path FROM locations WHERE path = ?1 OR path LIKE '%' || ?2 ESCAPE '\\'",
                 )?;
                 let candidates: Vec<String> = stmt
                     .query_map(params![name, suffix_pattern], |row| row.get(0))?
@@ -304,7 +305,7 @@ pub(crate) fn repo_path_key(conn: &Connection, path: &Path) -> Result<String> {
 
 /// Non-excluded repo paths whose working tree no longer exists (stale catalog rows).
 pub fn missing_repo_paths(conn: &Connection) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
+    let mut stmt = conn.prepare("SELECT path FROM locations WHERE excluded = 0")?;
     let paths: Vec<String> = stmt
         .query_map([], |row| row.get(0))?
         .collect::<std::result::Result<_, _>>()?;
@@ -320,7 +321,7 @@ pub fn prune_missing_repos(conn: &Connection) -> Result<u32> {
     let paths = missing_repo_paths(conn)?;
     let mut pruned = 0u32;
     for path_key in paths {
-        let deleted = conn.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
+        let deleted = conn.execute("DELETE FROM locations WHERE path = ?1", params![path_key])?;
         pruned += u32::try_from(deleted).unwrap_or(0);
     }
     if pruned > 0 {
@@ -332,7 +333,7 @@ pub fn prune_missing_repos(conn: &Connection) -> Result<u32> {
 pub fn remove_repo(conn: &Connection, path: &Path) -> Result<()> {
     let path_key = repo_path_key(conn, path)?;
 
-    let deleted = conn.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
+    let deleted = conn.execute("DELETE FROM locations WHERE path = ?1", params![path_key])?;
     if deleted == 0 {
         return Err(WorkpotError::NotFound(path_key));
     }
@@ -461,7 +462,7 @@ pub fn upsert_scan(conn: &Connection, path: &Path, git_common_dir: &str) -> Resu
     let path_key = canonical.display().to_string();
     let existed = conn
         .query_row(
-            "SELECT 1 FROM repos WHERE path = ?1",
+            "SELECT 1 FROM locations WHERE path = ?1",
             params![path_key],
             |_| Ok(()),
         )
@@ -475,7 +476,7 @@ pub fn upsert_scan(conn: &Connection, path: &Path, git_common_dir: &str) -> Resu
 
     let registered_at = if existed {
         conn.query_row(
-            "SELECT registered_at FROM repos WHERE path = ?1",
+            "SELECT registered_at FROM locations WHERE path = ?1",
             params![path_key],
             |row| row.get(0),
         )
@@ -485,12 +486,12 @@ pub fn upsert_scan(conn: &Connection, path: &Path, git_common_dir: &str) -> Resu
     };
 
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, ?2, ?3, ?4, ?5, 0)
          ON CONFLICT(path) DO UPDATE SET
            name = excluded.name,
            git_common_dir = excluded.git_common_dir,
-           source = CASE WHEN repos.source = ?6 THEN ?6 ELSE ?4 END",
+           source = CASE WHEN locations.source = ?6 THEN ?6 ELSE ?4 END",
         params![
             path_key,
             name,

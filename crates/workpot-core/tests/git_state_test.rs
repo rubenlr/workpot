@@ -360,7 +360,7 @@ fn persist_git_state_maps_is_dirty_in_db() {
         .to_string();
 
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'clean-row', 0, 'scan', '', 0)",
         rusqlite::params![path_key],
     )
@@ -373,7 +373,7 @@ fn persist_git_state_maps_is_dirty_in_db() {
 
     let dirty_flag: Option<i64> = conn
         .query_row(
-            "SELECT is_dirty FROM repos WHERE path = ?1",
+            "SELECT is_dirty FROM locations WHERE path = ?1",
             rusqlite::params![path_key],
             |row| row.get(0),
         )
@@ -388,7 +388,7 @@ fn persist_git_state_maps_is_dirty_in_db() {
         .display()
         .to_string();
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'bare-row', 0, 'scan', '', 0)",
         rusqlite::params![bare_key],
     )
@@ -402,7 +402,7 @@ fn persist_git_state_maps_is_dirty_in_db() {
 
     let bare_dirty: Option<i64> = conn
         .query_row(
-            "SELECT is_dirty FROM repos WHERE path = ?1",
+            "SELECT is_dirty FROM locations WHERE path = ?1",
             rusqlite::params![bare_key],
             |row| row.get(0),
         )
@@ -425,7 +425,7 @@ fn refresh_and_persist_writes_columns() {
         .to_string();
 
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'persist-me', 0, 'scan', '', 0)",
         rusqlite::params![path_key],
     )
@@ -438,7 +438,7 @@ fn refresh_and_persist_writes_columns() {
 
     let (branch, refreshed_at): (Option<String>, Option<i64>) = conn
         .query_row(
-            "SELECT branch, git_refreshed_at FROM repos WHERE path = ?1",
+            "SELECT branch, git_refreshed_at FROM locations WHERE path = ?1",
             rusqlite::params![path_key],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )

@@ -13,9 +13,11 @@ fn temp_db() -> (tempfile::TempDir, Connection) {
 }
 
 #[test]
-fn migration_007_adds_alias_column() {
+fn bootstrap_locations_has_alias_column() {
     let (_dir, conn) = temp_db();
-    let mut stmt = conn.prepare("PRAGMA table_info(repos)").expect("pragma");
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(locations)")
+        .expect("pragma");
     let cols: Vec<(String, String, i64)> = stmt
         .query_map([], |row| {
             Ok((
@@ -40,7 +42,7 @@ fn list_repos_returns_alias_from_db() {
     let (_dir, conn) = temp_db();
     let path = "/tmp/alias-list-test";
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded, alias)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded, alias)
          VALUES (?1, 'alias-list-test', 1, 'manual', '.git', 0, 'My Alias')",
         rusqlite::params![path],
     )
@@ -48,7 +50,7 @@ fn list_repos_returns_alias_from_db() {
 
     let alias: Option<String> = conn
         .query_row(
-            "SELECT alias FROM repos WHERE path = ?1",
+            "SELECT alias FROM locations WHERE path = ?1",
             rusqlite::params![path],
             |row| row.get(0),
         )

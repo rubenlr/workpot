@@ -138,7 +138,7 @@ pub fn merge_catalog_phase(
     }
 
     for path_key in &plan.removes {
-        let deleted = tx.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
+        let deleted = tx.execute("DELETE FROM locations WHERE path = ?1", params![path_key])?;
         if deleted > 0 {
             summary.removed += 1;
             changelog.push(ChangeEntry {
@@ -162,7 +162,7 @@ pub fn merge_catalog_phase(
 
 /// Phase 3 prep: paths for git refresh (read connection).
 pub fn local_catalog_git_paths(conn: &Connection) -> Result<Vec<PathBuf>> {
-    let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
+    let mut stmt = conn.prepare("SELECT path FROM locations WHERE excluded = 0")?;
     Ok(stmt
         .query_map([], |row| row.get::<_, String>(0))?
         .filter_map(|r| r.ok())
@@ -189,7 +189,7 @@ pub fn persist_local_catalog_git_phase(
     let refresh_time = crate::services::git_state::unix_now_secs();
     for r in &git_results {
         let updated = git_tx.execute(
-            "UPDATE repos SET branch=?1, is_dirty=?2, ahead=?3, behind=?4,
+            "UPDATE locations SET branch=?1, is_dirty=?2, ahead=?3, behind=?4,
                               git_refreshed_at=?5, git_state_error=?6
              WHERE path=?7",
             rusqlite::params![
@@ -378,8 +378,9 @@ fn backfill_empty_git_common_dir(
     conn: &Connection,
     changelog: &mut Vec<ChangeEntry>,
 ) -> Result<u32> {
-    let mut stmt =
-        conn.prepare("SELECT path FROM repos WHERE git_common_dir = '' OR git_common_dir IS NULL")?;
+    let mut stmt = conn.prepare(
+        "SELECT path FROM locations WHERE git_common_dir = '' OR git_common_dir IS NULL",
+    )?;
     let paths: Vec<String> = stmt
         .query_map([], |row| row.get(0))?
         .collect::<std::result::Result<_, _>>()?;
@@ -396,7 +397,7 @@ fn backfill_empty_git_common_dir(
         match try_resolve_git_common_dir(path, &path_key) {
             Ok(common_str) => {
                 conn.execute(
-                    "UPDATE repos SET git_common_dir = ?1 WHERE path = ?2",
+                    "UPDATE locations SET git_common_dir = ?1 WHERE path = ?2",
                     params![common_str, path_key],
                 )?;
             }
@@ -413,7 +414,7 @@ fn backfill_empty_git_common_dir(
 }
 
 fn scan_paths_by_source(conn: &Connection, source: &str) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1 AND excluded = 0")?;
+    let mut stmt = conn.prepare("SELECT path FROM locations WHERE source = ?1 AND excluded = 0")?;
     stmt.query_map(params![source], |row| row.get(0))?
         .collect::<std::result::Result<_, _>>()
         .map_err(WorkpotError::Database)
@@ -496,7 +497,7 @@ fn projected_repo_count(
     upserts: &[(PathBuf, String)],
 ) -> Result<i64> {
     let mut paths: HashSet<String> = HashSet::new();
-    let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
+    let mut stmt = conn.prepare("SELECT path FROM locations WHERE excluded = 0")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
     for row in rows {
         paths.insert(row?);
@@ -579,7 +580,7 @@ mod tests {
         let db_path = dir.path().join("workpot.db");
         let conn = store::open_connection(&db_path).expect("open db");
         conn.execute(
-            "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+            "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
              VALUES (?1, 'demo', 0, ?2, '', 0)",
             params![path_key, SOURCE_SCAN],
         )

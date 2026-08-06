@@ -322,8 +322,11 @@ fn list_repos_skips_excluded_rows() {
             .expect("canonicalize")
             .display()
             .to_string();
-        conn.execute("UPDATE repos SET excluded = 1 WHERE path = ?1", [&path_key])
-            .expect("mark excluded");
+        conn.execute(
+            "UPDATE locations SET excluded = 1 WHERE path = ?1",
+            [&path_key],
+        )
+        .expect("mark excluded");
     }
 
     let ctx = AppContext::open_with_paths(config_path, db_path).expect("reopen");
@@ -370,7 +373,7 @@ fn remove_repo_with_exclude_persists_excludes_before_row_removed() {
 
     let conn = rusqlite::Connection::open(&db_path).expect("open db");
     let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM repos", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM locations", [], |row| row.get(0))
         .expect("count");
     assert_eq!(
         count, 0,
@@ -491,7 +494,7 @@ fn remove_repo_by_basename_with_like_metacharacters_in_name() {
 
     let conn = rusqlite::Connection::open(&db_path).expect("open db");
     let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM repos", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM locations", [], |row| row.get(0))
         .expect("count repos");
     assert_eq!(
         count, 0,
@@ -537,7 +540,7 @@ fn upsert_scan_preserves_manual_source_on_conflict() {
         .to_string();
 
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'manual-repo', 42, ?2, 'old-gcd', 0)",
         rusqlite::params![path_key, SOURCE_MANUAL],
     )
@@ -547,7 +550,7 @@ fn upsert_scan_preserves_manual_source_on_conflict() {
 
     let source: String = conn
         .query_row(
-            "SELECT source FROM repos WHERE path = ?1",
+            "SELECT source FROM locations WHERE path = ?1",
             rusqlite::params![path_key],
             |row| row.get(0),
         )
@@ -570,7 +573,7 @@ fn upsert_scan_updates_git_common_dir_for_scan_rows() {
         .to_string();
 
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'scan-repo', 0, ?2, 'stale-gcd', 0)",
         rusqlite::params![path_key, SOURCE_SCAN],
     )
@@ -580,7 +583,7 @@ fn upsert_scan_updates_git_common_dir_for_scan_rows() {
 
     let stored: String = conn
         .query_row(
-            "SELECT git_common_dir FROM repos WHERE path = ?1",
+            "SELECT git_common_dir FROM locations WHERE path = ?1",
             rusqlite::params![path_key],
             |row| row.get(0),
         )
@@ -600,7 +603,7 @@ fn get_repo_by_path_returns_record_and_not_found() {
         .to_string();
 
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'sample-repo', 42, ?2, ?3, 0)",
         rusqlite::params![path_key, SOURCE_MANUAL, gcd],
     )
@@ -630,13 +633,13 @@ fn missing_repo_paths_lists_only_gone_paths() {
     let gone_key = "/tmp/workpot-missing-repo-path";
 
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'present', 0, 'manual', '', 0)",
         rusqlite::params![present_key],
     )
     .expect("present row");
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'gone', 0, 'manual', '', 0)",
         rusqlite::params![gone_key],
     )

@@ -120,7 +120,7 @@ fn prune_scan_repos_under_root_conn(conn: &Connection, root: &Path) -> Result<u3
         .canonicalize()
         .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", root.display())))?;
 
-    let mut stmt = conn.prepare("SELECT path FROM repos WHERE source = ?1")?;
+    let mut stmt = conn.prepare("SELECT path FROM locations WHERE source = ?1")?;
     let paths: Vec<String> = stmt
         .query_map(params![SOURCE_SCAN], |row| row.get(0))?
         .collect::<std::result::Result<_, _>>()?;
@@ -129,7 +129,7 @@ fn prune_scan_repos_under_root_conn(conn: &Connection, root: &Path) -> Result<u3
     for path_key in paths {
         let repo_path = Path::new(&path_key);
         if paths::path_under_root(repo_path, &root_canon) {
-            conn.execute("DELETE FROM repos WHERE path = ?1", params![path_key])?;
+            conn.execute("DELETE FROM locations WHERE path = ?1", params![path_key])?;
             removed += 1;
         }
     }

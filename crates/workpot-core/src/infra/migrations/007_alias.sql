@@ -1,1 +1,0 @@
-ALTER TABLE repos ADD COLUMN alias TEXT NULL;

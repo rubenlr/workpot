@@ -199,7 +199,7 @@ impl AppState {
     /// Paths of non-excluded repos for batch git refresh (read connection only).
     pub fn git_refresh_paths(&self) -> Result<Vec<PathBuf>> {
         self.db.with_read(|conn| {
-            let mut stmt = conn.prepare("SELECT path FROM repos WHERE excluded = 0")?;
+            let mut stmt = conn.prepare("SELECT path FROM locations WHERE excluded = 0")?;
             let paths = stmt
                 .query_map([], |row| row.get::<_, String>(0))?
                 .filter_map(|r| r.ok())
@@ -247,7 +247,7 @@ impl AppState {
 
         let any_dirty: bool = self.db.with_read(|conn| {
             conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM repos WHERE excluded = 0 AND is_dirty = 1)",
+                "SELECT EXISTS(SELECT 1 FROM locations WHERE excluded = 0 AND is_dirty = 1)",
                 [],
                 |row| row.get(0),
             )

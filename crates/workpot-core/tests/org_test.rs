@@ -18,7 +18,7 @@ fn temp_db() -> (tempfile::TempDir, Connection) {
 fn insert_repo(conn: &Connection, path: &str) {
     let name = path.rsplit('/').next().unwrap_or("repo");
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, ?2, 1, 'manual', '.git', 0)",
         params![path, name],
     )
@@ -57,7 +57,7 @@ fn test_set_tags_replaces_all_tags() {
 }
 
 #[test]
-fn test_migration_006_repo_tags_table() {
+fn test_bootstrap_repo_tags_table() {
     let (_dir, conn) = temp_db();
     let exists: i64 = conn
         .query_row(
@@ -166,7 +166,7 @@ fn test_notes_set_and_get() {
     org::set_notes(&conn, path, Some("hello")).expect("set_notes");
     let notes: Option<String> = conn
         .query_row(
-            "SELECT notes FROM repos WHERE path = ?1",
+            "SELECT notes FROM locations WHERE path = ?1",
             params![path],
             |row| row.get(0),
         )
@@ -183,7 +183,7 @@ fn test_notes_clear_with_none() {
     org::set_notes(&conn, path, None).expect("clear");
     let notes: Option<String> = conn
         .query_row(
-            "SELECT notes FROM repos WHERE path = ?1",
+            "SELECT notes FROM locations WHERE path = ?1",
             params![path],
             |row| row.get(0),
         )
@@ -209,7 +209,7 @@ fn test_pin_set_and_unpin() {
     org::set_pin(&conn, path, true, MAX_PINNED).expect("pin");
     let (pinned, pin_order): (i64, Option<i64>) = conn
         .query_row(
-            "SELECT pinned, pin_order FROM repos WHERE path = ?1",
+            "SELECT pinned, pin_order FROM locations WHERE path = ?1",
             params![path],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -220,7 +220,7 @@ fn test_pin_set_and_unpin() {
     org::set_pin(&conn, path, false, MAX_PINNED).expect("unpin");
     let (pinned, pin_order): (i64, Option<i64>) = conn
         .query_row(
-            "SELECT pinned, pin_order FROM repos WHERE path = ?1",
+            "SELECT pinned, pin_order FROM locations WHERE path = ?1",
             params![path],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -237,7 +237,7 @@ fn test_pin_repin_is_idempotent() {
     org::set_pin(&conn, path, true, MAX_PINNED).expect("pin");
     let order_first: i64 = conn
         .query_row(
-            "SELECT pin_order FROM repos WHERE path = ?1",
+            "SELECT pin_order FROM locations WHERE path = ?1",
             params![path],
             |row| row.get(0),
         )
@@ -245,7 +245,7 @@ fn test_pin_repin_is_idempotent() {
     org::set_pin(&conn, path, true, MAX_PINNED).expect("re-pin");
     let order_second: i64 = conn
         .query_row(
-            "SELECT pin_order FROM repos WHERE path = ?1",
+            "SELECT pin_order FROM locations WHERE path = ?1",
             params![path],
             |row| row.get(0),
         )
@@ -281,14 +281,14 @@ fn test_pin_order_batch_update() {
 
     let order_a: i64 = conn
         .query_row(
-            "SELECT pin_order FROM repos WHERE path = ?1",
+            "SELECT pin_order FROM locations WHERE path = ?1",
             params![path_a],
             |row| row.get(0),
         )
         .expect("order a");
     let order_b: i64 = conn
         .query_row(
-            "SELECT pin_order FROM repos WHERE path = ?1",
+            "SELECT pin_order FROM locations WHERE path = ?1",
             params![path_b],
             |row| row.get(0),
         )
@@ -303,7 +303,7 @@ fn test_tags_cascade_on_repo_delete() {
     let path = "/tmp/org-cascade";
     insert_repo(&conn, path);
     org::set_tags(&conn, path, &["keep-me-gone"]).expect("set_tags");
-    conn.execute("DELETE FROM repos WHERE path = ?1", params![path])
+    conn.execute("DELETE FROM locations WHERE path = ?1", params![path])
         .expect("delete repo");
     let count: i64 = conn
         .query_row(
@@ -320,7 +320,7 @@ fn test_list_all_tags_omits_excluded_repos() {
     let (_dir, conn) = temp_db();
     let path = "/tmp/org-excluded-tags";
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'excluded', 1, 'manual', '.git', 1)",
         params![path],
     )
@@ -372,7 +372,7 @@ fn test_set_alias_clears_with_none() {
     org::set_alias(&conn, path, None).expect("clear");
     let alias: Option<String> = conn
         .query_row(
-            "SELECT alias FROM repos WHERE path = ?1",
+            "SELECT alias FROM locations WHERE path = ?1",
             params![path],
             |row| row.get(0),
         )
@@ -416,7 +416,7 @@ fn test_set_alias_stores_trimmed_and_list_repos() {
 }
 
 #[test]
-fn test_migration_009_repo_hidden_branches_table() {
+fn test_bootstrap_repo_hidden_branches_table() {
     let (_dir, conn) = temp_db();
     let exists: i64 = conn
         .query_row(
@@ -484,7 +484,7 @@ fn test_hidden_branches_cascade_on_repo_delete() {
     let path = "/tmp/org-hidden-cascade";
     insert_repo(&conn, path);
     org::set_branch_hidden(&conn, path, "feature", true).expect("hide");
-    conn.execute("DELETE FROM repos WHERE path = ?1", params![path])
+    conn.execute("DELETE FROM locations WHERE path = ?1", params![path])
         .expect("delete repo");
     let count: i64 = conn
         .query_row(

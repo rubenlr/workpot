@@ -119,7 +119,7 @@ mod tests {
         let conn = open_connection(&db).expect("reopen");
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='repos'",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='locations'",
                 [],
                 |row| row.get(0),
             )

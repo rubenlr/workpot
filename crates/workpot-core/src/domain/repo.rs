@@ -4,6 +4,7 @@ pub const SOURCE_MANUAL: &str = "manual";
 pub const SOURCE_SCAN: &str = "scan";
 pub const BRANCH_UNBORN: &str = "unborn";
 
+/// Catalog checkout row. Maps to the `locations` SQLite table (formerly `repos`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoRecord {
     pub path: PathBuf,

@@ -242,7 +242,7 @@ fn persist_structural_preflight_for_record(
         None => None,
     };
     conn.execute(
-        "UPDATE repos SET convert_block_reason = ?1 WHERE path = ?2",
+        "UPDATE locations SET convert_block_reason = ?1 WHERE path = ?2",
         params![reason, path_key],
     )?;
     Ok(())
@@ -346,7 +346,7 @@ pub fn catalog_path_swap(
     let tx = conn.unchecked_transaction()?;
     // SQLite FK has no ON UPDATE CASCADE — insert new row, move tags, delete old row.
     tx.execute(
-        "INSERT INTO repos (
+        "INSERT INTO locations (
             path, name, registered_at, source, excluded, git_common_dir,
             branch, is_dirty, ahead, behind, git_refreshed_at, git_state_error,
             last_opened_at, pinned, pin_order, notes, alias, convert_block_reason
@@ -355,14 +355,14 @@ pub fn catalog_path_swap(
             ?1, ?2, registered_at, source, excluded, ?3,
             NULL, NULL, NULL, NULL, NULL, NULL,
             last_opened_at, pinned, pin_order, notes, alias, NULL
-         FROM repos WHERE path = ?4",
+         FROM locations WHERE path = ?4",
         params![new_key, new_name, new_git_common_dir, old_key],
     )?;
     tx.execute(
         "UPDATE repo_tags SET repo_path=?1 WHERE repo_path=?2",
         params![new_key, old_key],
     )?;
-    tx.execute("DELETE FROM repos WHERE path = ?1", params![old_key])?;
+    tx.execute("DELETE FROM locations WHERE path = ?1", params![old_key])?;
     tx.commit()?;
     log::info!("catalog_path_swap: {old_key} -> {new_key}");
     Ok(())
@@ -744,7 +744,7 @@ fn finalize_conversion(
     let new_key = new_path.display().to_string();
     if new_key == prepared.path_key {
         conn.execute(
-            "UPDATE repos SET name=?1, git_common_dir=?2,
+            "UPDATE locations SET name=?1, git_common_dir=?2,
              branch=NULL, is_dirty=NULL, ahead=NULL, behind=NULL,
              git_refreshed_at=NULL, git_state_error=NULL, convert_block_reason=NULL
              WHERE path=?3",

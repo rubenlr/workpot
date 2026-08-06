@@ -730,7 +730,7 @@ fn catalog_launch_path_prefers_catalog_branch_among_worktrees() {
     let conn = workpot_core::infra::store::open_connection(ctx.database_path()).expect("conn");
     refresh_and_persist(&conn, &bare_path).expect("refresh");
     conn.execute(
-        "UPDATE repos SET branch = 'feature' WHERE path = ?1",
+        "UPDATE locations SET branch = 'feature' WHERE path = ?1",
         rusqlite::params![bare_key],
     )
     .expect("set branch");
@@ -978,7 +978,7 @@ fn structural_blocks_linked_worktree() {
         .db()
         .with_read(|conn| {
             conn.query_row(
-                "SELECT convert_block_reason FROM repos WHERE path = ?1",
+                "SELECT convert_block_reason FROM locations WHERE path = ?1",
                 rusqlite::params![path_key],
                 |row| row.get(0),
             )
@@ -1021,7 +1021,7 @@ fn dirty_repo_persists_null_structural_block_reason() {
         .db()
         .with_read(|conn| {
             conn.query_row(
-                "SELECT convert_block_reason FROM repos WHERE path = ?1",
+                "SELECT convert_block_reason FROM locations WHERE path = ?1",
                 rusqlite::params![path_key],
                 |row| row.get(0),
             )

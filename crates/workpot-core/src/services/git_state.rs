@@ -35,16 +35,16 @@ pub fn is_hard_refresh_failure(state: &GitState) -> bool {
 /// Update only error + timestamp; preserve prior branch/dirty/ahead/behind (CR-01).
 pub fn persist_git_state_error_only(conn: &Connection, path_key: &str, error: &str) -> Result<()> {
     conn.execute(
-        "UPDATE repos SET git_state_error=?1, git_refreshed_at=?2 WHERE path=?3",
+        "UPDATE locations SET git_state_error=?1, git_refreshed_at=?2 WHERE path=?3",
         params![error, unix_now_secs(), path_key],
     )?;
     Ok(())
 }
 
-/// Write git state fields back to the repos row for `path_key`.
+/// Write git state fields back to the locations row for `path_key`.
 pub fn persist_git_state(conn: &Connection, path_key: &str, state: &GitState) -> Result<()> {
     conn.execute(
-        "UPDATE repos SET branch=?1, is_dirty=?2, ahead=?3, behind=?4,
+        "UPDATE locations SET branch=?1, is_dirty=?2, ahead=?3, behind=?4,
                           git_refreshed_at=?5, git_state_error=?6
          WHERE path=?7",
         params![
