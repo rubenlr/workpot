@@ -12,7 +12,7 @@ Load at intake. Pick the narrowest action id.
 - Remote name: `origin`
 - Branch glob: `dependabot/**` on `origin` (after `git fetch --prune`) — nested ecosystems, e.g. `dependabot/npm_and_yarn/eslint-10.8.0`
 - Target: current HEAD branch
-- No auto-push of the integration branch
+- After a successful batch (incl. delete recovery): push integration branch + open PR
 
 ## Ambiguous
 

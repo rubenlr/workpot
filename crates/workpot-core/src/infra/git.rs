@@ -431,12 +431,7 @@ pub fn ensure_remote_fetch_refspec(repo: &Repository, remote_name: &str) -> Resu
         .config()
         .map_err(|_| WorkpotError::GitUnavailable(repo.path().to_path_buf()))?;
     let key = format!("remote.{remote_name}.fetch");
-    loop {
-        match config.remove_multivar(&key, ".*") {
-            Ok(()) => {}
-            Err(_) => break,
-        }
-    }
+    while let Ok(()) = config.remove_multivar(&key, ".*") {}
     config
         .set_str(&key, &expected)
         .map_err(|_| WorkpotError::GitUnavailable(repo.path().to_path_buf()))?;
@@ -877,12 +872,7 @@ mod tests {
         {
             let mut config = repo.config().expect("config");
             let key = "remote.origin.fetch";
-            loop {
-                match config.remove_multivar(key, ".*") {
-                    Ok(()) => {}
-                    Err(_) => break,
-                }
-            }
+            while let Ok(()) = config.remove_multivar(key, ".*") {}
             config
                 .set_str(key, "+refs/heads/main:refs/remotes/origin/main")
                 .expect("single-branch");
@@ -978,12 +968,7 @@ mod tests {
         {
             let mut config = repo.config().expect("config");
             let key = "remote.origin.fetch";
-            loop {
-                match config.remove_multivar(key, ".*") {
-                    Ok(()) => {}
-                    Err(_) => break,
-                }
-            }
+            while let Ok(()) = config.remove_multivar(key, ".*") {}
             config
                 .set_str(key, "+refs/heads/main:refs/remotes/origin/main")
                 .expect("single-branch");

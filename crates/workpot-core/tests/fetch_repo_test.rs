@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 mod common;
 
 use std::path::PathBuf;
@@ -40,12 +42,7 @@ fn strip_fetch_refspec(repo_path: &std::path::Path, remote: &str) {
     let repo = git2::Repository::open(repo_path).expect("open");
     let mut config = repo.config().expect("config");
     let key = format!("remote.{remote}.fetch");
-    loop {
-        match config.remove_multivar(&key, ".*") {
-            Ok(()) => {}
-            Err(_) => break,
-        }
-    }
+    while let Ok(()) = config.remove_multivar(&key, ".*") {}
 }
 
 fn fetch_refspec_present(repo_path: &std::path::Path, remote: &str) -> bool {
@@ -279,12 +276,7 @@ fn fetch_repo_repairs_refspec_before_fetch_command() {
         let repo = git2::Repository::open(&bare).expect("open bare");
         let mut config = repo.config().expect("config");
         let key = "remote.origin.fetch";
-        loop {
-            match config.remove_multivar(key, ".*") {
-                Ok(()) => {}
-                Err(_) => break,
-            }
-        }
+        while let Ok(()) = config.remove_multivar(key, ".*") {}
     }
 
     fetch_repo(&bare, "git -C {path} fetch --prune --no-tags").expect("fetch");
