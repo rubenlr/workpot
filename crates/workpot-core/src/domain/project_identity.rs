@@ -245,25 +245,35 @@ pub fn merge_overlapping_projects(projects: &[ProjectSnapshot]) -> Vec<MergeActi
     if projects.is_empty() {
         return Vec::new();
     }
+    let components = overlap_components(projects);
+    let mut actions: Vec<_> = components
+        .into_values()
+        .filter_map(|idxs| merge_action_for_component(projects, idxs))
+        .collect();
+    actions.sort_by(|a, b| a.survivor_id.cmp(&b.survivor_id));
+    actions
+}
 
+fn uf_find(parent: &mut [usize], i: usize) -> usize {
+    let mut i = i;
+    while parent[i] != i {
+        parent[i] = parent[parent[i]];
+        i = parent[i];
+    }
+    i
+}
+
+fn uf_union(parent: &mut [usize], a: usize, b: usize) {
+    let ra = uf_find(parent, a);
+    let rb = uf_find(parent, b);
+    if ra != rb {
+        parent[rb] = ra;
+    }
+}
+
+fn overlap_components(projects: &[ProjectSnapshot]) -> HashMap<usize, Vec<usize>> {
     let n = projects.len();
     let mut parent: Vec<usize> = (0..n).collect();
-
-    fn find(parent: &mut [usize], i: usize) -> usize {
-        let mut i = i;
-        while parent[i] != i {
-            parent[i] = parent[parent[i]];
-            i = parent[i];
-        }
-        i
-    }
-    fn union(parent: &mut [usize], a: usize, b: usize) {
-        let ra = find(parent, a);
-        let rb = find(parent, b);
-        if ra != rb {
-            parent[rb] = ra;
-        }
-    }
 
     for i in 0..n {
         for j in (i + 1)..n {
@@ -271,59 +281,59 @@ pub fn merge_overlapping_projects(projects: &[ProjectSnapshot]) -> Vec<MergeActi
                 .remotes_normalized
                 .is_disjoint(&projects[j].remotes_normalized)
             {
-                union(&mut parent, i, j);
+                uf_union(&mut parent, i, j);
             }
         }
     }
 
     let mut components: HashMap<usize, Vec<usize>> = HashMap::new();
     for i in 0..n {
-        let root = find(&mut parent, i);
+        let root = uf_find(&mut parent, i);
         components.entry(root).or_default().push(i);
     }
+    components
+}
 
-    let mut actions = Vec::new();
-    for mut idxs in components.into_values() {
-        if idxs.len() < 2 {
-            continue;
-        }
-        idxs.sort_by(|&a, &b| compare_survivors(&projects[a], &projects[b]));
-        let survivor_idx = idxs[0];
-        let survivor = &projects[survivor_idx];
-
-        let mut remotes_normalized = HashSet::new();
-        let mut location_count = 0usize;
-        let mut absorbed_ids = Vec::new();
-        for &i in &idxs {
-            remotes_normalized.extend(projects[i].remotes_normalized.iter().cloned());
-            location_count += projects[i].location_count;
-            if i != survivor_idx {
-                absorbed_ids.push(projects[i].id.clone());
-            }
-        }
-        absorbed_ids.sort();
-
-        // Sticky root: keep survivor root (upstream-rooted projects do not flip to a fork).
-        let root_remote_normalized = survivor.root_remote_normalized.clone();
-        let root_via_upstream = survivor.root_via_upstream;
-        let created_at = survivor.created_at;
-        let prior_survivor_id = survivor.id.clone();
-        let survivor_id = project_id_for_root(&root_remote_normalized);
-
-        actions.push(MergeAction {
-            survivor_id,
-            prior_survivor_id,
-            absorbed_ids,
-            root_remote_normalized,
-            remotes_normalized,
-            location_count,
-            created_at,
-            root_via_upstream,
-        });
+fn merge_action_for_component(
+    projects: &[ProjectSnapshot],
+    mut idxs: Vec<usize>,
+) -> Option<MergeAction> {
+    if idxs.len() < 2 {
+        return None;
     }
+    idxs.sort_by(|&a, &b| compare_survivors(&projects[a], &projects[b]));
+    let survivor_idx = idxs[0];
+    let survivor = &projects[survivor_idx];
 
-    actions.sort_by(|a, b| a.survivor_id.cmp(&b.survivor_id));
-    actions
+    let mut remotes_normalized = HashSet::new();
+    let mut location_count = 0usize;
+    let mut absorbed_ids = Vec::new();
+    for &i in &idxs {
+        remotes_normalized.extend(projects[i].remotes_normalized.iter().cloned());
+        location_count += projects[i].location_count;
+        if i != survivor_idx {
+            absorbed_ids.push(projects[i].id.clone());
+        }
+    }
+    absorbed_ids.sort();
+
+    // Sticky root: keep survivor root (upstream-rooted projects do not flip to a fork).
+    let root_remote_normalized = survivor.root_remote_normalized.clone();
+    let root_via_upstream = survivor.root_via_upstream;
+    let created_at = survivor.created_at;
+    let prior_survivor_id = survivor.id.clone();
+    let survivor_id = project_id_for_root(&root_remote_normalized);
+
+    Some(MergeAction {
+        survivor_id,
+        prior_survivor_id,
+        absorbed_ids,
+        root_remote_normalized,
+        remotes_normalized,
+        location_count,
+        created_at,
+        root_via_upstream,
+    })
 }
 
 /// Return a copy of `project` with a new root (and rewritten id per P1).
