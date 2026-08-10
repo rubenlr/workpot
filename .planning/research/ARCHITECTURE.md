@@ -314,13 +314,13 @@ Workpot is **single-user, single-machine**. “Scale” means repo count and wat
 
 **Do this instead:** FS events **invalidate** and enqueue refresh; git commands recompute snapshot.
 
-### Anti-Pattern 3: Deduping repos by remote URL
+### Anti-Pattern 3: Collapsing checkouts to one row by remote URL
 
-**What people do:** Collapse `~/work/foo` and `~/personal/foo` because same `origin`.
+**What people do:** One catalog row for `~/work/foo` and `~/personal/foo` because they share `origin`.
 
-**Why it's wrong:** Conflicts with path-as-identity and local branch/dirty semantics ([repoindex design](https://github.com/queelius/repoindex/blob/master/DESIGN.md)).
+**Why it's wrong:** Erases path-as-identity and per-checkout branch/dirty semantics ([repoindex design](https://github.com/queelius/repoindex/blob/master/DESIGN.md)).
 
-**Do this instead:** One row per path; optional display of remote for disambiguation in UI only.
+**Do this instead:** **Project + locations** — one `locations` row per path; group under a remote-rooted `projects` row (forks/aliases on `project_remotes`). Never collapse multiple checkouts into a single path row.
 
 ### Anti-Pattern 4: Monolithic `src-tauri/src/lib.rs`
 

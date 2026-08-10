@@ -2,6 +2,43 @@ use crate::domain::{BRANCH_UNBORN, GitState};
 use crate::error::{Result, WorkpotError};
 use git2::{ErrorCode, Repository, Status, StatusOptions};
 use std::path::{Path, PathBuf};
+use std::process::Command;
+
+/// Clear hook-injected `GIT_*` so a subprocess uses its `-C`/cwd repo, not the parent checkout.
+///
+/// hk pre-commit sets `GIT_DIR` / `GIT_WORK_TREE` on the test process; without scrubbing,
+/// `git -C {path} fetch` can succeed against the wrong repo and leave remotes empty.
+pub fn scrub_git_env(cmd: &mut Command) {
+    for key in [
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_COMMON_DIR",
+    ] {
+        cmd.env_remove(key);
+    }
+}
+
+fn program_is_git(program: &str) -> bool {
+    Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|name| name == "git" || name.eq_ignore_ascii_case("git.exe"))
+}
+
+/// Scrub hook `GIT_*` and, for `git`, allow bare repos under `safe.bareRepository=explicit`.
+///
+/// Newer git / hk may set `safe.bareRepository=explicit`, which rejects even `git -C <bare> …`
+/// unless `--git-dir` is used. Workpot routinely targets bare repos; `-c safe.bareRepository=all`
+/// keeps fetch/convert/sync working.
+pub fn prepare_git_command(cmd: &mut Command, program: &str) {
+    scrub_git_env(cmd);
+    if program_is_git(program) {
+        cmd.args(["-c", "safe.bareRepository=all"]);
+    }
+}
 
 /// Canonical absolute path to the shared git directory (D-05).
 pub fn resolve_git_common_dir(path: &Path) -> Result<PathBuf> {
@@ -354,6 +391,205 @@ pub struct RemoteConfig {
     pub push_url: Option<String>,
 }
 
+/// Standard multi-branch fetch refspec for a remote (`heads/*` → `remotes/<name>/*`).
+pub fn standard_fetch_refspec(remote_name: &str) -> String {
+    format!("+refs/heads/*:refs/remotes/{remote_name}/*")
+}
+
+fn remote_has_multi_branch_fetch(refspecs: &[String], remote_name: &str) -> bool {
+    let needle = format!("refs/heads/*:refs/remotes/{remote_name}/*");
+    refspecs.iter().any(|spec| spec.contains(&needle))
+}
+
+fn read_fetch_refspecs(repo: &Repository, remote_name: &str) -> Result<Vec<String>> {
+    let remote = repo
+        .find_remote(remote_name)
+        .map_err(|_| WorkpotError::GitUnavailable(repo.path().to_path_buf()))?;
+    let specs = remote
+        .fetch_refspecs()
+        .map_err(|_| WorkpotError::GitUnavailable(repo.path().to_path_buf()))?;
+    let mut out = Vec::new();
+    for i in 0..specs.len() {
+        if let Ok(Some(spec)) = specs.get(i) {
+            out.push(spec.to_string());
+        }
+    }
+    Ok(out)
+}
+
+/// Ensure `remote.<name>.fetch` maps all heads to `refs/remotes/<name>/*`.
+///
+/// Returns `true` when the config was rewritten (missing, empty, or single-branch only).
+pub fn ensure_remote_fetch_refspec(repo: &Repository, remote_name: &str) -> Result<bool> {
+    let current = read_fetch_refspecs(repo, remote_name)?;
+    if remote_has_multi_branch_fetch(&current, remote_name) {
+        return Ok(false);
+    }
+
+    let expected = standard_fetch_refspec(remote_name);
+    let mut config = repo
+        .config()
+        .map_err(|_| WorkpotError::GitUnavailable(repo.path().to_path_buf()))?;
+    let key = format!("remote.{remote_name}.fetch");
+    while let Ok(()) = config.remove_multivar(&key, ".*") {}
+    config
+        .set_str(&key, &expected)
+        .map_err(|_| WorkpotError::GitUnavailable(repo.path().to_path_buf()))?;
+    Ok(true)
+}
+
+/// Verify and repair fetch refspecs for every remote in the repo at `path`.
+///
+/// Soft for callers that log: returns `Ok(repaired_count)` or `Err` only when the
+/// repository cannot be opened / remotes cannot be enumerated.
+pub fn ensure_repo_fetch_refspecs(path: &Path) -> Result<usize> {
+    let repo =
+        Repository::open(path).map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+    let names = repo
+        .remotes()
+        .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+    let mut repaired = 0usize;
+    for i in 0..names.len() {
+        let Ok(Some(name)) = names.get(i) else {
+            continue;
+        };
+        if ensure_remote_fetch_refspec(&repo, name)? {
+            log::warn!(
+                "repaired missing multi-branch fetch refspec for remote '{name}' in {}",
+                path.display()
+            );
+            repaired += 1;
+        }
+    }
+    Ok(repaired)
+}
+
+/// Kind of branch ref for catalog persistence (`branches.kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BranchKind {
+    Local,
+    Remote,
+}
+
+impl BranchKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::Remote => "remote",
+        }
+    }
+
+    /// Parse `branches.kind` column values (`local` / `remote`).
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "local" => Some(Self::Local),
+            "remote" => Some(Self::Remote),
+            _ => None,
+        }
+    }
+}
+
+/// A local or remote branch tip suitable for the `branches` catalog table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchRef {
+    pub name: String,
+    pub kind: BranchKind,
+    /// Full OID hex, when the tip resolves.
+    pub tip_oid: Option<String>,
+    /// Remote name for remote-tracking branches; empty string for locals.
+    pub remote_name: String,
+}
+
+/// Enumerate local and remote-tracking branches via git2 (Wave 3 catalog persist / Wave 4 read path).
+///
+/// Remote names are split as `remote_name/branch` (skips `*/HEAD`). Does not consult the DB.
+pub fn list_branch_refs(path: &Path) -> Result<Vec<BranchRef>> {
+    let repo =
+        Repository::open(path).map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+
+    let mut out = Vec::new();
+
+    let locals = repo
+        .branches(Some(git2::BranchType::Local))
+        .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+    for item in locals {
+        let (branch, _) = item.map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+        let Some(name) = branch
+            .name()
+            .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?
+        else {
+            continue;
+        };
+        out.push(BranchRef {
+            name: name.to_string(),
+            kind: BranchKind::Local,
+            tip_oid: branch.get().target().map(|oid| oid.to_string()),
+            remote_name: String::new(),
+        });
+    }
+
+    let remotes = repo
+        .branches(Some(git2::BranchType::Remote))
+        .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+    for item in remotes {
+        let (branch, _) = item.map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
+        let Some(full_name) = branch
+            .name()
+            .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?
+        else {
+            continue;
+        };
+        if full_name.ends_with("/HEAD") {
+            continue;
+        }
+        let Some((remote_name, short)) = full_name.split_once('/') else {
+            continue;
+        };
+        if short.is_empty() {
+            continue;
+        }
+        out.push(BranchRef {
+            name: short.to_string(),
+            kind: BranchKind::Remote,
+            tip_oid: branch.get().target().map(|oid| oid.to_string()),
+            remote_name: remote_name.to_string(),
+        });
+    }
+
+    Ok(out)
+}
+
+/// Worktree checkout paths to persist for a catalog location.
+///
+/// Non-bare: the location itself plus any linked worktrees.
+/// Bare: linked worktrees only (omits the bare store path).
+pub fn list_worktree_rows(location_path: &Path) -> Result<Vec<(PathBuf, Option<String>)>> {
+    let repo = Repository::open(location_path)
+        .map_err(|_| WorkpotError::GitUnavailable(location_path.to_path_buf()))?;
+
+    let mut rows = Vec::new();
+    if repo.is_bare() {
+        for wt in list_worktree_paths(location_path)? {
+            let head = open_and_query(&wt).ok().and_then(|s| s.branch);
+            rows.push((wt, head));
+        }
+    } else {
+        let canon = location_path
+            .canonicalize()
+            .map_err(|_| WorkpotError::GitUnavailable(location_path.to_path_buf()))?;
+        let head = open_and_query(&canon).ok().and_then(|s| s.branch);
+        rows.push((canon.clone(), head));
+        for wt in list_worktree_paths(location_path)? {
+            if wt == canon {
+                continue;
+            }
+            let head = open_and_query(&wt).ok().and_then(|s| s.branch);
+            rows.push((wt, head));
+        }
+    }
+    Ok(rows)
+}
+
 /// List configured remotes for a repository.
 pub fn list_remotes(path: &Path) -> Result<Vec<RemoteConfig>> {
     let repo =
@@ -437,6 +673,7 @@ pub fn apply_remotes(path: &Path, remotes: &[RemoteConfig]) -> Result<()> {
                     .map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))?;
             }
         }
+        ensure_remote_fetch_refspec(&repo, &remote_cfg.name)?;
     }
 
     Ok(())
@@ -591,5 +828,166 @@ mod tests {
             "common dir must be absolute: {common:?}"
         );
         assert!(common.ends_with(".git"), "expected .git dir: {common:?}");
+    }
+
+    #[test]
+    fn standard_fetch_refspec_uses_remote_name() {
+        assert_eq!(
+            standard_fetch_refspec("upstream"),
+            "+refs/heads/*:refs/remotes/upstream/*"
+        );
+    }
+
+    #[test]
+    fn ensure_remote_fetch_refspec_repairs_missing_and_is_idempotent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        Repository::init_bare(&path).expect("init bare");
+        let repo = Repository::open(&path).expect("open");
+        // Mimic bare clone: URL only, no fetch refspec
+        {
+            let mut config = repo.config().expect("config");
+            config
+                .set_str("remote.origin.url", "https://example.com/foo.git")
+                .expect("set url");
+        }
+
+        let repaired = ensure_remote_fetch_refspec(&repo, "origin").expect("ensure");
+        assert!(repaired);
+        let specs = read_fetch_refspecs(&repo, "origin").expect("read");
+        assert_eq!(specs, vec![standard_fetch_refspec("origin")]);
+
+        let again = ensure_remote_fetch_refspec(&repo, "origin").expect("ensure again");
+        assert!(!again);
+    }
+
+    #[test]
+    fn ensure_remote_fetch_refspec_rewrites_single_branch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        Repository::init(&path).expect("init");
+        let repo = Repository::open(&path).expect("open");
+        repo.remote("origin", "https://example.com/foo.git")
+            .expect("remote");
+        {
+            let mut config = repo.config().expect("config");
+            let key = "remote.origin.fetch";
+            while let Ok(()) = config.remove_multivar(key, ".*") {}
+            config
+                .set_str(key, "+refs/heads/main:refs/remotes/origin/main")
+                .expect("single-branch");
+        }
+
+        let repaired = ensure_remote_fetch_refspec(&repo, "origin").expect("ensure");
+        assert!(repaired);
+        let specs = read_fetch_refspecs(&repo, "origin").expect("read");
+        assert_eq!(specs, vec![standard_fetch_refspec("origin")]);
+    }
+
+    #[test]
+    fn apply_remotes_sets_multi_branch_fetch_refspec() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        Repository::init_bare(&path).expect("init bare");
+        {
+            let repo = Repository::open(&path).expect("open");
+            let mut config = repo.config().expect("config");
+            config
+                .set_str("remote.origin.url", "https://example.com/old.git")
+                .expect("url");
+        }
+
+        apply_remotes(
+            &path,
+            &[RemoteConfig {
+                name: "origin".into(),
+                url: "https://example.com/foo.git".into(),
+                push_url: None,
+            }],
+        )
+        .expect("apply");
+
+        let repo = Repository::open(&path).expect("open");
+        let specs = read_fetch_refspecs(&repo, "origin").expect("read");
+        assert_eq!(specs, vec![standard_fetch_refspec("origin")]);
+    }
+
+    #[test]
+    fn list_branch_refs_local_and_remote() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        let repo = Repository::init(&path).expect("init");
+        std::fs::write(path.join("README"), "hello").expect("write");
+        let mut index = repo.index().expect("index");
+        index.add_path(std::path::Path::new("README")).expect("add");
+        index.write().expect("write index");
+        let tree_id = index.write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+        repo.remote("origin", "https://example.com/foo.git")
+            .expect("remote");
+        // Create a remote-tracking ref without fetch.
+        let head = repo.head().expect("head").target().expect("oid");
+        repo.reference("refs/remotes/origin/main", head, true, "test")
+            .expect("remote ref");
+
+        let refs = list_branch_refs(&path).expect("list");
+        assert!(
+            refs.iter()
+                .any(|b| b.kind == BranchKind::Local && !b.name.is_empty()),
+            "expected local branch: {refs:?}"
+        );
+        assert!(
+            refs.iter().any(|b| {
+                b.kind == BranchKind::Remote && b.remote_name == "origin" && b.name == "main"
+            }),
+            "expected origin/main: {refs:?}"
+        );
+    }
+
+    #[test]
+    fn list_worktree_rows_includes_non_bare_checkout() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        Repository::init(&path).expect("init");
+        let rows = list_worktree_rows(&path).expect("rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, path);
+    }
+
+    #[test]
+    fn apply_remotes_repairs_single_branch_on_update() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().canonicalize().expect("canonicalize");
+        Repository::init(&path).expect("init");
+        let repo = Repository::open(&path).expect("open");
+        repo.remote("origin", "https://example.com/old.git")
+            .expect("remote");
+        {
+            let mut config = repo.config().expect("config");
+            let key = "remote.origin.fetch";
+            while let Ok(()) = config.remove_multivar(key, ".*") {}
+            config
+                .set_str(key, "+refs/heads/main:refs/remotes/origin/main")
+                .expect("single-branch");
+        }
+
+        apply_remotes(
+            &path,
+            &[RemoteConfig {
+                name: "origin".into(),
+                url: "https://example.com/new.git".into(),
+                push_url: None,
+            }],
+        )
+        .expect("apply");
+
+        let repo = Repository::open(&path).expect("open");
+        let specs = read_fetch_refspecs(&repo, "origin").expect("read");
+        assert_eq!(specs, vec![standard_fetch_refspec("origin")]);
+        let remote = repo.find_remote("origin").expect("find");
+        assert_eq!(remote.url().expect("url"), "https://example.com/new.git");
     }
 }

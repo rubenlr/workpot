@@ -62,7 +62,7 @@ fn local_catalog_sync_purges_orphan_scan_repos() {
     config.watch_roots.push(watch_root);
     let conn = store::open_connection(&db_path).expect("open db");
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'solo', 0, 'scan', '', 0)",
         rusqlite::params![orphan_key],
     )
@@ -75,9 +75,11 @@ fn local_catalog_sync_purges_orphan_scan_repos() {
     );
 
     let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM locations WHERE excluded = 0",
+            [],
+            |row| row.get(0),
+        )
         .expect("count");
     assert_eq!(count, 0);
 }
@@ -91,17 +93,21 @@ fn local_catalog_sync_full_rescan() {
 
     local_catalog_sync::run_full_connection(&conn, &config).expect("first run_full");
     let count_after_first: i64 = conn
-        .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM locations WHERE excluded = 0",
+            [],
+            |row| row.get(0),
+        )
         .expect("count repos");
     assert_eq!(count_after_first, 2);
 
     local_catalog_sync::run_full_connection(&conn, &config).expect("second run_full");
     let count_after_second: i64 = conn
-        .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM locations WHERE excluded = 0",
+            [],
+            |row| row.get(0),
+        )
         .expect("count repos");
     assert_eq!(count_after_second, 2);
 }
@@ -117,9 +123,11 @@ fn local_catalog_sync_skips_on_git_failure() {
     assert_eq!(summary.skipped, 1, "fake repo should be skipped");
 
     let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM locations WHERE excluded = 0",
+            [],
+            |row| row.get(0),
+        )
         .expect("count repos");
     assert_eq!(count, 1);
 }
@@ -132,7 +140,7 @@ fn local_catalog_sync_backfills_git_common_dir() {
     let path_key = repo.canonicalize().expect("canon").display().to_string();
 
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'backfill-me', 0, 'scan', '', 0)",
         rusqlite::params![path_key],
     )
@@ -142,7 +150,7 @@ fn local_catalog_sync_backfills_git_common_dir() {
 
     let gcd: String = conn
         .query_row(
-            "SELECT git_common_dir FROM repos WHERE path = ?1",
+            "SELECT git_common_dir FROM locations WHERE path = ?1",
             rusqlite::params![path_key],
             |row| row.get(0),
         )
@@ -161,7 +169,7 @@ fn local_catalog_sync_preserves_manual_source() {
 
     let source: String = conn
         .query_row(
-            "SELECT source FROM repos WHERE path = ?1",
+            "SELECT source FROM locations WHERE path = ?1",
             rusqlite::params![repo.canonicalize().expect("canon").display().to_string()],
             |row| row.get(0),
         )
@@ -194,9 +202,11 @@ fn local_catalog_sync_removes_stale_path() {
     );
 
     let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM locations WHERE excluded = 0",
+            [],
+            |row| row.get(0),
+        )
         .expect("count");
     assert_eq!(count, 0);
     let _ = dir;
@@ -219,9 +229,11 @@ fn local_catalog_sync_validates_manual_outside_roots() {
     local_catalog_sync::run_full_connection(&conn, &config).expect("index keeps valid manual");
 
     let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM locations WHERE excluded = 0",
+            [],
+            |row| row.get(0),
+        )
         .expect("count");
     assert_eq!(count, 1);
 }
@@ -240,9 +252,11 @@ fn local_catalog_sync_cap_abort() {
     ));
 
     let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM locations WHERE excluded = 0",
+            [],
+            |row| row.get(0),
+        )
         .expect("count");
     assert_eq!(count, 0, "cap abort must not partially merge repos");
 
@@ -294,9 +308,11 @@ fn local_catalog_sync_git_summary_accounts_for_all_non_excluded_repos() {
     let summary = local_catalog_sync::run_full_connection(&conn, &config).expect("run_full");
 
     let non_excluded: i64 = conn
-        .query_row("SELECT COUNT(*) FROM repos WHERE excluded = 0", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM locations WHERE excluded = 0",
+            [],
+            |row| row.get(0),
+        )
         .expect("count");
     assert_eq!(non_excluded, 2);
 
@@ -332,7 +348,7 @@ fn local_catalog_sync_second_pass_persists_git_state() {
 
     let (branch, refreshed_at, git_err): (Option<String>, Option<i64>, Option<String>) = conn
         .query_row(
-            "SELECT branch, git_refreshed_at, git_state_error FROM repos WHERE path = ?1",
+            "SELECT branch, git_refreshed_at, git_state_error FROM locations WHERE path = ?1",
             rusqlite::params![path_key],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
@@ -359,7 +375,7 @@ fn local_catalog_sync_git_pass_counts_refresh_errors() {
         .display()
         .to_string();
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'not-git', 0, 'manual', '', 0)",
         rusqlite::params![plain_key],
     )
@@ -377,7 +393,7 @@ fn local_catalog_sync_git_pass_counts_refresh_errors() {
 
     let git_err: Option<String> = conn
         .query_row(
-            "SELECT git_state_error FROM repos WHERE path = ?1",
+            "SELECT git_state_error FROM locations WHERE path = ?1",
             rusqlite::params![plain_key],
             |row| row.get(0),
         )
@@ -393,7 +409,7 @@ fn discover_phase_includes_missing_repo_paths_in_removes() {
     let (_dir, conn, config) = open_index_fixture(None);
     let gone_key = "/tmp/workpot-discover-missing-repo";
     conn.execute(
-        "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+        "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
          VALUES (?1, 'gone', 0, 'manual', '', 0)",
         rusqlite::params![gone_key],
     )
@@ -428,7 +444,7 @@ fn merge_catalog_phase_applies_discovery_plan() {
 
     let count: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM repos WHERE path = ?1 AND excluded = 0",
+            "SELECT COUNT(*) FROM locations WHERE path = ?1 AND excluded = 0",
             rusqlite::params![path_key],
             |row| row.get(0),
         )
@@ -437,7 +453,7 @@ fn merge_catalog_phase_applies_discovery_plan() {
 
     let stored_gcd: String = conn
         .query_row(
-            "SELECT git_common_dir FROM repos WHERE path = ?1",
+            "SELECT git_common_dir FROM locations WHERE path = ?1",
             rusqlite::params![path_key],
             |row| row.get(0),
         )
@@ -477,7 +493,7 @@ fn persist_local_catalog_git_phase_updates_repo_git_columns() {
 
     let (branch, ahead, behind, git_err): (String, i64, i64, Option<String>) = conn
         .query_row(
-            "SELECT branch, ahead, behind, git_state_error FROM repos WHERE path = ?1",
+            "SELECT branch, ahead, behind, git_state_error FROM locations WHERE path = ?1",
             rusqlite::params![path_key],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
@@ -550,7 +566,7 @@ fn local_catalog_sync_persists_null_structural_block_for_volatile_dirty_repo() {
         .to_string();
     let (is_dirty, block_reason): (Option<i64>, Option<String>) = conn
         .query_row(
-            "SELECT is_dirty, convert_block_reason FROM repos WHERE path = ?1",
+            "SELECT is_dirty, convert_block_reason FROM locations WHERE path = ?1",
             rusqlite::params![path_key],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -594,7 +610,7 @@ fn local_catalog_sync_persists_structural_linked_worktree_block() {
     let path_key = wt_path.canonicalize().expect("canon").display().to_string();
     let block_reason: Option<String> = conn
         .query_row(
-            "SELECT convert_block_reason FROM repos WHERE path = ?1",
+            "SELECT convert_block_reason FROM locations WHERE path = ?1",
             rusqlite::params![path_key],
             |row| row.get(0),
         )

@@ -107,8 +107,11 @@ launch_cmd = "/usr/bin/true {path}"
         .to_string();
     {
         let conn = rusqlite::Connection::open(&db_path).expect("open db");
-        conn.execute("UPDATE repos SET excluded = 1 WHERE path = ?1", [&path_key])
-            .expect("mark excluded");
+        conn.execute(
+            "UPDATE locations SET excluded = 1 WHERE path = ?1",
+            [&path_key],
+        )
+        .expect("mark excluded");
     }
 
     let ctx = AppContext::open_with_paths(config_path, db_path).expect("reopen");

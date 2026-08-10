@@ -3,18 +3,15 @@ import { toPinOrderPayload } from "$lib/tray/logic/list/pinOrder";
 import { createTrayConfig } from "./trayConfig.svelte";
 import { createTrayDetail } from "./trayDetail.svelte";
 import {
-  onGitRefreshComplete,
-  onGitRefreshFailed,
   onPanelOpened,
-} from "$lib/tray/logic/handlers/trayGitRefreshHandlers";
-import {
   onSyncComplete,
   onSyncFailed,
+  onSyncStarted,
 } from "$lib/tray/logic/handlers/traySyncHandlers";
 import { createTrayLaunch } from "./trayLaunch.svelte";
 import { createTrayListSelection } from "./trayListSelection.svelte";
 import { createTrayPanelKeyboard } from "./trayPanelKeyboard.svelte";
-import { clearGitRefreshWatchdog } from "$lib/tray/logic/handlers/gitRefreshWatchdog";
+import { clearSyncWatchdog } from "$lib/tray/logic/handlers/syncWatchdog";
 import { subscribeTrayPanelEvents } from "$lib/tray/logic/handlers/trayPanelEvents";
 import { trayTrace } from "$lib/tray/logic/handlers/trayTrace";
 import { createTrayRepoData } from "./trayRepoData.svelte";
@@ -125,6 +122,9 @@ export function createTrayPanel() {
     refresh: (clearError: boolean) => data.refresh(clearError),
     resyncDetail: () => detail.resync(data.repos),
     setError: (message: string | null) => data.setListError(message),
+    bumpBranchRevision: () => {
+      branchRevision += 1;
+    },
   };
 
   async function removeTagFromRepo(repoPath: string, tag: string) {
@@ -142,15 +142,6 @@ export function createTrayPanel() {
   ) {
     await syncRepoBranch(repoPath, branch, direction, syncDeps);
   }
-
-  const gitRefreshDeps = {
-    setSelectedIndex: (index: number) => {
-      list.selectedIndex = index;
-    },
-    refresh: (clearError: boolean) => data.refresh(clearError),
-    setError: (message: string | null) => data.setListError(message),
-    focusFilter: () => keyboard.focusFilter(),
-  };
 
   async function finishSync(success: boolean): Promise<void> {
     const started = syncingStartedAt ?? Date.now();
@@ -198,17 +189,14 @@ export function createTrayPanel() {
   async function mount(): Promise<void> {
     trayTrace("mount start");
     unsubscribeEvents = await subscribeTrayPanelEvents({
-      onPanelOpened: () => onPanelOpened(gitRefreshDeps),
+      onPanelOpened: () =>
+        onPanelOpened({
+          ...catalogSyncDeps,
+          focusFilter: () => keyboard.focusFilter(),
+        }),
       onPanelClosed: () => resetPanelToInitialState(),
-      onGitRefreshStarted: () => {},
-      onGitRefreshComplete: (summary) => {
-        onGitRefreshComplete(summary, gitRefreshDeps);
-      },
-      onGitRefreshFailed: (message) => {
-        onGitRefreshFailed(message, gitRefreshDeps);
-      },
       onSyncStarted: () => {
-        trayTrace("sync-started");
+        onSyncStarted({ setError: catalogSyncDeps.setError });
         if (!syncing) {
           syncing = true;
           syncingStartedAt = Date.now();
@@ -256,7 +244,7 @@ export function createTrayPanel() {
   }
 
   function destroy() {
-    clearGitRefreshWatchdog();
+    clearSyncWatchdog();
     unsubscribeEvents?.();
     unsubscribeEvents = null;
   }

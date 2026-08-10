@@ -7,22 +7,23 @@ use std::time::{Duration, Instant};
 use tauri::menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, LogicalPosition, Manager, State, Window};
 use workpot_core::domain::config::MigrationConfig;
+use workpot_core::infra::git::{BranchKind, BranchRef};
 use workpot_core::services::repo_convert::{
     ConvertResult, ConvertTarget, PreflightResult, convert_target_for_record, preflight_message,
     run_volatile_preflight,
 };
-use workpot_core::{AppState, GitRefreshSummary, RepoRecord, SyncDirection, run_repo_sync};
+use workpot_core::{AppState, RepoRecord, SyncDirection, run_repo_sync};
 
-/// Prevents overlapping background git refresh jobs (panel open + Cmd+R).
+/// Prevents overlapping catalog sync jobs (panel open + Cmd+R / menu Sync).
 #[derive(Clone)]
-pub struct GitRefreshGuard(pub Arc<AtomicBool>);
+pub struct CatalogSyncGuard(pub Arc<AtomicBool>);
 
-impl GitRefreshGuard {
+impl CatalogSyncGuard {
     pub fn new() -> Self {
         Self(Arc::new(AtomicBool::new(false)))
     }
 
-    /// Returns true when this call acquired the refresh slot.
+    /// Returns true when this call acquired the sync slot.
     pub fn try_start(&self) -> bool {
         self.0
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -158,7 +159,7 @@ pub struct RepoSyncEventDto {
     pub error: Option<String>,
 }
 
-struct TraySyncAnimationCancel(Arc<AtomicBool>);
+pub(crate) struct TraySyncAnimationCancel(Arc<AtomicBool>);
 
 fn log_emit_err(event: &str, err: tauri::Error) {
     log::warn!("failed to emit {event}: {err}");
@@ -517,14 +518,20 @@ pub async fn list_branches(
             .catalog_launch_path(Path::new(&repo_path))
             .map_err(|e| e.to_string())?;
     }
+    let catalog_refs = state
+        .inner()
+        .list_location_branches(&repo_path)
+        .map_err(|e| e.to_string())?;
     let hidden = state
         .inner()
         .list_hidden_branches(&repo_path)
         .map_err(|e| e.to_string())?;
     let hidden_set: HashSet<String> = hidden.into_iter().collect();
-    let mut items = tauri::async_runtime::spawn_blocking(move || list_branches_sync(&repo_path))
-        .await
-        .map_err(|e| e.to_string())??;
+    let mut items = tauri::async_runtime::spawn_blocking(move || {
+        list_branches_prefer_catalog(&repo_path, catalog_refs)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     for item in &mut items {
         item.hidden = hidden_set.contains(&item.name);
     }
@@ -728,6 +735,93 @@ fn branch_tip_time(repo: &git2::Repository, name: &str, tracking: BranchTracking
     }
 }
 
+/// Prefer catalog `branches` rows when present; otherwise enumerate via git2 (never synced).
+fn list_branches_prefer_catalog(
+    repo_path: &str,
+    catalog_refs: Vec<BranchRef>,
+) -> Result<Vec<BranchListItemDto>, String> {
+    if catalog_refs.is_empty() {
+        list_branches_sync(repo_path)
+    } else {
+        list_branches_from_catalog(repo_path, &catalog_refs)
+    }
+}
+
+fn catalog_tracking(is_local: bool, is_remote: bool) -> BranchTrackingDto {
+    match (is_local, is_remote) {
+        (false, true) => BranchTrackingDto::RemoteOnly,
+        (true, true) => BranchTrackingDto::LocalRemote,
+        _ => BranchTrackingDto::LocalOnly,
+    }
+}
+
+/// Build tray DTOs from persisted branch rows. Hybrid: ahead/behind + tip sort via git2 when openable.
+fn list_branches_from_catalog(
+    repo_path: &str,
+    refs: &[BranchRef],
+) -> Result<Vec<BranchListItemDto>, String> {
+    let mut local_names = HashSet::new();
+    let mut remote_names = HashSet::new();
+    for branch in refs {
+        match branch.kind {
+            BranchKind::Local => {
+                local_names.insert(branch.name.clone());
+            }
+            BranchKind::Remote => {
+                remote_names.insert(branch.name.clone());
+            }
+        }
+    }
+
+    let mut all_names: HashSet<String> = local_names.clone();
+    all_names.extend(remote_names.iter().cloned());
+
+    let repo = git2::Repository::open(repo_path).ok();
+    let current = repo.as_ref().and_then(|r| {
+        r.head()
+            .ok()
+            .filter(|head| head.is_branch())
+            .and_then(|head| head.shorthand().ok().map(str::to_string))
+    });
+
+    let mut items: Vec<BranchListItemDto> = all_names
+        .into_iter()
+        .map(|name| {
+            let is_local = local_names.contains(&name);
+            let is_remote = remote_names.contains(&name);
+            let tracking = catalog_tracking(is_local, is_remote);
+            let checked_out = current.as_ref() == Some(&name);
+            let (ahead, behind) = match (&repo, tracking) {
+                (Some(repo), BranchTrackingDto::LocalRemote) => {
+                    ahead_behind_for_local_branch(repo, &name)
+                }
+                _ => (None, None),
+            };
+            BranchListItemDto {
+                name,
+                checked_out,
+                tracking,
+                ahead,
+                behind,
+                hidden: false,
+            }
+        })
+        .collect();
+
+    items.sort_by(|a, b| {
+        tracking_sort_order(a.tracking)
+            .cmp(&tracking_sort_order(b.tracking))
+            .then_with(|| match &repo {
+                Some(repo) => branch_tip_time(repo, &b.name, b.tracking)
+                    .cmp(&branch_tip_time(repo, &a.name, a.tracking)),
+                None => std::cmp::Ordering::Equal,
+            })
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    Ok(items)
+}
+
 fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String> {
     let repo = git2::Repository::open(repo_path).map_err(|e| e.to_string())?;
     let local = collect_local_branch_names(&repo)?;
@@ -917,7 +1011,7 @@ fn set_tray_syncing_frame(app: &AppHandle, frame_idx: usize) {
     }
 }
 
-fn start_tray_sync_animation(app: &AppHandle) -> TraySyncAnimationCancel {
+pub(crate) fn start_tray_sync_animation(app: &AppHandle) -> TraySyncAnimationCancel {
     let cancel = Arc::new(AtomicBool::new(false));
     let cancel_flag = Arc::clone(&cancel);
     let app = app.clone();
@@ -936,7 +1030,7 @@ fn start_tray_sync_animation(app: &AppHandle) -> TraySyncAnimationCancel {
     TraySyncAnimationCancel(cancel)
 }
 
-fn stop_tray_sync_animation(cancel: TraySyncAnimationCancel) {
+pub(crate) fn stop_tray_sync_animation(cancel: TraySyncAnimationCancel) {
     cancel.0.store(true, Ordering::Relaxed);
 }
 
@@ -973,7 +1067,7 @@ pub(crate) fn update_tray_icon_state(
     }
 }
 
-fn reset_tray_icon_after_git_refresh(
+pub(crate) fn reset_tray_icon_after_sync(
     app: &AppHandle,
     state: &Arc<AppState>,
     stale_dirty_days: u32,
@@ -992,118 +1086,6 @@ fn reset_tray_icon_after_git_refresh(
         return;
     }
     update_tray_icon_state(app, &[], stale_dirty_days, false);
-}
-
-/// Git refresh on a blocking pool so libgit2 cannot stall the async runtime.
-/// Always resets tray icon and emits completion/failure events.
-pub(crate) fn spawn_background_git_refresh(app: AppHandle, state: Arc<AppState>) {
-    let guard = app
-        .try_state::<GitRefreshGuard>()
-        .map(|g| g.inner().clone());
-    let Some(guard) = guard else {
-        spawn_background_git_refresh_inner(app, state, None);
-        return;
-    };
-    if !guard.try_start() {
-        log::debug!("background git refresh: skipped (already running)");
-        return;
-    }
-    spawn_background_git_refresh_inner(app, state, Some(guard));
-}
-
-fn spawn_background_git_refresh_inner(
-    app: AppHandle,
-    state: Arc<AppState>,
-    guard: Option<GitRefreshGuard>,
-) {
-    let stale_dirty_days = state.config().map(|c| c.stale_dirty_days).unwrap_or(7);
-    update_tray_icon_state(&app, &[], stale_dirty_days, true);
-    let animation_cancel = start_tray_sync_animation(&app);
-    log::info!("background git refresh: started");
-    if let Err(e) = app.emit("git-refresh-started", ()) {
-        log_emit_err("git-refresh-started", e);
-    }
-
-    tauri::async_runtime::spawn(async move {
-        let started = Instant::now();
-        let state_for_blocking = Arc::clone(&state);
-
-        let blocking_result = tauri::async_runtime::spawn_blocking(move || {
-            let paths = state_for_blocking
-                .git_refresh_paths()
-                .map_err(|e| e.to_string())?;
-            let repo_count = paths.len();
-            log::info!("background git refresh: refreshing {repo_count} repos");
-            let paths_acquire_ms = started.elapsed().as_millis();
-            log::debug!(
-                "background git refresh: paths lock released elapsed_ms={paths_acquire_ms}"
-            );
-            let fetch_cmd = state_for_blocking
-                .config()
-                .map_err(|e| e.to_string())?
-                .fetch
-                .clone();
-            let git_results = workpot_core::services::git_state::refresh_all(paths, &fetch_cmd);
-            log::debug!("background git refresh: persist lock acquire");
-            let summary = state_for_blocking
-                .persist_git_refresh_results(git_results)
-                .map_err(|e| e.to_string())?;
-            log::debug!("background git refresh: persist complete");
-            Ok::<GitRefreshSummary, String>(summary)
-        })
-        .await;
-
-        let elapsed_ms = started.elapsed().as_millis();
-        stop_tray_sync_animation(animation_cancel);
-        reset_tray_icon_after_git_refresh(&app, &state, stale_dirty_days);
-        if let Some(guard) = guard {
-            guard.finish();
-        }
-
-        match blocking_result {
-            Ok(Ok(summary)) => {
-                log::info!(
-                    "background git refresh: complete elapsed_ms={elapsed_ms} refreshed={} errors={} any_dirty={}",
-                    summary.refreshed,
-                    summary.errors,
-                    summary.any_dirty
-                );
-                if let Err(e) = app.emit("git-refresh-complete", &summary) {
-                    log_emit_err("git-refresh-complete", e);
-                }
-            }
-            Ok(Err(e)) => {
-                log::warn!("background git refresh: failed elapsed_ms={elapsed_ms}: {e}");
-                let fallback = GitRefreshSummary {
-                    refreshed: 0,
-                    errors: 1,
-                    any_dirty: false,
-                };
-                if let Err(err) = app.emit("git-refresh-failed", e.clone()) {
-                    log_emit_err("git-refresh-failed", err);
-                }
-                if let Err(err) = app.emit("git-refresh-complete", &fallback) {
-                    log_emit_err("git-refresh-complete", err);
-                }
-            }
-            Err(join_err) => {
-                let msg =
-                    format!("background git refresh task panicked or was cancelled: {join_err}");
-                log::error!("background git refresh: failed elapsed_ms={elapsed_ms}: {msg}");
-                let fallback = GitRefreshSummary {
-                    refreshed: 0,
-                    errors: 1,
-                    any_dirty: false,
-                };
-                if let Err(err) = app.emit("git-refresh-failed", msg.clone()) {
-                    log_emit_err("git-refresh-failed", err);
-                }
-                if let Err(err) = app.emit("git-refresh-complete", &fallback) {
-                    log_emit_err("git-refresh-complete", err);
-                }
-            }
-        }
-    });
 }
 
 #[tauri::command]
@@ -1131,12 +1113,13 @@ pub async fn refresh_sync(app: AppHandle, state: State<'_, Arc<AppState>>) -> Re
     Ok(())
 }
 
+/// Thin-wrap legacy IPC onto the shared catalog sync pipeline.
 #[tauri::command]
 pub async fn refresh_all_git_state(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    spawn_background_git_refresh(app, state.inner().clone());
+    crate::tray::spawn_background_sync(app, state.inner().clone());
     Ok(())
 }
 
@@ -1709,8 +1692,8 @@ mod tests {
     }
 
     #[test]
-    fn git_refresh_guard_skips_second_concurrent_start() {
-        let guard = GitRefreshGuard::new();
+    fn catalog_sync_guard_skips_second_concurrent_start() {
+        let guard = CatalogSyncGuard::new();
         assert!(guard.try_start());
         assert!(!guard.try_start());
         guard.finish();
@@ -1888,6 +1871,155 @@ mod tests {
         assert!(feature.hidden);
         let default_branch = items.iter().find(|i| i.checked_out).expect("default");
         assert!(!default_branch.hidden);
+    }
+
+    #[test]
+    fn list_branches_prefer_catalog_falls_back_when_empty() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo_path = dir.path().join("repo");
+        let repo = git2::Repository::init(&repo_path).expect("init");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        let tree_id = repo.index().expect("index").write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+
+        let path = repo_path.to_str().expect("utf8");
+        let from_git = list_branches_sync(path).expect("git");
+        let from_prefer = list_branches_prefer_catalog(path, Vec::new()).expect("prefer");
+        assert_eq!(from_prefer, from_git);
+    }
+
+    #[test]
+    fn list_branches_from_catalog_joins_local_and_remote() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo_path = dir.path().join("repo");
+        let repo = git2::Repository::init(&repo_path).expect("init");
+        repo.remote("origin", "/tmp/unused-remote")
+            .expect("add remote");
+
+        commit_on_ref(&repo, "HEAD", "main", 1_000);
+        commit_on_ref(&repo, "refs/heads/alpha", "alpha", 5_000);
+        let tracked_oid = commit_on_ref(&repo, "refs/heads/tracked", "tracked", 4_000);
+        repo.reference(
+            "refs/remotes/origin/tracked",
+            tracked_oid,
+            true,
+            "create remote tracked",
+        )
+        .expect("remote tracked");
+        let mut tracked = repo
+            .find_branch("tracked", git2::BranchType::Local)
+            .expect("tracked branch");
+        tracked
+            .set_upstream(Some("origin/tracked"))
+            .expect("set upstream");
+        commit_on_ref(
+            &repo,
+            "refs/remotes/origin/remote-only",
+            "remote-only",
+            6_000,
+        );
+
+        let default_branch = repo
+            .head()
+            .expect("head")
+            .shorthand()
+            .expect("default branch")
+            .to_string();
+
+        let refs = vec![
+            BranchRef {
+                name: default_branch.clone(),
+                kind: BranchKind::Local,
+                tip_oid: None,
+                remote_name: String::new(),
+            },
+            BranchRef {
+                name: "alpha".into(),
+                kind: BranchKind::Local,
+                tip_oid: None,
+                remote_name: String::new(),
+            },
+            BranchRef {
+                name: "tracked".into(),
+                kind: BranchKind::Local,
+                tip_oid: None,
+                remote_name: String::new(),
+            },
+            BranchRef {
+                name: "tracked".into(),
+                kind: BranchKind::Remote,
+                tip_oid: None,
+                remote_name: "origin".into(),
+            },
+            BranchRef {
+                name: "remote-only".into(),
+                kind: BranchKind::Remote,
+                tip_oid: None,
+                remote_name: "origin".into(),
+            },
+        ];
+
+        let path = repo_path.to_str().expect("utf8");
+        let items = list_branches_prefer_catalog(path, refs).expect("catalog");
+        let by_name: std::collections::HashMap<_, _> =
+            items.iter().map(|i| (i.name.as_str(), i)).collect();
+
+        assert_eq!(
+            by_name.get("alpha").expect("alpha").tracking,
+            BranchTrackingDto::LocalOnly
+        );
+        assert_eq!(
+            by_name.get("tracked").expect("tracked").tracking,
+            BranchTrackingDto::LocalRemote
+        );
+        assert_eq!(
+            by_name.get("remote-only").expect("remote-only").tracking,
+            BranchTrackingDto::RemoteOnly
+        );
+        assert!(
+            by_name
+                .get(default_branch.as_str())
+                .expect("default")
+                .checked_out
+        );
+
+        let names: Vec<_> = items.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["alpha", default_branch.as_str(), "tracked", "remote-only"]
+        );
+    }
+
+    #[test]
+    fn list_location_branches_empty_until_synced() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config_path = dir.path().join("config.toml");
+        let db_path = dir.path().join("workpot.db");
+        std::fs::write(&config_path, "watch_roots = []\nexcludes = []\n").expect("config");
+        let ctx = AppState::open_with_paths(config_path, db_path).expect("open");
+        let repo_path = dir.path().join("sample");
+        std::fs::create_dir_all(&repo_path).expect("mkdir");
+        let repo = git2::Repository::init(&repo_path).expect("init");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        let tree_id = repo.index().expect("index").write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+        let record = ctx.register_manual(&repo_path).expect("register");
+        let path_str = record.path.display().to_string();
+
+        assert!(
+            ctx.list_location_branches(&path_str)
+                .expect("list")
+                .is_empty(),
+            "manual register does not populate branches — list_branches falls back to git2"
+        );
+
+        let git_items = list_branches_prefer_catalog(&path_str, Vec::new()).expect("fallback");
+        assert!(!git_items.is_empty());
+        assert!(git_items.iter().any(|i| i.checked_out));
     }
 
     #[test]

@@ -163,7 +163,9 @@ pub fn run_repo_sync(
     };
     let (program, args) =
         build_sync_command(&template, &launch_path, branch).map_err(sync_failure)?;
-    let output = Command::new(&program)
+    let mut cmd = Command::new(&program);
+    crate::infra::git::prepare_git_command(&mut cmd, &program);
+    let output = cmd
         .args(&args)
         .env("GIT_TERMINAL_PROMPT", "0")
         .output()

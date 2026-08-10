@@ -578,6 +578,21 @@ fn convert_normal_to_bare_preserves_origin_remote() {
     let actual = git_remote_url(&bare_path, "origin");
     assert_eq!(actual, expected);
     assert!(!actual.contains(".temp"));
+
+    let fetch = common::git_cmd()
+        .args(["config", "--get-all", "remote.origin.fetch"])
+        .current_dir(&bare_path)
+        .output()
+        .expect("config fetch");
+    assert!(
+        fetch.status.success(),
+        "bare convert must set remote.origin.fetch"
+    );
+    let fetch_specs = String::from_utf8(fetch.stdout).expect("utf8");
+    assert!(
+        fetch_specs.contains("refs/heads/*:refs/remotes/origin/*"),
+        "expected multi-branch fetch refspec, got {fetch_specs:?}"
+    );
 }
 
 #[test]
@@ -598,6 +613,21 @@ fn convert_bare_to_local_preserves_origin_remote() {
     let actual = git_remote_url(&local_path, "origin");
     assert_eq!(actual, expected);
     assert!(!actual.contains(".temp"));
+
+    let fetch = common::git_cmd()
+        .args(["config", "--get-all", "remote.origin.fetch"])
+        .current_dir(&local_path)
+        .output()
+        .expect("config fetch");
+    assert!(
+        fetch.status.success(),
+        "bare→local convert must keep remote.origin.fetch"
+    );
+    let fetch_specs = String::from_utf8(fetch.stdout).expect("utf8");
+    assert!(
+        fetch_specs.contains("refs/heads/*:refs/remotes/origin/*"),
+        "expected multi-branch fetch refspec, got {fetch_specs:?}"
+    );
 }
 
 #[test]
@@ -641,6 +671,23 @@ fn convert_normal_to_bare_preserves_multiple_remotes() {
     assert_eq!(names, vec!["origin".to_string(), "upstream".to_string()]);
     assert_eq!(git_remote_url(&bare_path, "origin"), expected_origin);
     assert_eq!(git_remote_url(&bare_path, "upstream"), expected_upstream);
+
+    for name in ["origin", "upstream"] {
+        let fetch = common::git_cmd()
+            .args(["config", "--get-all", &format!("remote.{name}.fetch")])
+            .current_dir(&bare_path)
+            .output()
+            .expect("config fetch");
+        assert!(
+            fetch.status.success(),
+            "bare convert must set remote.{name}.fetch"
+        );
+        let fetch_specs = String::from_utf8(fetch.stdout).expect("utf8");
+        assert!(
+            fetch_specs.contains(&format!("refs/heads/*:refs/remotes/{name}/*")),
+            "expected multi-branch fetch for {name}, got {fetch_specs:?}"
+        );
+    }
 }
 
 #[test]
@@ -683,7 +730,7 @@ fn catalog_launch_path_prefers_catalog_branch_among_worktrees() {
     let conn = workpot_core::infra::store::open_connection(ctx.database_path()).expect("conn");
     refresh_and_persist(&conn, &bare_path).expect("refresh");
     conn.execute(
-        "UPDATE repos SET branch = 'feature' WHERE path = ?1",
+        "UPDATE locations SET branch = 'feature' WHERE path = ?1",
         rusqlite::params![bare_key],
     )
     .expect("set branch");
@@ -931,7 +978,7 @@ fn structural_blocks_linked_worktree() {
         .db()
         .with_read(|conn| {
             conn.query_row(
-                "SELECT convert_block_reason FROM repos WHERE path = ?1",
+                "SELECT convert_block_reason FROM locations WHERE path = ?1",
                 rusqlite::params![path_key],
                 |row| row.get(0),
             )
@@ -974,7 +1021,7 @@ fn dirty_repo_persists_null_structural_block_reason() {
         .db()
         .with_read(|conn| {
             conn.query_row(
-                "SELECT convert_block_reason FROM repos WHERE path = ?1",
+                "SELECT convert_block_reason FROM locations WHERE path = ?1",
                 rusqlite::params![path_key],
                 |row| row.get(0),
             )

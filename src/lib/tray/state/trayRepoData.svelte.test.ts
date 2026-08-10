@@ -84,13 +84,13 @@ describe("createTrayRepoData", () => {
     expect(onAfterRefresh).toHaveBeenCalledWith(repos);
   });
 
-  it("startBackgroundRefresh sets error when git refresh fails", async () => {
+  it("startBackgroundRefresh sets error when sync invoke fails", async () => {
     invoke.mockRejectedValueOnce("refresh boom");
 
     const data = createTrayRepoData();
     await data.startBackgroundRefresh();
 
-    expect(invoke).toHaveBeenCalledWith("refresh_all_git_state");
+    expect(invoke).toHaveBeenCalledWith("refresh_sync");
     expect(data.error).toBe("refresh boom");
   });
 

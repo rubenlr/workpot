@@ -1,1 +1,0 @@
-ALTER TABLE repos ADD COLUMN last_opened_at INTEGER NULL;

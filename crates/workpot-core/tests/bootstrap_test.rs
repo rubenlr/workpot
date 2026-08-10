@@ -92,16 +92,33 @@ fn migrations_apply() {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("user_version");
-    assert_eq!(version, 10);
+    assert_eq!(version, 1);
 
     let table_exists: i32 = conn
         .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='repos'",
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='locations'",
             [],
             |row| row.get(0),
         )
-        .expect("repos table query");
+        .expect("locations table query");
     assert_eq!(table_exists, 1);
+
+    for table in [
+        "projects",
+        "project_remotes",
+        "worktrees",
+        "branches",
+        "repo_tags",
+    ] {
+        let exists: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                [table],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|_| panic!("{table} table query"));
+        assert_eq!(exists, 1, "{table} must exist after bootstrap");
+    }
 
     let local_catalog_sync_runs_exists: i32 = conn
         .query_row(
@@ -157,7 +174,7 @@ fn config_validate_rejects_too_many_watch_roots() {
 #[test]
 fn config_fetch_defaults_and_empty_ok() {
     let config = Config::default();
-    assert_eq!(config.fetch, "git -C {path} fetch");
+    assert_eq!(config.fetch, "git -C {path} fetch --prune --no-tags");
     assert!(config.validate().is_ok());
 
     let empty = Config {

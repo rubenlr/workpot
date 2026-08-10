@@ -88,3 +88,7 @@ version:
 # Verify manifests match version file (no writes)
 version-check:
     bash scripts/sync-version.sh --check >/dev/null
+
+# Delete local SQLite DB + WAL/SHM (quit tray first if locked).
+db-reset:
+    {{cargo}} run -p workpot-cli -- db reset

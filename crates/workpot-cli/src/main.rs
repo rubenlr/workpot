@@ -8,6 +8,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use workpot_core::infra::paths;
+use workpot_core::infra::store;
 use workpot_core::services::launch::launch_repo;
 use workpot_core::services::repo_convert::{ConvertResult, ConvertTarget};
 use workpot_core::services::repo_fuzzy::fuzzy_match;
@@ -81,6 +82,18 @@ enum Commands {
         #[command(flatten)]
         args: SettingsArgs,
     },
+    /// Delete or inspect local SQLite database files.
+    #[command(subcommand)]
+    Db(DbCommands),
+}
+
+#[derive(Subcommand)]
+enum DbCommands {
+    /// Delete the local SQLite database and WAL/SHM sidecars.
+    ///
+    /// Idempotent: succeeds if the database is already absent.
+    /// Quit the Workpot tray app before reset if the database may be locked.
+    Reset,
 }
 
 #[derive(Parser)]
@@ -255,7 +268,32 @@ fn run() -> anyhow::Result<()> {
         Commands::Search { query } => run_search(&query),
         Commands::Open { repo } => run_open(&repo),
         Commands::Settings { args } => run_settings(args),
+        Commands::Db(sub) => run_db(sub),
     }
+}
+
+fn run_db(sub: DbCommands) -> anyhow::Result<()> {
+    match sub {
+        DbCommands::Reset => run_db_reset(),
+    }
+}
+
+fn run_db_reset() -> anyhow::Result<()> {
+    let db_path = paths::database_file().context("failed to resolve database path")?;
+    let report = store::reset_database(&db_path).with_context(|| {
+        format!(
+            "failed to delete database at {} — quit the Workpot tray app if the DB is locked",
+            db_path.display()
+        )
+    })?;
+    if report.deleted.is_empty() {
+        println!("already absent: {}", report.database.display());
+    } else {
+        for path in &report.deleted {
+            println!("deleted: {}", path.display());
+        }
+    }
+    Ok(())
 }
 
 fn run_settings(args: SettingsArgs) -> anyhow::Result<()> {
@@ -475,7 +513,7 @@ fn run_open(identifier: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Resolve CLI `repo` argument to SQLite `repos.path` (exact key, canonical path, or unique name).
+/// Resolve CLI `repo` argument to SQLite `locations.path` (exact key, canonical path, or unique name).
 fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result<String> {
     let identifier = identifier.trim();
     if identifier.is_empty() {
@@ -611,6 +649,12 @@ mod cli_parse_tests {
                 .unwrap()
                 .command,
             Commands::Open { .. }
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["workpot", "db", "reset"])
+                .unwrap()
+                .command,
+            Commands::Db(DbCommands::Reset)
         ));
     }
 

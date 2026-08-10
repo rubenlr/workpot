@@ -32,7 +32,7 @@ fn open_pool_read_write_connections_share_schema() {
 
     pool.with_write(|conn| {
         conn.execute(
-            "INSERT INTO repos (path, name, registered_at, source, git_common_dir, excluded)
+            "INSERT INTO locations (path, name, registered_at, source, git_common_dir, excluded)
              VALUES ('/tmp/pool-test', 'pool-test', 1, 'manual', '', 0)",
             [],
         )?;
@@ -42,7 +42,7 @@ fn open_pool_read_write_connections_share_schema() {
 
     pool.with_read(|conn| {
         let name: String = conn.query_row(
-            "SELECT name FROM repos WHERE path = '/tmp/pool-test'",
+            "SELECT name FROM locations WHERE path = '/tmp/pool-test'",
             [],
             |row| row.get(0),
         )?;
@@ -64,14 +64,14 @@ fn assert_schema_ready(conn: &Connection) {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("user_version");
-    assert_eq!(version, 10);
+    assert_eq!(version, 1);
 
-    let repos_exists: i32 = conn
+    let locations_exists: i32 = conn
         .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='repos'",
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='locations'",
             [],
             |row| row.get(0),
         )
-        .expect("repos table");
-    assert_eq!(repos_exists, 1);
+        .expect("locations table");
+    assert_eq!(locations_exists, 1);
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import type { RepoDto } from "$lib/types";
-import { clearGitRefreshWatchdog } from "$lib/tray/logic/handlers/gitRefreshWatchdog";
+import { clearSyncWatchdog } from "$lib/tray/logic/handlers/syncWatchdog";
 import { createTrayPanel } from "./createTrayPanel.svelte";
 
 const invoke = vi.fn();
@@ -68,7 +68,7 @@ describe("createTrayPanel", () => {
   });
 
   afterEach(() => {
-    clearGitRefreshWatchdog();
+    clearSyncWatchdog();
   });
 
   it("mount subscribes events, loads data, and focuses filter", async () => {
@@ -217,7 +217,8 @@ describe("createTrayPanel", () => {
     vi.useRealTimers();
   });
 
-  it("git_refresh_complete_clears_error_and_reloads", async () => {
+  it("sync_complete_clears_error_and_reloads", async () => {
+    vi.useFakeTimers();
     const panel = createTrayPanel();
     await panel.mount();
     const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
@@ -230,11 +231,15 @@ describe("createTrayPanel", () => {
       return undefined;
     });
 
-    handlers.onGitRefreshComplete({
-      refreshed: 2,
-      errors: 0,
-      any_dirty: false,
+    handlers.onSyncStarted();
+    handlers.onSyncComplete({
+      added: 0,
+      removed: 0,
+      skipped: 0,
+      git_refreshed: 2,
+      git_errors: 0,
     });
+    await vi.runAllTimersAsync();
     await vi.waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("list_repos");
     });
@@ -242,17 +247,43 @@ describe("createTrayPanel", () => {
     expect(panel.selectedIndex).toBe(0);
     expect(panel.listError).toBeNull();
     expect(panel.listView).toEqual({ kind: "list" });
+    vi.useRealTimers();
   });
 
-  it("git_refresh_failed_sets_list_error", async () => {
+  it("sync_complete_bumps_branch_revision", async () => {
+    vi.useFakeTimers();
+    const panel = createTrayPanel();
+    await panel.mount();
+    const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+    expect(panel.branchRevision).toBe(0);
+
+    handlers.onSyncStarted();
+    handlers.onSyncComplete({
+      added: 0,
+      removed: 0,
+      skipped: 0,
+      git_refreshed: 1,
+      git_errors: 0,
+    });
+    await vi.runAllTimersAsync();
+
+    expect(panel.branchRevision).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it("sync_failed_sets_list_error", async () => {
+    vi.useFakeTimers();
     const panel = createTrayPanel();
     await panel.mount();
     const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
 
-    handlers.onGitRefreshFailed("git fetch failed");
+    handlers.onSyncStarted();
+    handlers.onSyncFailed("git fetch failed");
+    await vi.runAllTimersAsync();
 
     expect(panel.listError).toBe("git fetch failed");
     expect(panel.listView).toEqual({ kind: "list" });
+    vi.useRealTimers();
   });
 
   it("panel-closed resets detail filter and selection", async () => {
@@ -516,7 +547,7 @@ describe("createTrayPanel", () => {
     vi.useRealTimers();
   });
 
-  it("panel-opened triggers git refresh handler", async () => {
+  it("panel-opened focuses filter without list refresh", async () => {
     const panel = createTrayPanel();
     const input = document.createElement("input");
     input.focus = focus;
@@ -524,16 +555,11 @@ describe("createTrayPanel", () => {
     await panel.mount();
     invoke.mockClear();
     focus.mockClear();
-    invoke.mockImplementation(async (cmd: string) => {
-      if (cmd === "list_repos") return [repo("/tmp/a")];
-      if (cmd === "get_repo_sync_status") return null;
-      return undefined;
-    });
 
     const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
     handlers.onPanelOpened();
 
-    expect(invoke).toHaveBeenCalledWith("list_repos");
+    expect(invoke).not.toHaveBeenCalledWith("list_repos");
     expect(focus).toHaveBeenCalled();
   });
 
