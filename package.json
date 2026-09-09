@@ -81,7 +81,7 @@
     "typescript-eslint": "^8.61.1",
     "utf8": "^3.0.0",
     "vite": "^6.0.3",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.11"
   },
   "packageManager": "pnpm@10.34.3"
 }
