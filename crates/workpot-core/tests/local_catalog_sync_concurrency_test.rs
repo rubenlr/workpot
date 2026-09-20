@@ -64,8 +64,10 @@ fn list_repos_during_index_stays_fast() {
     index_handle.join().expect("index thread");
     unsafe { std::env::remove_var("WORKPOT_TEST_LOCAL_CATALOG_SYNC_DELAY_MS") };
 
+    // Injected sync delays are 500ms and run outside DB locks; list_repos must stay
+    // far below that. 50ms was too tight for loaded CI runners (flake at 52ms).
     assert!(
-        max_ms < 50,
+        max_ms < 150,
         "list_repos blocked too long during index: max_ms={max_ms}"
     );
 }
