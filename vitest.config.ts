@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
 import { storybookSveltekitPlugin } from "@storybook/sveltekit/vite-plugin";
 import { svelteTesting } from "@testing-library/svelte/vite";
+import { playwright } from "@vitest/browser-playwright";
 import { mergeConfig } from "vite";
 import { defineConfig } from "vitest/config";
 import { storybookTauriAliases } from "./.storybook/storybook-aliases";
@@ -52,7 +53,7 @@ export default mergeConfig(
             name: "storybook",
             browser: {
               enabled: true,
-              provider: "playwright",
+              provider: playwright(),
               headless: true,
               instances: [{ browser: "chromium" }],
             },

@@ -27,7 +27,7 @@ hooks {
       }
       ["vitest"] {
         glob = List("*.js", "*.ts", "*.svelte")
-        check = "npx vitest run related {{files}} --passWithNoTests"
+        check = "npx vitest run related {{files}} --passWithNoTests >/dev/null"
       }
       ["cargo-test"] {
         glob = "*.rs"

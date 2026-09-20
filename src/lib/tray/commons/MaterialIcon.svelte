@@ -1,4 +1,10 @@
 <script lang="ts">
+  import { materialIconFallback } from "./materialIconFallbacks";
+  import {
+    materialSymbolsFontAvailable,
+    probeMaterialSymbolsFont,
+  } from "./materialSymbolsFont.svelte";
+
   let {
     name,
     size = 20,
@@ -10,14 +16,22 @@
     filled?: boolean;
     class?: string;
   } = $props();
+
+  probeMaterialSymbolsFont();
+
+  const fontReady = $derived(materialSymbolsFontAvailable());
+  const glyph = $derived(fontReady ? name : materialIconFallback(name, filled));
 </script>
 
 <span
-  class="material-symbols-outlined inline-flex shrink-0 select-none leading-none {className}"
+  class="inline-flex shrink-0 select-none leading-none {fontReady
+    ? 'material-symbols-outlined'
+    : 'material-icon-fallback'} {className}"
   style:font-size="{size}px"
-  style:font-variation-settings="'FILL' {filled ? 1 : 0}, 'wght' 400, 'GRAD' 0,
-  'opsz' 24"
-  aria-hidden="true">{name}</span
+  style:font-variation-settings={fontReady
+    ? `'FILL' ${filled ? 1 : 0}, 'wght' 400, 'GRAD' 0, 'opsz' 24`
+    : undefined}
+  aria-hidden="true">{glyph}</span
 >
 
 <style>
@@ -31,5 +45,16 @@
     overflow-wrap: normal;
     direction: ltr;
     -webkit-font-smoothing: antialiased;
+  }
+
+  .material-icon-fallback {
+    font-family:
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      sans-serif;
+    font-weight: 500;
+    font-style: normal;
+    line-height: 1;
   }
 </style>
