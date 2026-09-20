@@ -12,6 +12,11 @@ pub enum WorkpotError {
     #[error("migration error: {0}")]
     Migration(#[from] rusqlite_migration::Error),
 
+    /// Local catalog was created by a different schema generation (e.g. pre-`locations`
+    /// `repos` chain). Callers should point users at `workpot db reset`.
+    #[error("incompatible catalog database: {0}")]
+    IncompatibleDatabase(String),
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 

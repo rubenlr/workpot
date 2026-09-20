@@ -64,24 +64,41 @@ fn handle_panel_window_event(window: &tauri::Window, event: &WindowEvent) {
     }
 }
 
+fn fatal_start(err: impl std::fmt::Display) -> ! {
+    // Open catalog / setup before NSApplicationDidFinishLaunching when possible so
+    // failures exit with a message instead of Rust panic → SIGABRT crash reports.
+    eprintln!("workpot-tray: failed to start: {err}");
+    log::error!("workpot-tray failed to start: {err}");
+    std::process::exit(1);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logging();
-    tauri::Builder::default()
+
+    // Migrate / open SQLite before entering the AppKit run loop. A setup-hook Err
+    // inside didFinishLaunching becomes an abort() that macOS reports as a crash.
+    let state = match AppState::open() {
+        Ok(state) => Arc::new(state),
+        Err(e) => fatal_start(e),
+    };
+
+    let app = tauri::Builder::default()
         .manage(commands::ContextMenuRepo(Arc::new(Mutex::new(None))))
         .manage(commands::CatalogSyncGuard::new())
         .manage(commands::RepoSyncGuard::new())
         .manage(commands::RepoConvertGuard::new())
+        .manage(state)
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-            let state = AppState::open().map_err(|e| e.to_string())?;
-            app.manage(Arc::new(state));
             #[cfg(target_os = "macos")]
             if let Some(panel) = app.get_webview_window("panel") {
                 tray::configure_panel_window(&panel);
             }
-            tray::setup_tray(app)?;
+            if let Err(e) = tray::setup_tray(app) {
+                fatal_start(e);
+            }
 
             app.on_menu_event(|app, event| {
                 handle_repo_context_menu(app, event.id.as_ref());
@@ -118,6 +135,10 @@ pub fn run() {
             commands::set_branch_hidden,
             commands::show_repo_context_menu,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!());
+
+    match app {
+        Ok(app) => app.run(|_app_handle, _event| {}),
+        Err(e) => fatal_start(e),
+    }
 }
