@@ -84,7 +84,7 @@ describe("TrayFilterBar", () => {
       refreshSuccess: false,
     });
     const icon = refreshIcon(container);
-    expect(icon?.textContent).toBe("sync");
+    expect(icon?.textContent).toBe("↻");
     expect(icon?.className).toContain("animate-spin");
   });
 
@@ -95,7 +95,7 @@ describe("TrayFilterBar", () => {
       refreshSuccess: true,
     });
     const icon = refreshIcon(container);
-    expect(icon?.textContent).toBe("check");
+    expect(icon?.textContent).toBe("✓");
     expect(icon?.className).not.toContain("animate-spin");
   });
 
