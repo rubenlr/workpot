@@ -15,7 +15,6 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 export default mergeConfig(
   viteConfig,
   defineConfig({
-    plugins: [svelteTesting()],
     resolve: { conditions: ["browser"] },
     test: {
       coverage: {
@@ -32,6 +31,8 @@ export default mergeConfig(
       projects: [
         {
           extends: true,
+          // jsdom-only: its setup file imports CJS aria-query, which breaks in browser mode.
+          plugins: [svelteTesting()],
           test: {
             name: "unit",
             environment: "jsdom",

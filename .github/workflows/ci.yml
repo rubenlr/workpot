@@ -138,6 +138,22 @@ jobs:
           path: lcov-js.info
           retention-days: 7
 
+  storybook-tests:
+    name: storybook (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pnpm dependencies
+        uses: ./.github/actions/pnpm-install
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install Chromium system dependencies
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Storybook interaction + a11y tests
+        run: pnpm run test:storybook:run
+
   coverage:
     name: coverage
     runs-on: macos-latest

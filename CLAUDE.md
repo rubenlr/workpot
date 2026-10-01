@@ -152,7 +152,7 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 
 - **Languages:** Rust 1.96 (edition 2024), TypeScript 5.6, Svelte 5
 - **Frameworks:** SvelteKit 2, Tauri 2 (tray app), workspace crates `workpot-core`, `workpot-cli`, `workpot-tray`
-- **Test runners:** `cargo test` (Rust), Vitest 3 + jsdom (frontend), `@testing-library/svelte` (Svelte components), Storybook `@storybook/addon-vitest` (browser mode via Playwright, not in CI gate)
+- **Test runners:** `cargo test` (Rust), Vitest 3 + jsdom (frontend), `@testing-library/svelte` (Svelte components), Storybook `@storybook/addon-vitest` (browser mode via Playwright; CI job `storybook (ubuntu-latest)`)
 - **Build tools:** Cargo workspace, npm/Vite, `just` recipes, `hk` git hooks
 
 ### Test layout
