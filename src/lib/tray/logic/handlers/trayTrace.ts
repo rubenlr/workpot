@@ -1,10 +1,8 @@
 /** Dev-only tray diagnostics (visible in the panel webview inspector console). */
 export function trayTrace(message: string, detail?: unknown): void {
-  if (import.meta.env.DEV) {
-    if (detail === undefined) {
-      console.debug(`[workpot-tray] ${message}`);
-    } else {
-      console.debug(`[workpot-tray] ${message}`, detail);
-    }
+  if (detail === undefined) {
+    console.debug(`[workpot-tray] ${message}`);
+  } else {
+    console.debug(`[workpot-tray] ${message}`, detail);
   }
 }

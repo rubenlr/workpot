@@ -33,6 +33,10 @@ sbook:
     {{pnpm}} run build:storybook
     {{pnpm}} run storybook
 
+# CI `storybook` job — stories as Vitest browser tests (headless Chromium via Playwright)
+test-storybook:
+    {{pnpm}} run test:storybook:run
+
 # Rewrite formatting (run before clippy / tests)
 fmt-fix:
     {{cargo}} fmt --all

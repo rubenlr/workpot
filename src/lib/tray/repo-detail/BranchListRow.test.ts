@@ -81,8 +81,9 @@ describe("BranchListRow", () => {
     });
     expect(queryByText("local")).toBeTruthy();
     expect(
-      container.querySelector(".material-symbols-outlined")?.textContent,
-    ).toBe("check");
+      container.querySelector(".material-icon-fallback")?.textContent ??
+        container.querySelector(".material-symbols-outlined")?.textContent,
+    ).toBe("✓");
   });
 
   it("renders Hide label for visible branches when onToggleHidden provided", () => {

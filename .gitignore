@@ -11,3 +11,5 @@ coverage/
 lcov*.info
 *storybook.log
 storybook-static
+
+.ai/

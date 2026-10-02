@@ -26,7 +26,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           toolchain: 1.96
           components: rustfmt, clippy
@@ -36,7 +36,7 @@ jobs:
           shared-key: ci
           key: ${{ runner.os }}
       - name: Install clippy-sarif tooling
-        uses: taiki-e/install-action@065d6a08a14e61e89fb0a4c10eecdbdef39c7d8e # v2.85.4
+        uses: taiki-e/install-action@742a3317eac7bd62f91cd888b4eead5e784ba833 # v2.87.1
         with:
           tool: clippy-sarif,sarif-fmt
       - name: rustfmt
@@ -48,7 +48,7 @@ jobs:
             | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
       - name: Upload Clippy SARIF
         if: always() && hashFiles('rust-clippy-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: rust-clippy-results.sarif
           wait-for-processing: true
@@ -60,7 +60,7 @@ jobs:
         continue-on-error: true
       - name: Upload OSSAR SARIF
         if: always() && steps.ossar.outputs.sarifFile != ''
-        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: ${{ steps.ossar.outputs.sarifFile }}
           wait-for-processing: true
@@ -77,7 +77,7 @@ jobs:
           path: scorecard-results.sarif
           retention-days: 5
       - name: Upload Scorecard SARIF
-        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: scorecard-results.sarif
           wait-for-processing: true
@@ -93,7 +93,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           toolchain: 1.96
       - name: Restore Rust cache
@@ -123,7 +123,7 @@ jobs:
         run: pnpm run lint:sarif
       - name: Upload ESLint SARIF
         if: always() && hashFiles('eslint-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: eslint-results.sarif
           wait-for-processing: true
@@ -138,13 +138,29 @@ jobs:
           path: lcov-js.info
           retention-days: 7
 
+  storybook-tests:
+    name: storybook (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pnpm dependencies
+        uses: ./.github/actions/pnpm-install
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install Chromium system dependencies
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Storybook interaction + a11y tests
+        run: pnpm run test:storybook:run
+
   coverage:
     name: coverage
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           toolchain: 1.96
       - name: Restore Rust cache
@@ -155,7 +171,7 @@ jobs:
       - name: Fetch dependencies
         run: cargo fetch
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@065d6a08a14e61e89fb0a4c10eecdbdef39c7d8e # v2.85.4
+        uses: taiki-e/install-action@742a3317eac7bd62f91cd888b4eead5e784ba833 # v2.87.1
         with:
           tool: cargo-llvm-cov
           fallback: none
@@ -230,7 +246,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           toolchain: 1.96
       - run: bash scripts/check-release-pr.sh

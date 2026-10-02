@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
 import { storybookSveltekitPlugin } from "@storybook/sveltekit/vite-plugin";
 import { svelteTesting } from "@testing-library/svelte/vite";
+import { playwright } from "@vitest/browser-playwright";
 import { mergeConfig } from "vite";
 import { defineConfig } from "vitest/config";
 import { storybookTauriAliases } from "./.storybook/storybook-aliases";
@@ -14,7 +15,6 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 export default mergeConfig(
   viteConfig,
   defineConfig({
-    plugins: [svelteTesting()],
     resolve: { conditions: ["browser"] },
     test: {
       coverage: {
@@ -31,6 +31,8 @@ export default mergeConfig(
       projects: [
         {
           extends: true,
+          // jsdom-only: its setup file imports CJS aria-query, which breaks in browser mode.
+          plugins: [svelteTesting()],
           test: {
             name: "unit",
             environment: "jsdom",
@@ -52,7 +54,7 @@ export default mergeConfig(
             name: "storybook",
             browser: {
               enabled: true,
-              provider: "playwright",
+              provider: playwright(),
               headless: true,
               instances: [{ browser: "chromium" }],
             },

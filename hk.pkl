@@ -1,21 +1,25 @@
-amends "package://github.com/jdx/hk/releases/download/v1.46.0/hk@1.46.0#/Config.pkl"
-import "package://github.com/jdx/hk/releases/download/v1.46.0/hk@1.46.0#/Builtins.pkl"
+amends "package://github.com/jdx/hk/releases/download/v2.2.0/hk@2.2.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.2.0/hk@2.2.0#/Builtins.pkl"
 
 hooks {
   ["pre-commit"] {
     fix = true
     stash = "git"
     steps {
-      ["prettier"] = (Builtins.prettier) {
+      ["prettier"] {
         glob = List("*.js", "*.ts", "*.svelte", "*.json", "*.css", "*.md")
-        prefix = "npx"
+        check = "npx prettier --check {{files}}"
+        fix = "npx prettier --write {{files}}"
       }
-      ["eslint"] = (Builtins.eslint) {
+      ["eslint"] {
         glob = List("*.js", "*.ts", "*.svelte")
-        prefix = "npx"
+        check = "npx eslint {{files}}"
+        fix = "npx eslint --fix {{files}}"
       }
-      ["cargo-fmt"] = (Builtins.cargo_fmt) {
+      ["cargo-fmt"] {
         glob = "*.rs"
+        check = "cargo fmt --all -- --check"
+        fix = "cargo fmt --all"
       }
       ["cargo-clippy"] = (Builtins.cargo_clippy) {
         glob = "*.rs"
@@ -27,7 +31,7 @@ hooks {
       }
       ["vitest"] {
         glob = List("*.js", "*.ts", "*.svelte")
-        check = "npx vitest run related {{files}} --passWithNoTests"
+        check = "npx vitest run related {{files}} --passWithNoTests >/dev/null"
       }
       ["cargo-test"] {
         glob = "*.rs"
