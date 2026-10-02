@@ -75,7 +75,7 @@
     "stylelint-config-html": "^1.1.0",
     "stylelint-config-standard": "^40.0.0",
     "stylelint-config-tailwindcss": "^1.0.1",
-    "svelte": "^5.56.8",
+    "svelte": "^5.57.1",
     "svelte-check": "^4.7.1",
     "tailwindcss": "^4.0.0",
     "typescript": "~6.0.3",
