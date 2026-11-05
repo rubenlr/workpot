@@ -5,7 +5,7 @@ import { isCloned } from "$lib/types";
 import type { RepoDto } from "$lib/types";
 import { selectionIndexAfterBackgroundOpen } from "$lib/tray/logic/list/openSelection";
 
-export interface TrayLaunchDeps {
+interface TrayLaunchDeps {
   getSelectedRepo: () => RepoDto | undefined;
   getFilterQuery: () => string;
   getSectionCfg: () => SectionConfig;

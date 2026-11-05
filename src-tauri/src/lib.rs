@@ -3,42 +3,45 @@ mod launch;
 mod tray;
 
 use std::sync::{Arc, Mutex};
-use tauri::{Emitter, Manager, WindowEvent};
+use tauri::{Manager, WindowEvent};
 use workpot_core::AppState;
 
 fn init_logging() {
     // Filter via RUST_LOG, e.g. workpot_tray_lib=debug,workpot_core=debug (see justfile `launch`).
-    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
-        .format_timestamp_millis()
-        .try_init();
+    // Fails only when a logger is already installed; the logger itself is not usable to say so.
+    if let Err(e) =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+            .format_timestamp_millis()
+            .try_init()
+    {
+        eprintln!("workpot-tray: logger not initialised: {e}");
+    }
 }
 
 fn handle_repo_context_menu(app: &tauri::AppHandle, menu_id: &str) {
-    if !matches!(menu_id, "pin" | "add_tag" | "remove_tag" | "convert") {
+    if !matches!(
+        menu_id,
+        commands::MENU_ID_PIN
+            | commands::MENU_ID_ADD_TAG
+            | commands::MENU_ID_REMOVE_TAG
+            | commands::MENU_ID_CONVERT
+    ) {
         return;
     }
     let state = app.state::<commands::ContextMenuRepo>();
-    let repo_path = state
-        .0
-        .lock()
-        .ok()
-        .and_then(|g| g.clone())
-        .unwrap_or_default();
+    let repo_path = state.current().unwrap_or_default();
     if repo_path.is_empty() {
         return;
     }
-    if let Err(e) = app.emit(
+    commands::emit_or_log(
+        app,
         "repo-context-action",
         serde_json::json!({
             "action": menu_id,
             "repo_path": repo_path,
         }),
-    ) {
-        log::warn!("failed to emit repo-context-action: {e}");
-    }
-    if let Ok(mut guard) = state.0.lock() {
-        *guard = None;
-    }
+    );
+    state.clear();
 }
 
 fn handle_panel_window_event(window: &tauri::Window, event: &WindowEvent) {
@@ -52,7 +55,7 @@ fn handle_panel_window_event(window: &tauri::Window, event: &WindowEvent) {
             let app = window.app_handle();
             let context_menu_active = app
                 .try_state::<commands::ContextMenuRepo>()
-                .map(|state| state.0.lock().ok().is_some_and(|guard| guard.is_some()))
+                .map(|state| state.is_active())
                 .unwrap_or(false);
             if context_menu_active {
                 log::debug!("panel Focused(false) -> skip hide (context menu active)");
@@ -94,7 +97,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             #[cfg(target_os = "macos")]
-            if let Some(panel) = app.get_webview_window("panel") {
+            if let Some(panel) = app.get_webview_window(tray::PANEL_LABEL) {
                 tray::configure_panel_window(&panel);
             }
             if let Err(e) = tray::setup_tray(app) {
@@ -108,7 +111,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() == "panel" {
+            if window.label() == tray::PANEL_LABEL {
                 handle_panel_window_event(window, event);
             }
         })

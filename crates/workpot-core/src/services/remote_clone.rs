@@ -15,6 +15,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
+/// Synthetic path segment appended to a candidate path when testing exclude globs.
+const EXCLUDE_PROBE_SEGMENT: &str = "_";
+
 /// Parallel clones during an `auto` sync.
 const AUTO_CLONE_THREADS: usize = 4;
 
@@ -249,7 +252,8 @@ fn excluded_by_user(config: &Config, path: &Path) -> bool {
         return false;
     };
     let canonical = canonicalize_lenient(path);
-    set.is_match(&canonical) || set.is_match(canonical.join("_"))
+    // A `dir/**` exclude must also match `dir` itself, so probe one synthetic child as well.
+    set.is_match(&canonical) || set.is_match(canonical.join(EXCLUDE_PROBE_SEGMENT))
 }
 
 /// Canonicalize the deepest existing ancestor and re-append the missing tail.
@@ -259,9 +263,7 @@ fn canonicalize_lenient(path: &Path) -> PathBuf {
     loop {
         if let Ok(canon) = current.canonicalize() {
             let mut out = canon;
-            for part in tail.iter().rev() {
-                out.push(part);
-            }
+            out.extend(tail.iter().rev());
             return out;
         }
         match (current.parent(), current.file_name()) {

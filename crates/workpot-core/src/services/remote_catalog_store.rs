@@ -220,11 +220,30 @@ pub(crate) fn purge_unconfigured_sources(conn: &Connection, config: &Config) -> 
         .filter(|id| !known.contains(id.as_str()))
         .collect();
     for id in stale {
-        conn.execute("DELETE FROM remote_repos WHERE source_id = ?1", params![id])?;
-        conn.execute(
-            "DELETE FROM remote_sync_runs WHERE source_id = ?1",
-            params![id],
-        )?;
+        purge_source(conn, &id)?;
     }
+    Ok(())
+}
+
+/// Delete every indexed repo and sync-run row of `source_id` (source removed or unconfigured).
+pub(crate) fn purge_source(conn: &Connection, source_id: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM remote_repos WHERE source_id = ?1",
+        params![source_id],
+    )?;
+    conn.execute(
+        "DELETE FROM remote_sync_runs WHERE source_id = ?1",
+        params![source_id],
+    )?;
+    Ok(())
+}
+
+/// Flip a repo back to `present` after the host confirmed it still exists upstream.
+pub(crate) fn mark_present(conn: &Connection, source_id: &str, full_path: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE remote_repos SET state = 'present'
+         WHERE source_id = ?1 AND full_path = ?2",
+        params![source_id, full_path],
+    )?;
     Ok(())
 }

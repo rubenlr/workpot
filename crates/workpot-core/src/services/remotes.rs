@@ -4,7 +4,7 @@ use crate::AppState;
 use crate::domain::config::{ClonePolicy, GitProtocol, RemoteSource};
 use crate::error::{Result, WorkpotError};
 use crate::save_config;
-use rusqlite::params;
+use crate::services::remote_catalog_store::purge_source;
 use std::path::PathBuf;
 
 /// Partial update of a source; `None` leaves the field unchanged.
@@ -36,7 +36,7 @@ fn update_config(
     result
 }
 
-pub fn add_remote(state: &AppState, source: RemoteSource) -> Result<()> {
+pub(crate) fn add_remote(state: &AppState, source: RemoteSource) -> Result<()> {
     update_config(state, |remotes| {
         if remotes.iter().any(|r| r.name == source.name) {
             return Err(WorkpotError::InvalidInput(format!(
@@ -49,7 +49,7 @@ pub fn add_remote(state: &AppState, source: RemoteSource) -> Result<()> {
     })
 }
 
-pub fn set_remote(state: &AppState, name: &str, patch: RemotePatch) -> Result<()> {
+pub(crate) fn set_remote(state: &AppState, name: &str, patch: RemotePatch) -> Result<()> {
     update_config(state, |remotes| {
         let source = remotes
             .iter_mut()
@@ -76,7 +76,7 @@ pub fn set_remote(state: &AppState, name: &str, patch: RemotePatch) -> Result<()
 
 /// Remove a source and its index. Existing local clones stay on disk and in the catalog as
 /// ordinary repos.
-pub fn remove_remote(state: &AppState, name: &str) -> Result<()> {
+pub(crate) fn remove_remote(state: &AppState, name: &str) -> Result<()> {
     update_config(state, |remotes| {
         let before = remotes.len();
         remotes.retain(|r| r.name != name);
@@ -85,15 +85,5 @@ pub fn remove_remote(state: &AppState, name: &str) -> Result<()> {
         }
         Ok(())
     })?;
-    state.with_write_connection(|conn| {
-        conn.execute(
-            "DELETE FROM remote_repos WHERE source_id = ?1",
-            params![name],
-        )?;
-        conn.execute(
-            "DELETE FROM remote_sync_runs WHERE source_id = ?1",
-            params![name],
-        )?;
-        Ok(())
-    })
+    state.with_write_connection(|conn| purge_source(conn, name))
 }

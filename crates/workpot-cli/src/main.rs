@@ -343,8 +343,13 @@ impl fmt::Display for LaunchFailed {
 impl std::error::Error for LaunchFailed {}
 
 fn main() -> ExitCode {
-    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
-        .try_init();
+    // Fails only when a logger is already installed; the logger itself is not usable to say so.
+    if let Err(e) =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+            .try_init()
+    {
+        eprintln!("warning: logger not initialised: {e}");
+    }
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e)
@@ -365,6 +370,10 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn open_context() -> anyhow::Result<AppContext> {
+    AppContext::open().context("failed to open workpot")
 }
 
 fn unix_now_secs() -> i64 {
@@ -428,9 +437,7 @@ fn run_db_reset() -> anyhow::Result<()> {
 
 fn run_settings(args: SettingsArgs) -> anyhow::Result<()> {
     if args.add_comments && args.command.is_some() {
-        return Err(anyhow::anyhow!(
-            "settings: use either a subcommand or --add-comments, not both"
-        ));
+        anyhow::bail!("settings: use either a subcommand or --add-comments, not both");
     }
     match args.command {
         Some(SettingsCommands::Init { force }) => run_settings_init(force),
@@ -469,7 +476,7 @@ fn run_settings_add_comments() -> anyhow::Result<()> {
 }
 
 fn run_paths() -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     println!("config: {}", ctx.config_path().display());
     println!("database: {}", ctx.database_path().display());
     let roots = ctx.roots_list()?;
@@ -511,7 +518,7 @@ fn print_remote_summary(summary: &workpot_core::services::remote_catalog_sync::R
 }
 
 fn run_sync_cmd(scope: Option<SyncCommands>) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     let (label, summary) = match scope {
         None => {
             let full = ctx.run_sync_full(true)?;
@@ -536,7 +543,7 @@ fn run_sync_cmd(scope: Option<SyncCommands>) -> anyhow::Result<()> {
 }
 
 fn run_remotes(sub: RemotesCommands) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     match sub {
         RemotesCommands::Add(args) => run_remotes_add(&ctx, args),
         RemotesCommands::List => run_remotes_list(&ctx),
@@ -675,7 +682,7 @@ fn map_remote_error(err: WorkpotError) -> anyhow::Error {
 }
 
 fn run_clone(identifier: &str) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     let outcome = ctx.clone_remote(identifier).map_err(|e| match e {
         WorkpotError::NotFound(_) => anyhow::anyhow!(
             "remote repo not found: {identifier} (run `workpot sync remote` to refresh the index)"
@@ -730,18 +737,17 @@ fn print_remote_only(ctx: &AppContext, query: &str) -> anyhow::Result<()> {
 }
 
 fn run_list() -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     let repos = ctx.list_repos().context("list failed")?;
     print_ordered_repos(&ctx, repos)?;
     print_remote_only(&ctx, "")
 }
 
 fn run_search(query: &str) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     let mut repos = ctx.list_repos().context("list failed")?;
-    // Trim query; empty (or whitespace-only) → retain all (D-05, RESEARCH pitfall 6).
-    // fuzzy_match already handles empty query as "match all", but retaining explicitly
-    // keeps the intent clear and avoids the filter allocation on the common no-query path.
+    // An empty (or whitespace-only) query keeps every repo; skipping the filter also avoids
+    // an allocation on the common no-query path.
     let trimmed = query.trim();
     if !trimmed.is_empty() {
         repos.retain(|r| fuzzy_match(trimmed, r));
@@ -753,58 +759,64 @@ fn run_search(query: &str) -> anyhow::Result<()> {
 fn run_repo(sub: RepoCommands) -> anyhow::Result<()> {
     match sub {
         RepoCommands::Add { path } => {
-            let ctx = AppContext::open().context("failed to open workpot")?;
+            let ctx = open_context()?;
             let record = ctx.register_manual(&path).context("repo add failed")?;
             println!("registered: {}", record.path.display());
         }
-        RepoCommands::List => {
-            let ctx = AppContext::open().context("failed to open workpot")?;
-            let repos = ctx.list_repos().context("repo list failed")?;
-            for repo in repos {
-                let display_name = repo.alias.as_deref().unwrap_or(&repo.name);
-                println!(
-                    "{}  {}  {}",
-                    display_name,
-                    repo.path.display(),
-                    format_git_state(&repo)
-                );
-            }
-        }
+        RepoCommands::List => run_repo_list()?,
         RepoCommands::Remove { path } => {
-            let ctx = AppContext::open().context("failed to open workpot")?;
+            let ctx = open_context()?;
             ctx.remove_repo(&path).context("repo remove failed")?;
             println!("removed: {}", path.display());
         }
-        RepoCommands::Convert { path, to, dry_run } => {
-            let ctx = AppContext::open().context("failed to open workpot")?;
-            let core_target = match to {
-                CliConvertTarget::Bare => ConvertTarget::Bare,
-                CliConvertTarget::Local => ConvertTarget::Local,
-            };
-            match ctx
-                .convert_repo(&path, core_target, dry_run)
-                .map_err(map_convert_error)?
-            {
-                ConvertResult::Converted { from, to } => {
-                    println!("converted: {} -> {}", from.display(), to.display());
-                }
-                ConvertResult::DryRun {
-                    preflight,
-                    resolved_paths,
-                } => {
-                    for (label, resolved) in resolved_paths {
-                        println!("  {}: {}", label, resolved.display());
-                    }
-                    println!("preflight: {preflight:?}");
-                }
+        RepoCommands::Convert { path, to, dry_run } => run_repo_convert(&path, to, dry_run)?,
+    }
+    Ok(())
+}
+
+fn run_repo_list() -> anyhow::Result<()> {
+    let ctx = open_context()?;
+    let repos = ctx.list_repos().context("repo list failed")?;
+    for repo in repos {
+        let display_name = repo.alias.as_deref().unwrap_or(&repo.name);
+        println!(
+            "{}  {}  {}",
+            display_name,
+            repo.path.display(),
+            format_git_state(&repo)
+        );
+    }
+    Ok(())
+}
+
+fn run_repo_convert(path: &Path, to: CliConvertTarget, dry_run: bool) -> anyhow::Result<()> {
+    let ctx = open_context()?;
+    let core_target = match to {
+        CliConvertTarget::Bare => ConvertTarget::Bare,
+        CliConvertTarget::Local => ConvertTarget::Local,
+    };
+    match ctx
+        .convert_repo(path, core_target, dry_run)
+        .map_err(map_convert_error)?
+    {
+        ConvertResult::Converted { from, to } => {
+            println!("converted: {} -> {}", from.display(), to.display());
+        }
+        ConvertResult::DryRun {
+            preflight,
+            resolved_paths,
+        } => {
+            for (label, resolved) in resolved_paths {
+                println!("  {}: {}", label, resolved.display());
             }
+            println!("preflight: {preflight:?}");
         }
     }
     Ok(())
 }
 
 fn run_excludes(sub: ExcludesCommands) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     match sub {
         ExcludesCommands::List => {
             for glob in ctx.excludes_list()? {
@@ -821,7 +833,7 @@ fn run_excludes(sub: ExcludesCommands) -> anyhow::Result<()> {
 }
 
 fn run_roots(sub: RootsCommands) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     match sub {
         RootsCommands::Add { path } => {
             ctx.roots_add(&path).map_err(map_roots_error)?;
@@ -842,7 +854,7 @@ fn run_roots(sub: RootsCommands) -> anyhow::Result<()> {
 }
 
 fn run_tag(action: TagAction) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     match action {
         TagAction::Add { repo, tag } => {
             let path_key = resolve_repo_identifier(&ctx, &repo)?;
@@ -868,10 +880,10 @@ fn run_tag(action: TagAction) -> anyhow::Result<()> {
 }
 
 fn run_open(identifier: &str) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
-    // resolve_repo_identifier handles D-09 (ambiguous) and D-11 (not found) exits via Err
+    let ctx = open_context()?;
+    // Ambiguous and not-found identifiers come back as errors.
     let path_key = resolve_repo_identifier(&ctx, identifier)?;
-    // D-10: print full canonical path before launch
+    // Print the full canonical path before launch.
     println!("opening: {path_key}");
     launch_repo(&ctx, &path_key).map_err(LaunchFailed)?;
     Ok(())
@@ -881,21 +893,12 @@ fn run_open(identifier: &str) -> anyhow::Result<()> {
 fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result<String> {
     let identifier = identifier.trim();
     if identifier.is_empty() {
-        return Err(anyhow::anyhow!("repo not found: (empty identifier)"));
+        anyhow::bail!("repo not found: (empty identifier)");
     }
     let repos = ctx.list_repos().context("failed to list repos")?;
 
-    if let Some(path_key) = match_repo_path_key(&repos, identifier) {
-        return Ok(path_key);
-    }
-
-    let path = Path::new(identifier);
-    if (path.is_absolute() || identifier.contains(std::path::MAIN_SEPARATOR))
-        && let Ok(canon) = path.canonicalize()
-        && let Some(path_key) = repos
-            .iter()
-            .find(|r| r.path == canon)
-            .map(|r| r.path.display().to_string())
+    if let Some(path_key) = match_repo_path_key(&repos, identifier)
+        .or_else(|| match_canonical_path_key(&repos, identifier))
     {
         return Ok(path_key);
     }
@@ -904,36 +907,54 @@ fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result
         .iter()
         .filter(|r| r.alias.as_deref() == Some(identifier))
         .collect();
-    match alias_matches.len() {
-        0 => {}
-        1 => return Ok(alias_matches[0].path.display().to_string()),
-        _ => {
-            let mut msg = format!("error: ambiguous repo alias '{identifier}'; matches:\n");
-            for (i, r) in alias_matches.iter().enumerate() {
-                msg.push_str(&format!("{}. {}\n", i + 1, r.path.display()));
-            }
-            msg.push_str("use the full path from 'workpot list'");
-            return Err(anyhow::anyhow!("{msg}"));
-        }
+    if let Some(path_key) = unique_match("alias", identifier, &alias_matches)? {
+        return Ok(path_key);
     }
 
-    let matches: Vec<&RepoRecord> = repos.iter().filter(|r| r.name == identifier).collect();
-    match matches.len() {
-        0 => match ctx.resolve_remote_only(identifier)? {
-            // Not cloned yet: `launch_repo` clones first when the source policy allows it.
-            Some(record) => Ok(record.clone_path.display().to_string()),
-            None => Err(anyhow::anyhow!("repo not found: {identifier}")),
-        },
-        1 => Ok(matches[0].path.display().to_string()),
-        _ => {
-            let mut msg = format!("error: ambiguous repo name '{identifier}'; matches:\n");
-            for (i, r) in matches.iter().enumerate() {
+    let name_matches: Vec<&RepoRecord> = repos.iter().filter(|r| r.name == identifier).collect();
+    if let Some(path_key) = unique_match("name", identifier, &name_matches)? {
+        return Ok(path_key);
+    }
+
+    // Not cloned yet: `launch_repo` clones first when the source policy allows it.
+    match ctx.resolve_remote_only(identifier)? {
+        Some(record) => Ok(record.clone_path.display().to_string()),
+        None => Err(anyhow::anyhow!("repo not found: {identifier}")),
+    }
+}
+
+/// Path key of the single repo in `matches`: `None` when empty, an error listing every
+/// candidate when ambiguous. `kind` names the matched field in the message.
+fn unique_match(
+    kind: &str,
+    identifier: &str,
+    matches: &[&RepoRecord],
+) -> anyhow::Result<Option<String>> {
+    match matches {
+        [] => Ok(None),
+        [only] => Ok(Some(only.path.display().to_string())),
+        many => {
+            let mut msg = format!("error: ambiguous repo {kind} '{identifier}'; matches:\n");
+            for (i, r) in many.iter().enumerate() {
                 msg.push_str(&format!("{}. {}\n", i + 1, r.path.display()));
             }
             msg.push_str("use the full path from 'workpot list'");
             Err(anyhow::anyhow!("{msg}"))
         }
     }
+}
+
+/// Path key of the repo whose canonical path is `identifier` (absolute, or relative with a separator).
+fn match_canonical_path_key(repos: &[RepoRecord], identifier: &str) -> Option<String> {
+    let path = Path::new(identifier);
+    if !(path.is_absolute() || identifier.contains(std::path::MAIN_SEPARATOR)) {
+        return None;
+    }
+    let canon = path.canonicalize().ok()?;
+    repos
+        .iter()
+        .find(|r| r.path == canon)
+        .map(|r| r.path.display().to_string())
 }
 
 fn match_repo_path_key(repos: &[RepoRecord], identifier: &str) -> Option<String> {

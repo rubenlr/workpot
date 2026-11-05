@@ -17,7 +17,7 @@ pub struct FullSyncSummary {
 /// Remote catalog first (so fresh clones are picked up by the local pass), then local catalog
 /// sync. Remote failures are soft: they land in `remote.source_errors` and never block the
 /// local pass. `force_remote` bypasses the remote TTL.
-pub fn run_full(
+pub(crate) fn run_full(
     pool: &DbPool,
     config: &Config,
     api: &dyn RemoteApi,

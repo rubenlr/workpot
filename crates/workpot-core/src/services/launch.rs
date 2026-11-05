@@ -4,23 +4,24 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::AppState;
+use crate::domain::config::ClonePolicy;
+
+/// Location of the bundled CLI inside an `Applications` directory.
+#[cfg(target_os = "macos")]
+const CURSOR_BUNDLED_CLI: &str = "Applications/Cursor.app/Contents/Resources/app/bin/cursor";
 
 /// macOS Cursor.app bundled CLI locations (bare `cursor` is often missing from GUI PATH).
 #[cfg(target_os = "macos")]
 fn cursor_bundled_candidates() -> Vec<PathBuf> {
-    let mut paths = vec![PathBuf::from(
-        "/Applications/Cursor.app/Contents/Resources/app/bin/cursor",
-    )];
+    let mut paths = vec![PathBuf::from("/").join(CURSOR_BUNDLED_CLI)];
     if let Some(home) = std::env::var_os("HOME") {
-        paths.push(
-            PathBuf::from(home).join("Applications/Cursor.app/Contents/Resources/app/bin/cursor"),
-        );
+        paths.push(PathBuf::from(home).join(CURSOR_BUNDLED_CLI));
     }
     paths
 }
 
 /// Resolve bare `cursor` to an installed Cursor.app binary on macOS; honor absolute paths and other programs.
-pub fn resolve_launch_program(program: &str) -> String {
+fn resolve_launch_program(program: &str) -> String {
     if program != "cursor" {
         return program.to_string();
     }
@@ -36,7 +37,7 @@ pub fn resolve_launch_program(program: &str) -> String {
 }
 
 /// Split `launch_cmd` template into program + args after substituting `{path}`.
-pub fn build_command(template: &str, repo_path: &Path) -> Result<(String, Vec<String>), String> {
+fn build_command(template: &str, repo_path: &Path) -> Result<(String, Vec<String>), String> {
     crate::services::path_cmd_template::build_path_cmd_template(template, repo_path, "launch_cmd")
 }
 
@@ -55,7 +56,9 @@ pub fn launch_repo(ctx: &AppState, path: &str) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("failed to launch {program}: {e}"))?;
     std::thread::spawn(move || {
-        let _ = child.wait();
+        if let Err(e) = child.wait() {
+            log::warn!("waiting for the launched IDE process failed: {e}");
+        }
     });
     ctx.touch_last_opened_at(catalog_path)
         .map_err(|e| e.to_string())?;
@@ -86,7 +89,7 @@ pub fn ensure_cloned_for_open(
                 record.source_id
             )
         })?;
-    if policy == crate::domain::config::ClonePolicy::Manual {
+    if policy == ClonePolicy::Manual {
         return Err(format!(
             "{} is not cloned; clone it first (`workpot clone {}`)",
             record.full_path, record.full_path

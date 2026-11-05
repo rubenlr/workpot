@@ -17,6 +17,7 @@ use crate::infra::git;
 use crate::infra::remote_provider::RemoteApi;
 use crate::services::catalog;
 use crate::services::remote_catalog::{self, RemoteRepoRecord};
+use crate::services::remote_catalog_store::mark_present;
 use git2::Repository;
 use rusqlite::params;
 use std::path::Path;
@@ -141,14 +142,7 @@ fn prune_one(
 ) -> Result<Option<String>> {
     // Confirm with the host; a transient/API error must never lead to deletion.
     if api.repo_exists(source, &record.full_path)? {
-        pool.with_write(|conn| {
-            conn.execute(
-                "UPDATE remote_repos SET state = 'present'
-                 WHERE source_id = ?1 AND full_path = ?2",
-                params![record.source_id, record.full_path],
-            )?;
-            Ok(())
-        })?;
+        pool.with_write(|conn| mark_present(conn, &record.source_id, &record.full_path))?;
         return Ok(Some("still exists upstream".into()));
     }
 

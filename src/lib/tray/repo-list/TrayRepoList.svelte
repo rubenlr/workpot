@@ -92,10 +92,11 @@
 
   onMount(() => {
     const handleContextMenu = (e: MouseEvent) => {
-      if ((e.target as Element)?.closest("[data-sync-action]")) {
+      const target = e.target instanceof Element ? e.target : null;
+      if (target?.closest("[data-sync-action]")) {
         return;
       }
-      const rowEl = (e.target as Element)?.closest("[data-row-index]");
+      const rowEl = target?.closest("[data-row-index]");
       if (!rowEl) {
         return;
       }

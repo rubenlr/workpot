@@ -15,7 +15,11 @@ export const MATERIAL_ICON_FALLBACKS: Readonly<Record<string, string>> = {
 };
 
 export function materialIconFallback(name: string, filled = false): string {
-  if (name === "keep") return filled ? "📌" : "📍";
-  if (name === "star") return filled ? "★" : "☆";
+  if (name === "keep") {
+    return filled ? "📌" : "📍";
+  }
+  if (name === "star") {
+    return filled ? "★" : "☆";
+  }
   return MATERIAL_ICON_FALLBACKS[name] ?? "•";
 }

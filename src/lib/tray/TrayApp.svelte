@@ -14,8 +14,8 @@
     void panel.mount();
 
     const onContextMenu = (e: MouseEvent) => {
-      const row = (e.target as Element)?.closest("[data-row-index]");
-      if (row) {
+      const target = e.target instanceof Element ? e.target : null;
+      if (target?.closest("[data-row-index]")) {
         e.preventDefault();
       }
     };

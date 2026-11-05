@@ -93,10 +93,13 @@ export function createTrayPanel() {
     list.selectedIndex = 0;
   }
 
+  const refresh = () => data.refresh();
+  const onError = (e: unknown) => data.setListError(String(e));
+
   const syncDeps: TrayRepoSyncDeps = {
     invoke,
-    refresh: () => data.refresh(),
-    onError: (e) => data.setListError(String(e)),
+    refresh,
+    onError,
     setActiveSync: (sync) => {
       activeSync = sync;
     },
@@ -107,8 +110,8 @@ export function createTrayPanel() {
 
   const convertDeps: TrayRepoConvertDeps = {
     invoke,
-    refresh: () => data.refresh(),
-    onError: (e) => data.setListError(String(e)),
+    refresh,
+    onError,
     setActiveConvert: (convert) => {
       activeConvert = convert;
     },
@@ -116,8 +119,8 @@ export function createTrayPanel() {
 
   const cloneDeps: TrayRepoCloneDeps = {
     invoke,
-    refresh: () => data.refresh(),
-    onError: (e) => data.setListError(String(e)),
+    refresh,
+    onError,
     addCloning: (path) => {
       if (!cloningPaths.includes(path)) {
         cloningPaths = [...cloningPaths, path];
@@ -143,8 +146,8 @@ export function createTrayPanel() {
 
   const actionDeps: TrayRepoActionsDeps = {
     invoke,
-    refresh: () => data.refresh(),
-    onError: (e) => data.setListError(String(e)),
+    refresh,
+    onError,
     openDetailWithTagFocus: (repo) => detail.openDetailWithTagFocus(repo),
     onConvert: handleConvert,
   };
@@ -369,7 +372,7 @@ export function createTrayPanel() {
     dismissLaunchError: launch.dismissLaunchError,
     dismissListError: data.dismissListError,
     bindFilterInput: keyboard.bindFilterInput,
-    refreshReposAndDetail: () => data.refresh(),
+    refreshReposAndDetail: refresh,
     startSync: beginSync,
     mount,
     destroy,

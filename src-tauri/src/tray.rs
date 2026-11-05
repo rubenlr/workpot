@@ -1,45 +1,54 @@
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::{
-    Emitter, Manager, PhysicalPosition,
+    Manager, PhysicalPosition,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 use workpot_core::AppState;
+use workpot_core::domain::config::DEFAULT_STALE_DIRTY_DAYS;
 use workpot_core::services::local_catalog_sync::LocalCatalogSyncSummary;
 use workpot_core::services::sync::FullSyncSummary;
 
 use crate::commands::{
-    CatalogSyncGuard, reset_tray_icon_after_sync, start_tray_sync_animation,
+    CatalogSyncGuard, emit_or_log, reset_tray_icon_after_sync, start_tray_sync_animation,
     stop_tray_sync_animation, update_tray_icon_state,
 };
 
+/// Label of the panel webview window (declared in tauri.conf.json).
+pub(crate) const PANEL_LABEL: &str = "panel";
+const EVENT_SYNC_FAILED: &str = "sync-failed";
+const TRAY_MENU_REFRESH_SYNC: &str = "refresh_sync";
+const TRAY_MENU_PREFERENCES: &str = "preferences";
+const TRAY_MENU_ABOUT: &str = "about";
+const TRAY_MENU_QUIT: &str = "quit";
+
 /// Tray status icons loaded at setup (default, stale-dirty, syncing animation frames).
-pub struct TrayIcons {
-    pub default: tauri::image::Image<'static>,
-    pub stale_dirty: tauri::image::Image<'static>,
-    pub syncing: Vec<tauri::image::Image<'static>>,
+pub(crate) struct TrayIcons {
+    pub(crate) default: tauri::image::Image<'static>,
+    pub(crate) stale_dirty: tauri::image::Image<'static>,
+    syncing: Vec<tauri::image::Image<'static>>,
 }
 
 impl TrayIcons {
-    pub fn syncing_frame(&self, idx: usize) -> &tauri::image::Image<'static> {
+    pub(crate) fn syncing_frame(&self, idx: usize) -> &tauri::image::Image<'static> {
         &self.syncing[idx % self.syncing.len()]
     }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct SyncSummaryDto {
-    pub added: u32,
-    pub removed: u32,
-    pub skipped: u32,
-    pub git_refreshed: u32,
-    pub git_errors: u32,
-    pub remote_indexed: u32,
-    pub remote_added: u32,
-    pub remote_cloned: u32,
-    pub remote_pruned: u32,
+struct SyncSummaryDto {
+    added: u32,
+    removed: u32,
+    skipped: u32,
+    git_refreshed: u32,
+    git_errors: u32,
+    remote_indexed: u32,
+    remote_added: u32,
+    remote_cloned: u32,
+    remote_pruned: u32,
     /// Soft per-source errors from the remote catalog pass (e.g. not authenticated).
-    pub remote_errors: Vec<String>,
+    remote_errors: Vec<String>,
 }
 
 impl From<LocalCatalogSyncSummary> for SyncSummaryDto {
@@ -85,48 +94,52 @@ pub(crate) fn configure_panel_window(window: &tauri::WebviewWindow) {
     use tauri::window::Color;
     use window_vibrancy::{NSVisualEffectMaterial, NSVisualEffectState, apply_vibrancy};
 
-    let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
-    let _ = apply_vibrancy(
+    if let Err(e) = window.set_background_color(Some(Color(0, 0, 0, 0))) {
+        log::warn!("panel set_background_color failed: {e}");
+    }
+    if let Err(e) = apply_vibrancy(
         window,
         NSVisualEffectMaterial::HudWindow,
         Some(NSVisualEffectState::Active),
         None,
-    );
+    ) {
+        log::warn!("panel apply_vibrancy failed: {e}");
+    }
 }
 
-pub(crate) fn emit_panel_closed(app: &tauri::AppHandle) {
+fn emit_panel_closed(app: &tauri::AppHandle) {
     log::debug!("emit panel-closed");
-    if let Err(e) = app.emit("panel-closed", ()) {
-        log::warn!("failed to emit panel-closed: {e}");
+    emit_or_log(app, "panel-closed", ());
+}
+
+/// Run `hide` (a window's `hide()`); notify the frontend only when it succeeded.
+fn hide_and_notify(app: &tauri::AppHandle, hide: tauri::Result<()>) {
+    if let Err(e) = hide {
+        log::warn!("panel hide failed: {e}");
+    } else {
+        emit_panel_closed(app);
     }
 }
 
 pub(crate) fn hide_panel_on_window(app: &tauri::AppHandle, window: &tauri::Window) {
-    if let Err(e) = window.hide() {
-        log::warn!("panel hide failed: {e}");
-    } else {
-        emit_panel_closed(app);
-    }
+    hide_and_notify(app, window.hide());
 }
 
 fn hide_panel(app: &tauri::AppHandle, panel: &tauri::WebviewWindow) {
-    if let Err(e) = panel.hide() {
-        log::warn!("panel hide failed: {e}");
-    } else {
-        emit_panel_closed(app);
-    }
+    hide_and_notify(app, panel.hide());
 }
 
 fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
-    let Some(panel) = app.get_webview_window("panel") else {
+    let Some(panel) = app.get_webview_window(PANEL_LABEL) else {
         return;
     };
 
     if let Some(rect) = rect
         && let (tauri::Position::Physical(pos), tauri::Size::Physical(size)) =
             (rect.position, rect.size)
+        && let Err(e) = panel.set_position(PhysicalPosition::new(pos.x, pos.y + size.height as i32))
     {
-        let _ = panel.set_position(PhysicalPosition::new(pos.x, pos.y + size.height as i32));
+        log::warn!("panel set_position failed: {e}");
     }
 
     #[cfg(target_os = "macos")]
@@ -139,9 +152,7 @@ fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
         log::warn!("panel set_focus failed: {e}");
     }
     log::debug!("show_panel: emitting panel-opened");
-    if let Err(e) = app.emit("panel-opened", ()) {
-        log::warn!("failed to emit panel-opened: {e}");
-    }
+    emit_or_log(app, "panel-opened", ());
     if let Some(state) = app.try_state::<Arc<AppState>>() {
         // Panel open honours the remote TTL; explicit Sync / Cmd+R forces a remote listing.
         spawn_background_sync(app.clone(), state.inner().clone(), false);
@@ -173,13 +184,14 @@ fn spawn_background_sync_inner(
     guard: Option<CatalogSyncGuard>,
     force_remote: bool,
 ) {
-    let stale_dirty_days = state.config().map(|c| c.stale_dirty_days).unwrap_or(7);
+    let stale_dirty_days = state
+        .config()
+        .map(|c| c.stale_dirty_days)
+        .unwrap_or(DEFAULT_STALE_DIRTY_DAYS);
     update_tray_icon_state(&app, &[], stale_dirty_days, true);
     let animation_cancel = start_tray_sync_animation(&app);
     log::info!("background sync: started");
-    if let Err(e) = app.emit("sync-started", ()) {
-        log::warn!("failed to emit sync-started: {e}");
-    }
+    emit_or_log(&app, "sync-started", ());
     tauri::async_runtime::spawn(async move {
         let started = Instant::now();
         let state_for_blocking = Arc::clone(&state);
@@ -197,42 +209,46 @@ fn spawn_background_sync_inner(
             guard.finish();
         }
 
-        match blocking_result {
-            Ok(Ok(summary)) => {
-                log::info!(
-                    "background sync: complete elapsed_ms={elapsed_ms} added={} removed={} git_refreshed={} remote_indexed={} remote_cloned={} remote_errors={}",
-                    summary.local.added,
-                    summary.local.removed,
-                    summary.local.git_refreshed,
-                    summary.remote.indexed,
-                    summary.remote.cloned,
-                    summary.remote.errors
-                );
-                let dto = SyncSummaryDto::from(summary);
-                if let Err(e) = app.emit("sync-complete", &dto) {
-                    log::warn!("failed to emit sync-complete: {e}");
-                }
-            }
-            Ok(Err(e)) => {
-                log::warn!("background sync: failed elapsed_ms={elapsed_ms}: {e}");
-                if let Err(err) = app.emit("sync-failed", &e) {
-                    log::warn!("failed to emit sync-failed: {err}");
-                }
-            }
-            Err(join_err) => {
-                let msg = format!("background sync task panicked or was cancelled: {join_err}");
-                log::error!("background sync: failed elapsed_ms={elapsed_ms}: {msg}");
-                if let Err(err) = app.emit("sync-failed", &msg) {
-                    log::warn!("failed to emit sync-failed: {err}");
-                }
-            }
-        }
+        emit_sync_outcome(&app, elapsed_ms, blocking_result);
     });
+}
+
+/// Log a finished background sync (or its join failure) and emit `sync-complete` / `sync-failed`.
+fn emit_sync_outcome<E: std::fmt::Display>(
+    app: &tauri::AppHandle,
+    elapsed_ms: u128,
+    outcome: Result<Result<FullSyncSummary, String>, E>,
+) {
+    match outcome {
+        Ok(Ok(summary)) => {
+            log::info!(
+                "background sync: complete elapsed_ms={elapsed_ms} added={} removed={} git_refreshed={} remote_indexed={} remote_cloned={} remote_errors={}",
+                summary.local.added,
+                summary.local.removed,
+                summary.local.git_refreshed,
+                summary.remote.indexed,
+                summary.remote.cloned,
+                summary.remote.errors
+            );
+            emit_or_log(app, "sync-complete", &SyncSummaryDto::from(summary));
+        }
+        Ok(Err(e)) => {
+            log::warn!("background sync: failed elapsed_ms={elapsed_ms}: {e}");
+            emit_or_log(app, EVENT_SYNC_FAILED, &e);
+        }
+        Err(join_err) => {
+            let msg = format!("background sync task panicked or was cancelled: {join_err}");
+            log::error!("background sync: failed elapsed_ms={elapsed_ms}: {msg}");
+            emit_or_log(app, EVENT_SYNC_FAILED, &msg);
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
 fn open_path_in_default_app(path: &std::path::Path) {
-    let _ = std::process::Command::new("open").arg(path).spawn();
+    if let Err(e) = std::process::Command::new("open").arg(path).spawn() {
+        log::warn!("failed to open {} in the default app: {e}", path.display());
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -240,31 +256,34 @@ fn show_about_dialog(version: &str) {
     let script = format!(
         r#"display dialog "Workpot {version}" with title "About Workpot" buttons {{"OK"}} default button "OK""#
     );
-    let _ = std::process::Command::new("osascript")
+    if let Err(e) = std::process::Command::new("osascript")
         .args(["-e", &script])
-        .spawn();
+        .spawn()
+    {
+        log::warn!("failed to show the About dialog: {e}");
+    }
 }
 
 fn handle_tray_menu_event(app: &tauri::AppHandle, menu_id: &str) {
     match menu_id {
-        "refresh_sync" => {
+        TRAY_MENU_REFRESH_SYNC => {
             if let Some(state) = app.try_state::<Arc<AppState>>() {
                 spawn_background_sync(app.clone(), state.inner().clone(), true);
             }
         }
-        "preferences" => {
+        TRAY_MENU_PREFERENCES => {
             if let Some(state) = app.try_state::<Arc<AppState>>() {
                 open_path_in_default_app(state.config_path());
             }
         }
-        "about" => show_about_dialog(workpot_core::version()),
-        "quit" => app.exit(0),
+        TRAY_MENU_ABOUT => show_about_dialog(workpot_core::version()),
+        TRAY_MENU_QUIT => app.exit(0),
         _ => {}
     }
 }
 
 fn toggle_panel_on_tray_click(app: &tauri::AppHandle, rect: tauri::Rect) {
-    let Some(panel) = app.get_webview_window("panel") else {
+    let Some(panel) = app.get_webview_window(PANEL_LABEL) else {
         return;
     };
     if panel.is_visible().unwrap_or(false) {
@@ -275,18 +294,24 @@ fn toggle_panel_on_tray_click(app: &tauri::AppHandle, rect: tauri::Rect) {
 }
 
 fn build_tray_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
-    let refresh_sync = MenuItem::with_id(app, "refresh_sync", "Sync", true, None::<&str>)?;
-    let preferences = MenuItem::with_id(app, "preferences", "Preferences…", true, None::<&str>)?;
-    let about = MenuItem::with_id(app, "about", "About Workpot", true, None::<&str>)?;
+    let refresh_sync = MenuItem::with_id(app, TRAY_MENU_REFRESH_SYNC, "Sync", true, None::<&str>)?;
+    let preferences = MenuItem::with_id(
+        app,
+        TRAY_MENU_PREFERENCES,
+        "Preferences…",
+        true,
+        None::<&str>,
+    )?;
+    let about = MenuItem::with_id(app, TRAY_MENU_ABOUT, "About Workpot", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Workpot", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, TRAY_MENU_QUIT, "Quit Workpot", true, None::<&str>)?;
     Menu::with_items(
         app,
         &[&refresh_sync, &preferences, &about, &separator, &quit],
     )
 }
 
-pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+pub(crate) fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let default_icon = embedded_tray_icon(include_bytes!("../icons/tray-default.png"));
     let stale_dirty_icon = embedded_tray_icon(include_bytes!("../icons/tray-stale-dirty.png"));
     let syncing_frame0 = embedded_tray_icon(include_bytes!("../icons/tray-syncing-0.png"));
@@ -300,7 +325,7 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 
     let menu = build_tray_menu(app)?;
 
-    let _tray = TrayIconBuilder::with_id("main")
+    let _tray = TrayIconBuilder::with_id(crate::commands::TRAY_ID)
         .icon(tray_icon)
         .menu(&menu)
         .show_menu_on_left_click(false)

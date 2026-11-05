@@ -3,11 +3,27 @@ use crate::domain::{
     attach_location, merge_overlapping_projects, normalize_remote_url,
 };
 use crate::error::{Result, WorkpotError};
+use crate::infra::db::DbPool;
 use crate::infra::git::{self, resolve_git_common_dir};
 use crate::services::{catalog, discovery, git_state, paths};
+use globset::GlobSet;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+
+/// `local_catalog_sync_changes.action` values.
+const ACTION_ADDED: &str = "added";
+const ACTION_REMOVED: &str = "removed";
+const ACTION_SKIPPED: &str = "skipped";
+
+/// Name given to a project when its folder name cannot be read.
+const DEFAULT_PROJECT_NAME: &str = "project";
+
+/// `project_remotes.role` values.
+const ROLE_ROOT: &str = "root";
+const ROLE_FORK: &str = "fork";
+/// Git remote name that marks a project's root remote as reached through a fork's upstream.
+const UPSTREAM_REMOTE_NAME: &str = "upstream";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LocalCatalogSyncSummary {
@@ -27,51 +43,24 @@ struct ChangeEntry {
 /// Discovery output for phased local catalog sync (filesystem scan + read-only catalog queries).
 #[derive(Debug)]
 pub struct DiscoveryPlan {
-    pub started_at: i64,
-    pub upserts: Vec<(PathBuf, String)>,
+    started_at: i64,
+    upserts: Vec<(PathBuf, String)>,
     pub removes: Vec<String>,
-    pub pre_skipped: u32,
+    pre_skipped: u32,
     changelog: Vec<ChangeEntry>,
     pub scan_candidate_count: usize,
 }
 
 /// Phase 1: scan watch roots and plan catalog changes (read connection only).
 pub fn discover_phase(conn: &Connection, config: &Config) -> Result<DiscoveryPlan> {
-    let started_at = crate::services::git_state::unix_now_secs();
+    let started_at = git_state::unix_now_secs();
     let exclude_set = discovery::build_exclude_set(config)?;
     let watch_roots = canonical_watch_roots(config);
     let configured_roots = &config.watch_roots;
-    let mut changelog: Vec<ChangeEntry> = Vec::new();
-    let mut pre_skipped = 0u32;
 
-    let mut seen_paths: HashSet<String> = HashSet::new();
-    let mut scan_candidates: Vec<PathBuf> = Vec::new();
-
-    for root in &watch_roots {
-        let candidates = discovery::scan_root(root, &exclude_set)?;
-        for path in candidates {
-            let path_key = path.display().to_string();
-            if seen_paths.insert(path_key) {
-                scan_candidates.push(path);
-            }
-        }
-    }
-
+    let (scan_candidates, seen_paths) = scan_watch_roots(&watch_roots, &exclude_set)?;
     let scan_candidate_count = scan_candidates.len();
-    let mut upserts: Vec<(PathBuf, String)> = Vec::new();
-    for path in scan_candidates {
-        let path_key = path.display().to_string();
-        match try_resolve_git_common_dir(&path, &path_key) {
-            Ok(common) => upserts.push((path, common)),
-            Err(()) => {
-                pre_skipped += 1;
-                changelog.push(ChangeEntry {
-                    path: path_key,
-                    action: "skipped",
-                });
-            }
-        }
-    }
+    let (upserts, pre_skipped, changelog) = resolve_scan_candidates(scan_candidates);
 
     let mut removes = collect_stale_scan_paths(conn, configured_roots, &watch_roots, &seen_paths)?;
     removes.extend(collect_orphan_scan_paths(conn, configured_roots)?);
@@ -97,24 +86,54 @@ pub fn discover_phase(conn: &Connection, config: &Config) -> Result<DiscoveryPla
     })
 }
 
+/// Scan every watch root; returns the de-duplicated candidates plus their path keys.
+fn scan_watch_roots(
+    roots: &[PathBuf],
+    exclude_set: &GlobSet,
+) -> Result<(Vec<PathBuf>, HashSet<String>)> {
+    let mut seen_paths: HashSet<String> = HashSet::new();
+    let mut scan_candidates: Vec<PathBuf> = Vec::new();
+    for root in roots {
+        for path in discovery::scan_root(root, exclude_set)? {
+            if seen_paths.insert(path.display().to_string()) {
+                scan_candidates.push(path);
+            }
+        }
+    }
+    Ok((scan_candidates, seen_paths))
+}
+
+/// Resolve each candidate's git common dir. Returns `(upserts, skipped count, changelog)`;
+/// candidates git cannot resolve are skipped and noted in the changelog.
+fn resolve_scan_candidates(
+    candidates: Vec<PathBuf>,
+) -> (Vec<(PathBuf, String)>, u32, Vec<ChangeEntry>) {
+    let mut upserts: Vec<(PathBuf, String)> = Vec::new();
+    let mut pre_skipped = 0u32;
+    let mut changelog: Vec<ChangeEntry> = Vec::new();
+    for path in candidates {
+        let path_key = path.display().to_string();
+        match try_resolve_git_common_dir(&path, &path_key) {
+            Some(common) => upserts.push((path, common)),
+            None => {
+                pre_skipped += 1;
+                changelog.push(ChangeEntry {
+                    path: path_key,
+                    action: ACTION_SKIPPED,
+                });
+            }
+        }
+    }
+    (upserts, pre_skipped, changelog)
+}
+
 /// Phase 2: merge discovery plan into the catalog (write connection, one transaction).
 pub fn merge_catalog_phase(
     conn: &Connection,
     config: &Config,
     plan: DiscoveryPlan,
 ) -> Result<LocalCatalogSyncSummary> {
-    let max_repos = config.limits.max_repos;
-    let projected = projected_repo_count(conn, &plan.removes, &plan.upserts)?;
-    if projected > i64::from(max_repos) {
-        let projected_u32 = u32::try_from(projected).unwrap_or(u32::MAX);
-        if let Err(e) = record_cap_exceeded_run(conn, plan.started_at, projected, max_repos) {
-            log::warn!("failed to record cap-exceeded audit row: {e}");
-        }
-        return Err(WorkpotError::LocalCatalogSyncCapExceeded {
-            projected: projected_u32,
-            max: max_repos,
-        });
-    }
+    ensure_within_repo_cap(conn, &plan, config.limits.max_repos)?;
 
     let mut summary = LocalCatalogSyncSummary {
         skipped: plan.pre_skipped,
@@ -126,48 +145,84 @@ pub fn merge_catalog_phase(
     let tx = conn.unchecked_transaction()?;
     let run_id = insert_sync_run(&tx, plan.started_at)?;
 
-    let backfill_skipped_tx = backfill_empty_git_common_dir(&tx, &mut changelog)?;
-    summary.skipped += backfill_skipped_tx;
+    summary.skipped += backfill_empty_git_common_dir(&tx, &mut changelog)?;
+    apply_upserts(&tx, &plan.upserts, &mut summary, &mut changelog)?;
+    apply_removes(&tx, &plan.removes, &mut summary, &mut changelog)?;
 
-    for (path, git_common_dir) in &plan.upserts {
-        let path_key = path.display().to_string();
-        if catalog::upsert_scan(&tx, path, git_common_dir)? {
+    // Attach locations → projects, then merge overlapping remote sets.
+    sync_project_identity(&tx)?;
+
+    persist_changelog(&tx, run_id, &changelog)?;
+    finish_sync_run(&tx, run_id, &summary)?;
+    tx.commit()?;
+    Ok(summary)
+}
+
+/// Reject a plan whose result would exceed `max_repos`, after recording an audit row.
+fn ensure_within_repo_cap(conn: &Connection, plan: &DiscoveryPlan, max_repos: u32) -> Result<()> {
+    let projected = projected_repo_count(conn, &plan.removes, &plan.upserts)?;
+    if projected <= i64::from(max_repos) {
+        return Ok(());
+    }
+    let projected_u32 = u32::try_from(projected).unwrap_or(u32::MAX);
+    if let Err(e) = record_cap_exceeded_run(conn, plan.started_at, projected, max_repos) {
+        log::warn!("failed to record cap-exceeded audit row: {e}");
+    }
+    Err(WorkpotError::LocalCatalogSyncCapExceeded {
+        projected: projected_u32,
+        max: max_repos,
+    })
+}
+
+fn apply_upserts(
+    tx: &Transaction<'_>,
+    upserts: &[(PathBuf, String)],
+    summary: &mut LocalCatalogSyncSummary,
+    changelog: &mut Vec<ChangeEntry>,
+) -> Result<()> {
+    for (path, git_common_dir) in upserts {
+        if catalog::upsert_scan(tx, path, git_common_dir)? {
             summary.added += 1;
             changelog.push(ChangeEntry {
-                path: path_key,
-                action: "added",
+                path: path.display().to_string(),
+                action: ACTION_ADDED,
             });
         }
     }
+    Ok(())
+}
 
-    for path_key in &plan.removes {
+fn apply_removes(
+    tx: &Transaction<'_>,
+    removes: &[String],
+    summary: &mut LocalCatalogSyncSummary,
+    changelog: &mut Vec<ChangeEntry>,
+) -> Result<()> {
+    for path_key in removes {
         let deleted = tx.execute("DELETE FROM locations WHERE path = ?1", params![path_key])?;
         if deleted > 0 {
             summary.removed += 1;
             changelog.push(ChangeEntry {
                 path: path_key.clone(),
-                action: "removed",
+                action: ACTION_REMOVED,
             });
         }
     }
+    Ok(())
+}
 
-    // Wave 3: attach locations → projects, then merge overlapping remote sets.
-    sync_project_identity(&tx)?;
-
-    for entry in &changelog {
+fn persist_changelog(tx: &Transaction<'_>, run_id: i64, changelog: &[ChangeEntry]) -> Result<()> {
+    for entry in changelog {
         tx.execute(
             "INSERT INTO local_catalog_sync_changes (run_id, path, action) VALUES (?1, ?2, ?3)",
             params![run_id, entry.path, entry.action],
         )?;
     }
-
-    finish_sync_run(&tx, run_id, "ok", &summary, None)?;
-    tx.commit()?;
-    Ok(summary)
+    Ok(())
 }
 
 /// Phase 3 prep: paths for git refresh (read connection).
-pub fn local_catalog_git_paths(conn: &Connection) -> Result<Vec<PathBuf>> {
+pub(crate) fn local_catalog_git_paths(conn: &Connection) -> Result<Vec<PathBuf>> {
     let mut stmt = conn.prepare("SELECT path FROM locations WHERE excluded = 0")?;
     Ok(stmt
         .query_map([], |row| row.get::<_, String>(0))?
@@ -181,7 +236,7 @@ pub fn persist_local_catalog_git_phase(
     conn: &Connection,
     config: &Config,
     summary: &mut LocalCatalogSyncSummary,
-    git_results: Vec<crate::services::git_state::GitRefreshResult>,
+    git_results: Vec<git_state::GitRefreshResult>,
 ) -> Result<()> {
     for r in &git_results {
         if r.state.error.is_some() {
@@ -192,13 +247,33 @@ pub fn persist_local_catalog_git_phase(
     }
 
     let git_tx = conn.unchecked_transaction()?;
-    let refresh_time = crate::services::git_state::unix_now_secs();
-    for r in &git_results {
-        let updated = git_tx.execute(
+    update_git_columns(&git_tx, &git_results, summary)?;
+    crate::services::repo_convert::persist_all_structural_preflight(&git_tx, config)?;
+    // Replace worktrees/branches after fetch+HEAD query; prune empty projects.
+    persist_location_git_graph(&git_tx)?;
+    prune_empty_projects(&git_tx)?;
+    if let Err(e) = git_tx.commit() {
+        log::warn!("git refresh commit failed after successful local catalog sync merge: {e}");
+        summary.git_errors = summary.git_errors.saturating_add(summary.git_refreshed);
+        summary.git_refreshed = 0;
+    }
+    Ok(())
+}
+
+/// Write each refresh result to its `locations` row; a result whose row vanished is moved from
+/// the refreshed tally to the error tally.
+fn update_git_columns(
+    tx: &Transaction<'_>,
+    git_results: &[git_state::GitRefreshResult],
+    summary: &mut LocalCatalogSyncSummary,
+) -> Result<()> {
+    let refresh_time = git_state::unix_now_secs();
+    for r in git_results {
+        let updated = tx.execute(
             "UPDATE locations SET branch=?1, is_dirty=?2, ahead=?3, behind=?4,
                               git_refreshed_at=?5, git_state_error=?6
              WHERE path=?7",
-            rusqlite::params![
+            params![
                 r.state.branch,
                 r.state.is_dirty.map(|b| b as i64),
                 r.state.ahead,
@@ -216,27 +291,14 @@ pub fn persist_local_catalog_git_phase(
             }
         }
     }
-    crate::services::repo_convert::persist_all_structural_preflight(&git_tx, config)?;
-    // Wave 3: replace worktrees/branches after fetch+HEAD query; prune empty projects.
-    persist_location_git_graph(&git_tx)?;
-    prune_empty_projects(&git_tx)?;
-    if let Err(e) = git_tx.commit() {
-        log::warn!("git refresh commit failed after successful local catalog sync merge: {e}");
-        summary.git_errors = summary.git_errors.saturating_add(summary.git_refreshed);
-        summary.git_refreshed = 0;
-    }
     Ok(())
 }
 
 /// Phased local catalog sync: release locks between discovery, merge, git refresh, and persist.
-pub fn run_phased(
-    pool: &crate::infra::db::DbPool,
-    config: &Config,
-) -> Result<LocalCatalogSyncSummary> {
-    let started_at = crate::services::git_state::unix_now_secs();
+pub(crate) fn run_phased(pool: &DbPool, config: &Config) -> Result<LocalCatalogSyncSummary> {
+    let started_at = git_state::unix_now_secs();
     run_local_catalog_sync_with_audit(
         "run_phased",
-        started_at,
         || {
             run_local_catalog_sync_pipeline(
                 &config.fetch,
@@ -262,20 +324,16 @@ fn test_local_catalog_sync_delay() {
     }
 }
 
-/// Full watch-root rescan with transactional merge, caps, and audit history (D-07, D-14–D-18).
-pub fn run_full(
-    pool: &crate::infra::db::DbPool,
-    config: &Config,
-) -> Result<LocalCatalogSyncSummary> {
+/// Full watch-root rescan with transactional merge, caps, and audit history.
+pub(crate) fn run_full(pool: &DbPool, config: &Config) -> Result<LocalCatalogSyncSummary> {
     run_phased(pool, config)
 }
 
 /// Single-connection variant for unit tests.
 pub fn run_full_connection(conn: &Connection, config: &Config) -> Result<LocalCatalogSyncSummary> {
-    let started_at = crate::services::git_state::unix_now_secs();
+    let started_at = git_state::unix_now_secs();
     run_local_catalog_sync_with_audit(
         "run_full",
-        started_at,
         || {
             run_local_catalog_sync_pipeline(
                 &config.fetch,
@@ -293,7 +351,6 @@ pub fn run_full_connection(conn: &Connection, config: &Config) -> Result<LocalCa
 
 fn run_local_catalog_sync_with_audit(
     label: &str,
-    _started_at: i64,
     run: impl FnOnce() -> Result<LocalCatalogSyncSummary>,
     record_error: impl FnOnce(&WorkpotError) -> Result<()>,
 ) -> Result<LocalCatalogSyncSummary> {
@@ -310,9 +367,7 @@ fn run_local_catalog_sync_with_audit(
             );
             Ok(summary)
         }
-        Err(WorkpotError::LocalCatalogSyncCapExceeded { projected, max }) => {
-            Err(WorkpotError::LocalCatalogSyncCapExceeded { projected, max })
-        }
+        Err(e @ WorkpotError::LocalCatalogSyncCapExceeded { .. }) => Err(e),
         Err(e) => {
             if let Err(audit_err) = record_error(&e) {
                 log::warn!("failed to record error audit row: {audit_err}");
@@ -327,10 +382,7 @@ fn run_local_catalog_sync_pipeline(
     discover: impl FnOnce() -> Result<DiscoveryPlan>,
     merge: impl FnOnce(DiscoveryPlan) -> Result<LocalCatalogSyncSummary>,
     git_paths: impl FnOnce() -> Result<Vec<PathBuf>>,
-    persist: impl FnOnce(
-        &mut LocalCatalogSyncSummary,
-        Vec<crate::services::git_state::GitRefreshResult>,
-    ) -> Result<()>,
+    persist: impl FnOnce(&mut LocalCatalogSyncSummary, Vec<git_state::GitRefreshResult>) -> Result<()>,
 ) -> Result<LocalCatalogSyncSummary> {
     test_local_catalog_sync_delay();
     let plan = discover()?;
@@ -345,7 +397,7 @@ fn run_local_catalog_sync_pipeline(
 fn refresh_git_states(
     all_paths: Vec<PathBuf>,
     fetch_cmd: &str,
-) -> Vec<crate::services::git_state::GitRefreshResult> {
+) -> Vec<git_state::GitRefreshResult> {
     log::debug!(
         "local catalog sync git second pass: start repos={}",
         all_paths.len()
@@ -359,12 +411,12 @@ fn refresh_git_states(
     git_results
 }
 
-fn try_resolve_git_common_dir(path: &Path, path_key: &str) -> std::result::Result<String, ()> {
+fn try_resolve_git_common_dir(path: &Path, path_key: &str) -> Option<String> {
     match resolve_git_common_dir(path) {
-        Ok(common) => Ok(common.display().to_string()),
-        Err(_) => {
-            log::warn!("skip {path_key}: git unavailable");
-            Err(())
+        Ok(common) => Some(common.display().to_string()),
+        Err(e) => {
+            log::warn!("skip {path_key}: git unavailable: {e}");
+            None
         }
     }
 }
@@ -404,17 +456,17 @@ fn backfill_empty_git_common_dir(
             continue;
         }
         match try_resolve_git_common_dir(path, &path_key) {
-            Ok(common_str) => {
+            Some(common_str) => {
                 conn.execute(
                     "UPDATE locations SET git_common_dir = ?1 WHERE path = ?2",
                     params![common_str, path_key],
                 )?;
             }
-            Err(()) => {
+            None => {
                 skipped += 1;
                 changelog.push(ChangeEntry {
                     path: path_key,
-                    action: "skipped",
+                    action: ACTION_SKIPPED,
                 });
             }
         }
@@ -440,17 +492,11 @@ fn collect_stale_scan_paths(
     let mut stale = Vec::new();
     for path_key in paths {
         let path = Path::new(&path_key);
-        if !configured_roots
-            .iter()
-            .any(|root| paths::path_under_root(path, root))
-        {
+        if !under_any_root(path, configured_roots) {
             continue;
         }
         // Root still configured but not scannable this run — preserve cataloged repos.
-        if !scan_roots
-            .iter()
-            .any(|root| paths::path_under_root(path, root))
-        {
+        if !under_any_root(path, scan_roots) {
             continue;
         }
         if !seen.contains(&path_key) {
@@ -458,6 +504,11 @@ fn collect_stale_scan_paths(
         }
     }
     Ok(stale)
+}
+
+/// Whether `path` lies under at least one of `roots`.
+fn under_any_root(path: &Path, roots: &[PathBuf]) -> bool {
+    roots.iter().any(|root| paths::path_under_root(path, root))
 }
 
 /// Scan repos not under any configured watch root (orphans after config edits or partial failures).
@@ -469,12 +520,7 @@ fn collect_orphan_scan_paths(
 
     Ok(paths
         .into_iter()
-        .filter(|path_key| {
-            let path = Path::new(path_key);
-            !configured_roots
-                .iter()
-                .any(|root| paths::path_under_root(path, root))
-        })
+        .filter(|path_key| !under_any_root(Path::new(path_key), configured_roots))
         .collect())
 }
 
@@ -487,10 +533,7 @@ fn validate_manual_outside_roots(
 
     for path_key in paths {
         let path = Path::new(&path_key);
-        if configured_roots
-            .iter()
-            .any(|root| paths::path_under_root(path, root))
-        {
+        if under_any_root(path, configured_roots) {
             continue;
         }
         if !path.exists() || (!catalog::is_git_worktree(path) && !catalog::is_bare_repo(path)) {
@@ -521,7 +564,7 @@ fn projected_repo_count(
 }
 
 fn record_error_run(conn: &Connection, started_at: i64, err: &WorkpotError) -> Result<()> {
-    let finished_at = crate::services::git_state::unix_now_secs();
+    let finished_at = git_state::unix_now_secs();
     let message = err.to_string();
     conn.execute(
         "INSERT INTO local_catalog_sync_runs (started_at, finished_at, status, added_count, removed_count, skipped_count, message)
@@ -537,7 +580,7 @@ fn record_cap_exceeded_run(
     projected: i64,
     max: u32,
 ) -> Result<()> {
-    let finished_at = crate::services::git_state::unix_now_secs();
+    let finished_at = git_state::unix_now_secs();
     let message = format!("projected {projected} repos exceeds max {max}");
     conn.execute(
         "INSERT INTO local_catalog_sync_runs (started_at, finished_at, status, added_count, removed_count, skipped_count, message)
@@ -555,24 +598,21 @@ fn insert_sync_run(tx: &Transaction<'_>, started_at: i64) -> Result<i64> {
     Ok(tx.last_insert_rowid())
 }
 
+/// Close the run row opened by `insert_sync_run` as successful.
 fn finish_sync_run(
     tx: &Transaction<'_>,
     run_id: i64,
-    status: &str,
     summary: &LocalCatalogSyncSummary,
-    message: Option<&str>,
 ) -> Result<()> {
-    let finished_at = crate::services::git_state::unix_now_secs();
+    let finished_at = git_state::unix_now_secs();
     tx.execute(
-        "UPDATE local_catalog_sync_runs SET finished_at = ?1, status = ?2, added_count = ?3, removed_count = ?4, skipped_count = ?5, message = ?6
-         WHERE id = ?7",
+        "UPDATE local_catalog_sync_runs SET finished_at = ?1, status = 'ok', added_count = ?2, removed_count = ?3, skipped_count = ?4, message = NULL
+         WHERE id = ?5",
         params![
             finished_at,
-            status,
             summary.added,
             summary.removed,
             summary.skipped,
-            message,
             run_id,
         ],
     )?;
@@ -595,7 +635,7 @@ pub(crate) fn attach_and_persist_location(conn: &Connection, path_key: &str) -> 
     Ok(())
 }
 
-/// Attach every location to a project (create/attach/conflict), then apply overlap merges (4A).
+/// Attach every location to a project (create/attach/conflict), then apply overlap merges.
 fn sync_project_identity(tx: &Transaction<'_>) -> Result<()> {
     let locations = load_location_paths(tx)?;
     for (path_key, git_common_dir) in &locations {
@@ -705,9 +745,9 @@ fn insert_project(
     let name = Path::new(location_path)
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("project")
+        .unwrap_or(DEFAULT_PROJECT_NAME)
         .to_string();
-    let created_at = crate::services::git_state::unix_now_secs();
+    let created_at = git_state::unix_now_secs();
     tx.execute(
         "INSERT OR IGNORE INTO projects (id, root_remote_normalized, root_remote_raw, name, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -730,10 +770,15 @@ fn insert_project_remotes_on_create(
     root_remote_name: &str,
     remotes_raw: &[(String, String)],
 ) -> Result<()> {
-    tx.execute(
-        "INSERT OR IGNORE INTO project_remotes (project_id, url_normalized, url_raw, role, remote_name)
-         VALUES (?1, ?2, ?3, 'root', ?4)",
-        params![project_id, root_normalized, root_raw, root_remote_name],
+    insert_project_remote(
+        tx,
+        project_id,
+        ROLE_ROOT,
+        ProjectRemote {
+            url_normalized: root_normalized,
+            url_raw: root_raw,
+            remote_name: root_remote_name,
+        },
     )?;
 
     for (name, url_raw) in remotes_raw {
@@ -744,12 +789,45 @@ fn insert_project_remotes_on_create(
             // Already inserted as root; keep remote_name if this is the elected remote.
             continue;
         }
-        tx.execute(
-            "INSERT OR IGNORE INTO project_remotes (project_id, url_normalized, url_raw, role, remote_name)
-             VALUES (?1, ?2, ?3, 'fork', ?4)",
-            params![project_id, normalized, url_raw, name],
+        insert_project_remote(
+            tx,
+            project_id,
+            ROLE_FORK,
+            ProjectRemote {
+                url_normalized: &normalized,
+                url_raw,
+                remote_name: name,
+            },
         )?;
     }
+    Ok(())
+}
+
+/// One git remote of a project, as stored in `project_remotes`.
+struct ProjectRemote<'a> {
+    url_normalized: &'a str,
+    url_raw: &'a str,
+    remote_name: &'a str,
+}
+
+/// Record `remote` on `project_id` with `role`; an existing identical row is left untouched.
+fn insert_project_remote(
+    tx: &Transaction<'_>,
+    project_id: &str,
+    role: &str,
+    remote: ProjectRemote<'_>,
+) -> Result<()> {
+    tx.execute(
+        "INSERT OR IGNORE INTO project_remotes (project_id, url_normalized, url_raw, role, remote_name)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            project_id,
+            remote.url_normalized,
+            remote.url_raw,
+            role,
+            remote.remote_name
+        ],
+    )?;
     Ok(())
 }
 
@@ -775,69 +853,30 @@ fn upsert_fork_remotes(
         let Some(normalized) = normalize_remote_url(&remote.url_raw) else {
             continue;
         };
-        if normalized == root_normalized {
-            // Do not demote or duplicate root; ensure a root row exists.
-            tx.execute(
-                "INSERT OR IGNORE INTO project_remotes (project_id, url_normalized, url_raw, role, remote_name)
-                 VALUES (?1, ?2, ?3, 'root', ?4)",
-                params![project_id, normalized, remote.url_raw, remote.name],
-            )?;
-            continue;
-        }
-        tx.execute(
-            "INSERT OR IGNORE INTO project_remotes (project_id, url_normalized, url_raw, role, remote_name)
-             VALUES (?1, ?2, ?3, 'fork', ?4)",
-            params![project_id, normalized, remote.url_raw, remote.name],
+        // A remote matching the project root is never demoted or duplicated: ensure a root row.
+        let role = if normalized == root_normalized {
+            ROLE_ROOT
+        } else {
+            ROLE_FORK
+        };
+        insert_project_remote(
+            tx,
+            project_id,
+            role,
+            ProjectRemote {
+                url_normalized: &normalized,
+                url_raw: &remote.url_raw,
+                remote_name: &remote.name,
+            },
         )?;
     }
     Ok(())
 }
 
 fn load_project_snapshots(conn: &Connection) -> Result<Vec<ProjectSnapshot>> {
-    let mut projects_stmt = conn.prepare(
-        "SELECT id, root_remote_normalized, created_at FROM projects ORDER BY created_at, id",
-    )?;
-    let project_rows: Vec<(String, String, i64)> = projects_stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
-        .collect::<std::result::Result<_, _>>()?;
-
-    let mut remotes_by_project: HashMap<String, HashSet<String>> = HashMap::new();
-    let mut root_via_upstream: HashMap<String, bool> = HashMap::new();
-    let mut remotes_stmt =
-        conn.prepare("SELECT project_id, url_normalized, role, remote_name FROM project_remotes")?;
-    let remote_rows = remotes_stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
-            row.get::<_, Option<String>>(3)?,
-        ))
-    })?;
-    for row in remote_rows {
-        let (project_id, url_normalized, role, remote_name) = row?;
-        remotes_by_project
-            .entry(project_id.clone())
-            .or_default()
-            .insert(url_normalized);
-        if role == "root" {
-            let via = remote_name.as_deref() == Some("upstream");
-            root_via_upstream.insert(project_id, via);
-        }
-    }
-
-    let mut location_counts: HashMap<String, usize> = HashMap::new();
-    let mut count_stmt = conn.prepare(
-        "SELECT project_id, COUNT(*) FROM locations
-         WHERE project_id IS NOT NULL AND excluded = 0
-         GROUP BY project_id",
-    )?;
-    let count_rows = count_stmt.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-    })?;
-    for row in count_rows {
-        let (project_id, count) = row?;
-        location_counts.insert(project_id, usize::try_from(count).unwrap_or(usize::MAX));
-    }
+    let project_rows = load_project_rows(conn)?;
+    let (mut remotes_by_project, root_via_upstream) = load_project_remote_sets(conn)?;
+    let location_counts = load_location_counts(conn)?;
 
     let mut snapshots = Vec::with_capacity(project_rows.len());
     for (id, root_remote_normalized, created_at) in project_rows {
@@ -855,6 +894,67 @@ fn load_project_snapshots(conn: &Connection) -> Result<Vec<ProjectSnapshot>> {
         });
     }
     Ok(snapshots)
+}
+
+/// `(id, root_remote_normalized, created_at)` of every project, oldest first.
+fn load_project_rows(conn: &Connection) -> Result<Vec<(String, String, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, root_remote_normalized, created_at FROM projects ORDER BY created_at, id",
+    )?;
+    let rows: Vec<(String, String, i64)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(rows)
+}
+
+/// Normalized remote URLs per project id.
+type RemotesByProject = HashMap<String, HashSet<String>>;
+/// Per project id: whether its root remote is the `upstream` remote.
+type RootViaUpstream = HashMap<String, bool>;
+
+fn load_project_remote_sets(conn: &Connection) -> Result<(RemotesByProject, RootViaUpstream)> {
+    let mut remotes_by_project = RemotesByProject::new();
+    let mut root_via_upstream = RootViaUpstream::new();
+    let mut stmt =
+        conn.prepare("SELECT project_id, url_normalized, role, remote_name FROM project_remotes")?;
+    let remote_rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
+        ))
+    })?;
+    for row in remote_rows {
+        let (project_id, url_normalized, role, remote_name) = row?;
+        remotes_by_project
+            .entry(project_id.clone())
+            .or_default()
+            .insert(url_normalized);
+        if role == ROLE_ROOT {
+            let via = remote_name.as_deref() == Some(UPSTREAM_REMOTE_NAME);
+            root_via_upstream.insert(project_id, via);
+        }
+    }
+    Ok((remotes_by_project, root_via_upstream))
+}
+
+/// Non-excluded location count per project.
+fn load_location_counts(conn: &Connection) -> Result<HashMap<String, usize>> {
+    let mut location_counts: HashMap<String, usize> = HashMap::new();
+    let mut stmt = conn.prepare(
+        "SELECT project_id, COUNT(*) FROM locations
+         WHERE project_id IS NOT NULL AND excluded = 0
+         GROUP BY project_id",
+    )?;
+    let count_rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    for row in count_rows {
+        let (project_id, count) = row?;
+        location_counts.insert(project_id, usize::try_from(count).unwrap_or(usize::MAX));
+    }
+    Ok(location_counts)
 }
 
 fn apply_merge_action(tx: &Transaction<'_>, action: &MergeAction) -> Result<()> {
@@ -915,7 +1015,7 @@ fn ensure_survivor_row(tx: &Transaction<'_>, action: &MergeAction) -> Result<()>
             action.survivor_id,
             action.root_remote_normalized,
             root_raw,
-            name.unwrap_or_else(|| "project".to_string()),
+            name.unwrap_or_else(|| DEFAULT_PROJECT_NAME.to_string()),
             action.created_at
         ],
     )?;
@@ -938,9 +1038,9 @@ fn migrate_project_remotes(tx: &Transaction<'_>, from_id: &str, to_id: &str) -> 
     )?;
     tx.execute(
         "UPDATE project_remotes
-         SET role = CASE WHEN url_normalized = ?1 THEN 'root' ELSE 'fork' END
+         SET role = CASE WHEN url_normalized = ?1 THEN ?3 ELSE ?4 END
          WHERE project_id = ?2",
-        params![survivor_root, from_id],
+        params![survivor_root, from_id, ROLE_ROOT, ROLE_FORK],
     )?;
     tx.execute(
         "UPDATE project_remotes SET project_id = ?1 WHERE project_id = ?2",

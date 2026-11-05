@@ -89,7 +89,10 @@ fn hidden_by_archive_filter(config: &Config, record: &RemoteRepoRecord) -> bool 
 }
 
 /// Present remote repos that are not cloned and belong to a configured source.
-pub fn list_remote_only(conn: &Connection, config: &Config) -> Result<Vec<RemoteRepoRecord>> {
+pub(crate) fn list_remote_only(
+    conn: &Connection,
+    config: &Config,
+) -> Result<Vec<RemoteRepoRecord>> {
     let sql = format!(
         "{REMOTE_ROW_SELECT} FROM remote_repos r
          WHERE r.state = 'present' AND NOT {CLONED_EXISTS}
@@ -228,7 +231,7 @@ pub(crate) fn list_gone_cloned(conn: &Connection) -> Result<Vec<(RemoteRepoRecor
 }
 
 /// Local clone paths whose upstream repo no longer exists (tray "removed upstream" flag).
-pub fn removed_upstream_paths(conn: &Connection) -> Result<HashSet<String>> {
+pub(crate) fn removed_upstream_paths(conn: &Connection) -> Result<HashSet<String>> {
     Ok(list_gone_cloned(conn)?
         .into_iter()
         .map(|(_, path)| path)

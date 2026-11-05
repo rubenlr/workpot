@@ -215,18 +215,19 @@
           {cloning ? "Cloning…" : "Clone"}
         </button>
       {:else}
+        {@const branch = repo.branch}
         <SyncBadge
           ahead={repo.ahead}
           behind={repo.behind}
-          branch={repo.branch}
+          {branch}
           tone={selected ? "on-primary" : "default"}
           {syncingDirection}
           disabled={syncDisabled}
-          onPush={repo.branch && onSync
-            ? () => onSync(repo.path, repo.branch!, "push")
+          onPush={branch && onSync
+            ? () => onSync(repo.path, branch, "push")
             : undefined}
-          onPull={repo.branch && onSync
-            ? () => onSync(repo.path, repo.branch!, "pull")
+          onPull={branch && onSync
+            ? () => onSync(repo.path, branch, "pull")
             : undefined}
         />
         {#if repo.convert_to && converting}

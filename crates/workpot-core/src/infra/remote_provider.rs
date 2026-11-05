@@ -223,7 +223,7 @@ impl<R: CommandRunner> RemoteApi for GhGlabProvider<R> {
 }
 
 /// Classify a failed `gh api` / `glab api` call from its output.
-pub(crate) fn classify_failure(
+fn classify_failure(
     cli: &str,
     host: &str,
     endpoint: &str,
@@ -261,7 +261,7 @@ pub(crate) fn classify_failure(
 }
 
 /// Percent-encode a path for use as a single URL segment (`a/b` → `a%2Fb`).
-pub(crate) fn url_encode_path(path: &str) -> String {
+fn url_encode_path(path: &str) -> String {
     let mut out = String::with_capacity(path.len());
     for byte in path.bytes() {
         match byte {
@@ -275,7 +275,7 @@ pub(crate) fn url_encode_path(path: &str) -> String {
 }
 
 /// Flatten `--paginate` output: one array, or several arrays concatenated back to back.
-pub(crate) fn parse_json_items(stdout: &str) -> Result<Vec<Value>, RemoteError> {
+fn parse_json_items(stdout: &str) -> Result<Vec<Value>, RemoteError> {
     let mut items = Vec::new();
     for value in serde_json::Deserializer::from_str(stdout).into_iter::<Value>() {
         match value.map_err(|e| RemoteError::Failed(format!("invalid JSON from CLI: {e}")))? {
@@ -294,7 +294,7 @@ fn str_field(item: &Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-pub(crate) fn parse_github_repos(stdout: &str) -> Result<Vec<RemoteRepoInfo>, RemoteError> {
+fn parse_github_repos(stdout: &str) -> Result<Vec<RemoteRepoInfo>, RemoteError> {
     let mut repos = Vec::new();
     for item in parse_json_items(stdout)? {
         let Some(full_path) = str_field(&item, "full_name") else {
@@ -320,7 +320,7 @@ pub(crate) fn parse_github_repos(stdout: &str) -> Result<Vec<RemoteRepoInfo>, Re
     Ok(repos)
 }
 
-pub(crate) fn parse_gitlab_projects(stdout: &str) -> Result<Vec<RemoteRepoInfo>, RemoteError> {
+fn parse_gitlab_projects(stdout: &str) -> Result<Vec<RemoteRepoInfo>, RemoteError> {
     let mut repos = Vec::new();
     for item in parse_json_items(stdout)? {
         let Some(full_path) = str_field(&item, "path_with_namespace") else {

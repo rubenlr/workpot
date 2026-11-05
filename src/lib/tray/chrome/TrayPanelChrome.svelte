@@ -16,7 +16,7 @@
   import TrayFilterBar from "$lib/tray/repo-list/TrayFilterBar.svelte";
   import TrayListBody from "$lib/tray/repo-list/TrayListBody.svelte";
 
-  const noopBindFilter = (() => {}) as (el: HTMLInputElement | null) => void;
+  const noopBindFilter: (el: HTMLInputElement | null) => void = () => {};
 
   let {
     listMaxHeightPx,

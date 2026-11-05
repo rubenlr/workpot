@@ -13,7 +13,7 @@ export type ListenFn = <T>(
   handler: (event: { payload: T }) => void,
 ) => Promise<UnlistenFn>;
 
-export interface TrayPanelEventHandlers {
+interface TrayPanelEventHandlers {
   onPanelOpened: () => void;
   onPanelClosed: () => void;
   onSyncStarted: () => void;

@@ -20,6 +20,8 @@ use rusqlite::{OptionalExtension, params};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+const SECS_PER_MINUTE: i64 = 60;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteSourceError {
     pub source: String,
@@ -131,15 +133,16 @@ fn sync_one_source(
         }
         Err(e) => {
             log::warn!("remote sync {}: {e}", source.name);
-            if let Err(audit) = pool
-                .with_write(|conn| record_error_run(conn, &source.name, started_at, &e.to_string()))
+            let message = e.to_string();
+            if let Err(audit) =
+                pool.with_write(|conn| record_error_run(conn, &source.name, started_at, &message))
             {
                 log::warn!(
                     "remote sync {}: failed to record error run: {audit}",
                     source.name
                 );
             }
-            push_source_error(summary, source, e.to_string());
+            push_source_error(summary, source, message);
         }
     }
 }
@@ -173,7 +176,7 @@ fn prune_and_clone_source(
 }
 
 fn within_ttl(pool: &DbPool, config: &Config, source: &RemoteSource) -> Result<bool> {
-    let ttl_secs = i64::from(config.remote_sync_ttl_minutes) * 60;
+    let ttl_secs = i64::from(config.remote_sync_ttl_minutes) * SECS_PER_MINUTE;
     if ttl_secs == 0 {
         return Ok(false);
     }

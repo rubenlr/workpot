@@ -6,6 +6,13 @@ const HARD_MAX_REPOS: u32 = 20000;
 const HARD_MAX_REMOTE_REPOS: u32 = 50000;
 /// One day; a longer remote listing TTL would hide upstream changes for too long.
 const HARD_MAX_REMOTE_SYNC_TTL_MINUTES: u32 = 1440;
+const HARD_MAX_VISIBLE_ROWS: u32 = 100;
+const HARD_MAX_PINNED: u32 = 20;
+const HARD_MAX_RECENT_DAYS: u32 = 365;
+const HARD_MAX_STALE_DIRTY_DAYS: u32 = 365;
+
+/// Default `stale_dirty_days`; also the tray's fallback when config is unreadable.
+pub const DEFAULT_STALE_DIRTY_DAYS: u32 = 7;
 
 fn default_max_watch_roots() -> u32 {
     100
@@ -48,7 +55,7 @@ fn default_min_recent_count() -> u32 {
 }
 
 fn default_stale_dirty_days() -> u32 {
-    7
+    DEFAULT_STALE_DIRTY_DAYS
 }
 
 fn default_temp_suffix() -> String {
@@ -133,7 +140,7 @@ impl Default for MigrationConfig {
 }
 
 impl MigrationConfig {
-    pub(super) fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), String> {
         if self.temp_suffix.is_empty() {
             return Err("migration.temp_suffix must not be empty".into());
         }
@@ -384,7 +391,7 @@ impl Default for Limits {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Config {
-    /// Watch roots for auto-discovery (consumed in Phase 2).
+    /// Watch roots for auto-discovery.
     #[serde(default)]
     pub watch_roots: Vec<PathBuf>,
     /// Path patterns excluded from local catalog sync discovery.
@@ -392,7 +399,7 @@ pub struct Config {
     pub excludes: Vec<String>,
     #[serde(default)]
     pub limits: Limits,
-    /// Shell command template for opening a repo in the IDE (D-33). `{path}` is substituted.
+    /// Shell command template for opening a repo in the IDE. `{path}` is substituted.
     #[serde(default = "default_launch_cmd")]
     pub launch_cmd: String,
     /// Shell command template for pushing a branch. `{path}` and `{branch}` are substituted.
@@ -405,19 +412,19 @@ pub struct Config {
     /// Empty string disables fetch. Non-empty must contain `{path}`.
     #[serde(default = "default_fetch_cmd")]
     pub fetch: String,
-    /// Maximum repo rows visible in the tray panel before scrolling (D-12).
+    /// Maximum repo rows visible in the tray panel before scrolling.
     #[serde(default = "default_max_visible_rows")]
     pub max_visible_rows: u32,
-    /// Maximum pinned repos in the tray (Phase 5).
+    /// Maximum pinned repos in the tray.
     #[serde(default = "default_max_pinned")]
     pub max_pinned: u32,
-    /// Recency window for the Recent section, in days (Phase 5).
+    /// Recency window for the Recent section, in days.
     #[serde(default = "default_max_recent_days")]
     pub max_recent_days: u32,
-    /// Minimum Recent section size via padding (Phase 5).
+    /// Minimum Recent section size via padding.
     #[serde(default = "default_min_recent_count")]
     pub min_recent_count: u32,
-    /// Threshold for stale-dirty tray icon: dirty repo last opened longer ago than this (06.2).
+    /// Threshold for stale-dirty tray icon: dirty repo last opened longer ago than this.
     #[serde(default = "default_stale_dirty_days")]
     pub stale_dirty_days: u32,
     /// Minimum minutes between remote catalog listings triggered by panel open (0 = always).
@@ -453,7 +460,7 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Reject pathological limit values (D-22, D-23).
+    /// Validate limits, shell command templates, tray settings, migration and remote sources.
     pub fn validate(&self) -> Result<(), String> {
         self.validate_index_limits()?;
         self.validate_shell_commands()?;
@@ -529,16 +536,31 @@ impl Config {
     }
 
     fn validate_tray_settings(&self) -> Result<(), String> {
-        validate_u32_range("max_visible_rows", self.max_visible_rows, 1, 100)?;
-        validate_u32_range("max_pinned", self.max_pinned, 1, 20)?;
-        validate_u32_range("max_recent_days", self.max_recent_days, 1, 365)?;
+        validate_u32_range(
+            "max_visible_rows",
+            self.max_visible_rows,
+            1,
+            HARD_MAX_VISIBLE_ROWS,
+        )?;
+        validate_u32_range("max_pinned", self.max_pinned, 1, HARD_MAX_PINNED)?;
+        validate_u32_range(
+            "max_recent_days",
+            self.max_recent_days,
+            1,
+            HARD_MAX_RECENT_DAYS,
+        )?;
         if self.min_recent_count > self.max_pinned {
             return Err(format!(
                 "min_recent_count {} must be <= max_pinned {}",
                 self.min_recent_count, self.max_pinned
             ));
         }
-        validate_u32_range("stale_dirty_days", self.stale_dirty_days, 1, 365)?;
+        validate_u32_range(
+            "stale_dirty_days",
+            self.stale_dirty_days,
+            1,
+            HARD_MAX_STALE_DIRTY_DAYS,
+        )?;
         Ok(())
     }
 }
