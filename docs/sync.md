@@ -180,8 +180,12 @@ Off by default. A local clone is deleted only when **all** of these hold; otherw
 
 - it is absent from a complete listing **and** a direct lookup of that repo returns 404 (an API error never leads to deletion);
 - it is a plain checkout under the source's `clone_root` (bare layouts and repos with linked worktrees are kept);
-- no uncommitted changes, no untracked files, no stash;
-- every local branch has an upstream and nothing is ahead of it.
+- no uncommitted changes, no untracked files, no stash, and no merge/rebase/cherry-pick in progress or conflicted files;
+- every local branch has an upstream and nothing is ahead of it;
+- HEAD is not detached at a commit missing from every remote-tracking branch, and no local tag points at such a commit;
+- no submodules (`.gitmodules` or a non-empty `.git/modules`).
+
+Any check that cannot be completed (for example an unreadable linked worktree entry) keeps the clone.
 
 Git-ignored files (build output, a local `.env`) are deleted together with the clone. Repos that were _moved_ upstream appear as a new not-cloned repo, and the old clone is pruned only if it passes the checks above.
 

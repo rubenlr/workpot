@@ -129,7 +129,7 @@ export function createTrayPanel() {
     removeCloning: (path) => {
       cloningPaths = cloningPaths.filter((p) => p !== path);
     },
-    onOpened: () => void launch.hidePanel(),
+    onOpened: () => void launch.hidePanelReportingErrors(),
   };
 
   async function handleClone(repo: RepoDto): Promise<void> {

@@ -39,7 +39,7 @@ fn reject_incompatible_schema(conn: &Connection) -> Result<()> {
     }
 
     // Stamped as migrated but missing the bootstrap tables (corrupt / partial wipe).
-    if version >= LATEST_SCHEMA_VERSION && !has_locations {
+    if version >= 1 && !has_locations {
         return Err(WorkpotError::IncompatibleDatabase(format!(
             "database user_version={version} but `locations` is missing; {SCHEMA_RESET_HINT}"
         )));
@@ -104,5 +104,130 @@ mod tests {
             matches!(err, WorkpotError::IncompatibleDatabase(_)),
             "{err:?}"
         );
+    }
+
+    const MIGRATION_001: &str = include_str!("migrations/001_bootstrap.sql");
+
+    fn count_tables(conn: &Connection, names: &[&str]) -> usize {
+        names
+            .iter()
+            .filter(|n| table_exists(conn, n).expect("check"))
+            .count()
+    }
+
+    #[test]
+    fn latest_schema_version_is_pinned() {
+        // Bump deliberately together with a new migration step (and its upgrade test).
+        assert_eq!(LATEST_SCHEMA_VERSION, 2);
+    }
+
+    #[test]
+    fn v1_database_upgrades_to_v2_and_keeps_its_data() {
+        let mut conn = Connection::open_in_memory().expect("open");
+        Migrations::from_slice(&[M::up(MIGRATION_001)])
+            .to_latest(&mut conn)
+            .expect("apply v1 only");
+        assert_eq!(user_version(&conn).expect("version"), 1);
+        assert!(!table_exists(&conn, "remote_repos").expect("check"));
+        conn.execute(
+            "INSERT INTO locations (path, name, registered_at) VALUES ('/p/a', 'a', 1)",
+            [],
+        )
+        .expect("seed location");
+
+        apply_migrations(&mut conn).expect("upgrade");
+
+        assert_eq!(user_version(&conn).expect("version"), 2);
+        assert_eq!(
+            count_tables(&conn, &["remote_repos", "remote_sync_runs"]),
+            2
+        );
+        let kept: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM locations WHERE path = '/p/a'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("count");
+        assert_eq!(kept, 1, "v1 data survives the upgrade");
+    }
+
+    #[test]
+    fn applying_migrations_twice_is_a_noop() {
+        let mut conn = Connection::open_in_memory().expect("open");
+        apply_migrations(&mut conn).expect("first");
+        conn.execute(
+            "INSERT INTO remote_sync_runs (source_id, started_at, status) VALUES ('s', 1, 'ok')",
+            [],
+        )
+        .expect("seed run");
+        apply_migrations(&mut conn).expect("second");
+        assert_eq!(user_version(&conn).expect("version"), LATEST_SCHEMA_VERSION);
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM remote_sync_runs", [], |r| r.get(0))
+            .expect("count");
+        assert_eq!(rows, 1);
+    }
+
+    #[test]
+    fn remote_tables_enforce_their_check_constraints() {
+        let mut conn = Connection::open_in_memory().expect("open");
+        apply_migrations(&mut conn).expect("migrate");
+        let bad_state = conn.execute(
+            "INSERT INTO remote_repos (source_id, full_path, name, url_normalized, clone_path,
+                                       state, first_seen_at, last_seen_at)
+             VALUES ('s', 'a/b', 'b', 'h/a/b', '/c', 'bogus', 1, 1)",
+            [],
+        );
+        assert!(bad_state.is_err(), "state must be present|gone");
+        let bad_status = conn.execute(
+            "INSERT INTO remote_sync_runs (source_id, started_at, status) VALUES ('s', 1, 'bogus')",
+            [],
+        );
+        assert!(bad_status.is_err(), "status must be ok|error");
+        let bad_archived = conn.execute(
+            "INSERT INTO remote_repos (source_id, full_path, name, url_normalized, clone_path,
+                                       archived, first_seen_at, last_seen_at)
+             VALUES ('s', 'a/c', 'c', 'h/a/c', '/c', 2, 1, 1)",
+            [],
+        );
+        assert!(bad_archived.is_err(), "archived must be 0|1");
+    }
+
+    #[test]
+    fn database_newer_than_this_build_is_rejected() {
+        let mut conn = Connection::open_in_memory().expect("open");
+        apply_migrations(&mut conn).expect("migrate");
+        conn.pragma_update(None, "user_version", LATEST_SCHEMA_VERSION + 1)
+            .expect("stamp newer");
+        let err = apply_migrations(&mut conn).expect_err("newer must fail");
+        match err {
+            WorkpotError::IncompatibleDatabase(msg) => assert!(msg.contains("newer"), "{msg}"),
+            other => panic!("expected IncompatibleDatabase, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn any_migrated_version_without_locations_is_rejected() {
+        // v1 stamps (pre remote-catalog builds) must be caught too, not only the latest.
+        for version in 1..=LATEST_SCHEMA_VERSION {
+            let mut conn = Connection::open_in_memory().expect("open");
+            conn.pragma_update(None, "user_version", version)
+                .expect("stamp");
+            let err = apply_migrations(&mut conn).expect_err("corrupt stamp");
+            match err {
+                WorkpotError::IncompatibleDatabase(msg) => {
+                    assert!(msg.contains("`locations` is missing"), "v{version}: {msg}");
+                }
+                other => panic!("v{version}: expected IncompatibleDatabase, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn unstamped_empty_database_is_not_mistaken_for_corruption() {
+        let mut conn = Connection::open_in_memory().expect("open");
+        assert_eq!(user_version(&conn).expect("version"), 0);
+        apply_migrations(&mut conn).expect("fresh db migrates");
     }
 }

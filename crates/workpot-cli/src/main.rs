@@ -1157,3 +1157,116 @@ mod cli_parse_tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod remote_format_tests {
+    use super::*;
+
+    fn status(gone_count: u32) -> RemoteSourceStatus {
+        RemoteSourceStatus {
+            name: "platform".to_string(),
+            provider: RemoteProvider::Gitlab,
+            host: "git.example.com".to_string(),
+            path: "acme/platform".to_string(),
+            clone_root: PathBuf::from("/tmp/clones"),
+            clone_policy: ClonePolicy::Manual,
+            prune_removed: false,
+            repo_count: 3,
+            cloned_count: 1,
+            gone_count,
+            last_run_status: None,
+            last_run_at: None,
+            last_run_message: None,
+        }
+    }
+
+    #[test]
+    fn parse_protocol_override_distinguishes_unchanged_default_and_pinned() {
+        assert_eq!(parse_protocol_override(None).unwrap(), None);
+        assert_eq!(
+            parse_protocol_override(Some("default")).unwrap(),
+            Some(None)
+        );
+        assert_eq!(
+            parse_protocol_override(Some("ssh")).unwrap(),
+            Some(Some(GitProtocol::Ssh))
+        );
+        assert_eq!(
+            parse_protocol_override(Some("https")).unwrap(),
+            Some(Some(GitProtocol::Https))
+        );
+        let err = parse_protocol_override(Some("bogus")).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "invalid protocol \"bogus\": use ssh, https, or default"
+        );
+    }
+
+    #[test]
+    fn source_line_omits_removed_upstream_when_none_gone() {
+        assert_eq!(
+            format_remote_source_line(&status(0)),
+            "platform gitlab:git.example.com/acme/platform -> /tmp/clones \
+             policy=manual prune=off repos=3 cloned=1"
+        );
+    }
+
+    #[test]
+    fn source_line_appends_removed_upstream_count_and_prune_state() {
+        let mut s = status(2);
+        s.prune_removed = true;
+        assert_eq!(
+            format_remote_source_line(&s),
+            "platform gitlab:git.example.com/acme/platform -> /tmp/clones \
+             policy=manual prune=on repos=3 cloned=1 removed-upstream=2"
+        );
+    }
+
+    #[test]
+    fn last_sync_line_covers_never_ok_and_error() {
+        let now = 10_000;
+        assert_eq!(
+            format_last_sync_line(&status(0), now),
+            "  last sync: never (run `workpot sync remote`)"
+        );
+
+        let mut ok = status(0);
+        ok.last_run_status = Some("ok".to_string());
+        ok.last_run_at = Some(now - 120);
+        assert_eq!(format_last_sync_line(&ok, now), "  last sync: ok 2m ago");
+        // A message on a non-error run is not shown.
+        ok.last_run_message = Some("ignored".to_string());
+        assert_eq!(format_last_sync_line(&ok, now), "  last sync: ok 2m ago");
+
+        let mut err = status(0);
+        err.last_run_status = Some("error".to_string());
+        err.last_run_at = Some(now - 30);
+        err.last_run_message = Some("glab failed".to_string());
+        assert_eq!(
+            format_last_sync_line(&err, now),
+            "  last sync: error 30s ago: glab failed"
+        );
+        // Error without a message falls back to the plain form.
+        err.last_run_message = None;
+        assert_eq!(
+            format_last_sync_line(&err, now),
+            "  last sync: error 30s ago"
+        );
+    }
+
+    #[test]
+    fn format_ago_switches_unit_at_each_boundary() {
+        for (secs, expected) in [
+            (0, "0s"),
+            (59, "59s"),
+            (60, "1m"),
+            (3599, "59m"),
+            (3600, "1h"),
+            (86_399, "23h"),
+            (86_400, "1d"),
+            (172_800, "2d"),
+        ] {
+            assert_eq!(format_ago(secs), expected, "secs={secs}");
+        }
+    }
+}

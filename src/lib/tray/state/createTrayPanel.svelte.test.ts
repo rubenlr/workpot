@@ -7,13 +7,14 @@ const invoke = vi.fn();
 const unsubscribe = vi.fn();
 const subscribeTrayPanelEvents = vi.fn().mockResolvedValue(unsubscribe);
 const focus = vi.fn();
+const hide = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invoke(...args),
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ hide: vi.fn().mockResolvedValue(undefined) }),
+  getCurrentWindow: () => ({ hide: (...args: unknown[]) => hide(...args) }),
 }));
 
 vi.mock("$lib/tray/logic/handlers/trayPanelEvents", () => ({
@@ -49,6 +50,8 @@ describe("createTrayPanel", () => {
     invoke.mockReset();
     subscribeTrayPanelEvents.mockClear();
     unsubscribe.mockClear();
+    hide.mockReset();
+    hide.mockResolvedValue(undefined);
     invoke.mockImplementation(async (cmd: string) => {
       if (cmd === "list_repos") return [repo("/tmp/a")];
       if (cmd === "list_all_tags") return ["work"];
@@ -63,6 +66,7 @@ describe("createTrayPanel", () => {
       }
       if (cmd === "get_repo_sync_status") return null;
       if (cmd === "get_repo_convert_status") return null;
+      if (cmd === "get_repo_clone_status") return [];
       return undefined;
     });
   });
@@ -637,5 +641,180 @@ describe("createTrayPanel", () => {
 
     expect(panel.activeConvert).toBeNull();
     expect(panel.listError).toBe("convert failed");
+  });
+
+  describe("clone wiring", () => {
+    function remoteRepo(
+      path: string,
+      policy: RepoDto["clone_policy"],
+    ): RepoDto {
+      return { ...repo(path), cloned: false, clone_policy: policy };
+    }
+
+    function mockListRepos(repos: RepoDto[]) {
+      const base = invoke.getMockImplementation()!;
+      invoke.mockImplementation(async (cmd: string, ...rest: unknown[]) =>
+        cmd === "list_repos" ? repos : base(cmd, ...rest),
+      );
+    }
+
+    async function mountedPanel() {
+      const panel = createTrayPanel();
+      await panel.mount();
+      const handlers = subscribeTrayPanelEvents.mock.calls[0][0];
+      return { panel, handlers };
+    }
+
+    it("mount restores in-flight clones from get_repo_clone_status", async () => {
+      const base = invoke.getMockImplementation()!;
+      invoke.mockImplementation(async (cmd: string, ...rest: unknown[]) =>
+        cmd === "get_repo_clone_status"
+          ? ["/code/acme/api", "/code/acme/web"]
+          : base(cmd, ...rest),
+      );
+
+      const { panel } = await mountedPanel();
+
+      expect(invoke).toHaveBeenCalledWith("get_repo_clone_status");
+      expect(panel.cloningPaths).toEqual(["/code/acme/api", "/code/acme/web"]);
+    });
+
+    it("repo-clone-started adds the path once and repo-clone-failed removes it", async () => {
+      const { panel, handlers } = await mountedPanel();
+
+      handlers.onRepoCloneStarted({ repo_path: "/code/acme/api" });
+      handlers.onRepoCloneStarted({ repo_path: "/code/acme/api" });
+      expect(panel.cloningPaths).toEqual(["/code/acme/api"]);
+
+      handlers.onRepoCloneStarted({ repo_path: "/code/acme/web" });
+      handlers.onRepoCloneFailed({
+        repo_path: "/code/acme/api",
+        error: "clone boom",
+      });
+
+      expect(panel.cloningPaths).toEqual(["/code/acme/web"]);
+      expect(panel.listError).toBe("clone boom");
+    });
+
+    it("repo-clone-complete removes the path and refreshes the list", async () => {
+      const { panel, handlers } = await mountedPanel();
+      handlers.onRepoCloneStarted({ repo_path: "/code/acme/api" });
+      invoke.mockClear();
+
+      handlers.onRepoCloneComplete({ repo_path: "/code/acme/api" });
+
+      await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("list_repos"));
+      expect(panel.cloningPaths).toEqual([]);
+      expect(hide).not.toHaveBeenCalled();
+    });
+
+    it("repo-clone-complete with an IDE launch error surfaces it and keeps the panel open", async () => {
+      const { panel, handlers } = await mountedPanel();
+
+      handlers.onRepoCloneComplete({
+        repo_path: "/code/acme/api",
+        opened: true,
+        error: "cursor missing",
+      });
+
+      await vi.waitFor(() => expect(panel.listError).toBe("cursor missing"));
+      expect(hide).not.toHaveBeenCalled();
+    });
+
+    it("repo-clone-complete after clone-and-open hides the panel", async () => {
+      const { panel, handlers } = await mountedPanel();
+
+      handlers.onRepoCloneComplete({
+        repo_path: "/code/acme/api",
+        opened: true,
+      });
+
+      await vi.waitFor(() => expect(hide).toHaveBeenCalledOnce());
+      expect(panel.launchError).toBeNull();
+    });
+
+    it("a rejected panel hide after clone-and-open is surfaced as launchError", async () => {
+      hide.mockRejectedValue(new Error("window gone"));
+      const { panel, handlers } = await mountedPanel();
+
+      handlers.onRepoCloneComplete({
+        repo_path: "/code/acme/api",
+        opened: true,
+      });
+
+      await vi.waitFor(() =>
+        expect(panel.launchError).toBe("Error: window gone"),
+      );
+    });
+
+    it("cloneRepo tracks the path and invokes clone_repo without opening", async () => {
+      const { panel } = await mountedPanel();
+      let finishClone!: () => void;
+      const base = invoke.getMockImplementation()!;
+      invoke.mockImplementation(async (cmd: string, ...rest: unknown[]) => {
+        if (cmd === "clone_repo") {
+          await new Promise<void>((resolve) => {
+            finishClone = resolve;
+          });
+          return undefined;
+        }
+        return base(cmd, ...rest);
+      });
+
+      const pending = panel.cloneRepo(remoteRepo("/code/acme/api", "manual"));
+
+      expect(panel.cloningPaths).toEqual(["/code/acme/api"]);
+      expect(invoke).toHaveBeenCalledWith("clone_repo", {
+        repoPath: "/code/acme/api",
+        openAfter: false,
+      });
+      finishClone();
+      await pending;
+      // events, not the invoke result, end the spinner
+      expect(panel.cloningPaths).toEqual(["/code/acme/api"]);
+    });
+
+    it("cloneRepo drops the spinner and shows the error when the invoke rejects", async () => {
+      const { panel } = await mountedPanel();
+      const base = invoke.getMockImplementation()!;
+      invoke.mockImplementation(async (cmd: string, ...rest: unknown[]) => {
+        if (cmd === "clone_repo") throw new Error("no network");
+        return base(cmd, ...rest);
+      });
+
+      await panel.cloneRepo(remoteRepo("/code/acme/api", "manual"));
+
+      expect(panel.cloningPaths).toEqual([]);
+      expect(panel.listError).toBe("Error: no network");
+    });
+
+    it("openSelected on a not-cloned on_open repo clones with openAfter=true", async () => {
+      mockListRepos([remoteRepo("/code/acme/api", "on_open")]);
+      const { panel } = await mountedPanel();
+      invoke.mockClear();
+
+      await panel.openSelected(false);
+
+      expect(invoke).toHaveBeenCalledWith("clone_repo", {
+        repoPath: "/code/acme/api",
+        openAfter: true,
+      });
+      expect(invoke).not.toHaveBeenCalledWith(
+        "open_in_cursor",
+        expect.anything(),
+      );
+      expect(panel.cloningPaths).toEqual(["/code/acme/api"]);
+    });
+
+    it("openSelected on a not-cloned manual repo shows a hint and does not clone", async () => {
+      mockListRepos([remoteRepo("/code/acme/api", "manual")]);
+      const { panel } = await mountedPanel();
+      invoke.mockClear();
+
+      await panel.openSelected(false);
+
+      expect(invoke).not.toHaveBeenCalledWith("clone_repo", expect.anything());
+      expect(panel.launchError).toContain("not cloned");
+    });
   });
 });

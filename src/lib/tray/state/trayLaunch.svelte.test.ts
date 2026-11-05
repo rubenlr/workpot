@@ -158,4 +158,67 @@ describe("createTrayLaunch", () => {
       expect(hide).not.toHaveBeenCalled();
     },
   );
+
+  it("not-cloned repo with on_open policy but no cloneAndOpen dep shows the hint", async () => {
+    const remote = {
+      ...repo("/code/acme/api"),
+      cloned: false,
+      clone_policy: "on_open" as const,
+    };
+    const { launch } = createLaunch({ selected: remote });
+    await launch.openSelected(false);
+    expect(launch.launchError).toContain("not cloned");
+    expect(invoke).not.toHaveBeenCalled();
+    expect(hide).not.toHaveBeenCalled();
+  });
+
+  it.each([null, undefined] as const)(
+    "not-cloned repo with clone_policy %s clones then opens",
+    async (policy) => {
+      const cloneAndOpen = vi.fn().mockResolvedValue(undefined);
+      const remote = {
+        ...repo("/code/acme/api"),
+        cloned: false,
+        clone_policy: policy,
+      };
+      const { launch } = createLaunch({ selected: remote, cloneAndOpen });
+      await launch.openSelected(false);
+      expect(cloneAndOpen).toHaveBeenCalledExactlyOnceWith(remote);
+      expect(launch.launchError).toBeNull();
+      expect(invoke).not.toHaveBeenCalled();
+    },
+  );
+
+  it("background open of a not-cloned repo clones-and-opens without background refresh", async () => {
+    const cloneAndOpen = vi.fn().mockResolvedValue(undefined);
+    const remote = {
+      ...repo("/code/acme/api"),
+      cloned: false,
+      clone_policy: "auto" as const,
+    };
+    const { launch, refresh, setSelectedIndex } = createLaunch({
+      selected: remote,
+      cloneAndOpen,
+    });
+    await launch.openSelected(true);
+    expect(cloneAndOpen).toHaveBeenCalledExactlyOnceWith(remote);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(setSelectedIndex).not.toHaveBeenCalled();
+  });
+
+  it("hidePanelReportingErrors hides the panel without error", async () => {
+    hide.mockClear();
+    const { launch } = createLaunch();
+    await launch.hidePanelReportingErrors();
+    expect(hide).toHaveBeenCalledOnce();
+    expect(launch.launchError).toBeNull();
+  });
+
+  it("hidePanelReportingErrors surfaces a rejected hide as launchError", async () => {
+    hide.mockRejectedValueOnce(new Error("window gone"));
+    const { launch } = createLaunch();
+    await expect(launch.hidePanelReportingErrors()).resolves.toBeUndefined();
+    expect(launch.launchError).toBe("Error: window gone");
+  });
 });

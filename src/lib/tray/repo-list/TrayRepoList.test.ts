@@ -61,6 +61,8 @@ function renderList(
     selectedIndex?: number;
     onOpen?: (i: number) => void;
     onDetail?: (repo: RepoDto, i: number) => void;
+    cloningPaths?: string[];
+    onClone?: (repo: RepoDto) => void;
   } = {},
 ) {
   const repos = [
@@ -82,6 +84,8 @@ function renderList(
     onSelectRow: vi.fn(),
     onOpen,
     onDetail,
+    cloningPaths: opts.cloningPaths,
+    onClone: opts.onClone,
   };
   const view = render(TrayRepoList, { props: baseProps });
   return {
@@ -291,5 +295,125 @@ describe("TrayRepoList", () => {
     await fireEvent.contextMenu(syncBadge!);
 
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  describe("not-cloned section", () => {
+    const remoteApi = repo("api", {
+      path: "/code/acme/api",
+      branch: null,
+      is_dirty: null,
+      cloned: false,
+      remote_full_path: "acme/platform/api",
+    });
+    const remoteWeb = repo("web", {
+      path: "/code/acme/web",
+      branch: null,
+      is_dirty: null,
+      cloned: false,
+      remote_full_path: "acme/platform/web",
+    });
+
+    it("renders_not_cloned_section_with_label_and_rows_after_local_sections", () => {
+      const { getByText, getByRole, container } = renderList({
+        ...empty,
+        rest: [repo("workpot")],
+        remote: [remoteApi],
+      });
+      expect(getByText("Not cloned")).toBeTruthy();
+      expect(
+        getByRole("region", { name: "Not cloned repositories" }),
+      ).toBeTruthy();
+      expect(getByText("acme/platform/api")).toBeTruthy();
+      const order = [...container.querySelectorAll("[data-repo-path]")].map(
+        (el) => el.getAttribute("data-repo-path"),
+      );
+      expect(order).toEqual(["/tmp/workpot", "/code/acme/api"]);
+    });
+
+    it("not_cloned_rows_are_not_draggable", () => {
+      const { container } = renderList({
+        ...empty,
+        rest: [repo("workpot")],
+        remote: [remoteApi],
+      });
+      const remoteRow = container.querySelector(
+        '[data-repo-path="/code/acme/api"]',
+      );
+      expect(remoteRow?.getAttribute("draggable")).toBeNull();
+    });
+
+    it("clicking_Clone_calls_onClone_with_that_repo", async () => {
+      const onClone = vi.fn();
+      const { getByRole } = renderList(
+        { ...empty, remote: [remoteApi, remoteWeb] },
+        { onClone },
+      );
+      await fireEvent.click(getByRole("button", { name: "Clone web" }));
+      expect(onClone).toHaveBeenCalledExactlyOnceWith(remoteWeb);
+    });
+
+    it("Clone_is_disabled_when_no_onClone_is_provided", () => {
+      const { getByRole } = renderList({ ...empty, remote: [remoteApi] });
+      expect(
+        (getByRole("button", { name: "Clone api" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+    });
+
+    it("only_repos_in_cloningPaths_show_the_cloning_state", () => {
+      const { getByRole } = renderList(
+        { ...empty, remote: [remoteApi, remoteWeb] },
+        { cloningPaths: ["/code/acme/api"], onClone: vi.fn() },
+      );
+      const api = getByRole("button", {
+        name: "Clone api",
+      }) as HTMLButtonElement;
+      const web = getByRole("button", {
+        name: "Clone web",
+      }) as HTMLButtonElement;
+      expect(api.disabled).toBe(true);
+      expect(api.textContent).toContain("Cloning");
+      expect(web.disabled).toBe(false);
+      expect(web.textContent).toContain("Clone");
+      expect(web.textContent).not.toContain("Cloning");
+    });
+
+    it("contextmenu on a not-cloned row does not invoke show_repo_context_menu", async () => {
+      const { container, getByRole } = renderList({
+        ...empty,
+        remote: [remoteApi],
+      });
+
+      await fireEvent.contextMenu(getByRole("button", { name: "Open api" }));
+      const rowSurface = container.querySelector('[data-row-index="0"] > div');
+      expect(rowSurface).toBeTruthy();
+      await fireEvent.contextMenu(rowSurface!);
+
+      expect(invoke).not.toHaveBeenCalled();
+    });
+
+    it("contextmenu on a not-cloned row is still default-prevented", async () => {
+      const { getByRole } = renderList({ ...empty, remote: [remoteApi] });
+      const notPrevented = await fireEvent.contextMenu(
+        getByRole("button", { name: "Open api" }),
+      );
+      expect(notPrevented).toBe(false);
+    });
+
+    it("contextmenu on a cloned row in the same list still invokes the menu", async () => {
+      const { getByRole } = renderList({
+        ...empty,
+        rest: [repo("workpot")],
+        remote: [remoteApi],
+      });
+      await fireEvent.contextMenu(
+        getByRole("button", { name: "Open workpot" }),
+      );
+      expect(invoke).toHaveBeenCalledOnce();
+      expect(invoke).toHaveBeenCalledWith(
+        "show_repo_context_menu",
+        expect.objectContaining({ repoPath: "/tmp/workpot" }),
+      );
+    });
   });
 });

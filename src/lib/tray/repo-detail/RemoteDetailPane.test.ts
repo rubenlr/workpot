@@ -44,16 +44,16 @@ describe("RemoteDetailPane", () => {
     expect(onClone).toHaveBeenCalledWith(repo);
   });
 
-  it("explains each policy and keeps Clone available", () => {
-    const expectations = {
-      manual: /Not cloned/,
-      on_open: /Opening this repository clones it first/,
-      auto: /Cloned automatically/,
-    } as const;
-    for (const [policy, hint] of Object.entries(expectations)) {
-      const { getByText, getByRole, unmount } = render(RemoteDetailPane, {
+  it.each([
+    ["manual", /Not cloned/],
+    ["on_open", /Opening this repository clones it first/],
+    ["auto", /Cloned automatically/],
+  ] as const)(
+    "explains the %s policy and keeps Clone available",
+    (policy, hint) => {
+      const { getByText, getByRole } = render(RemoteDetailPane, {
         props: {
-          repo: { ...repo, clone_policy: policy as RepoDto["clone_policy"] },
+          repo: { ...repo, clone_policy: policy },
           onClone: vi.fn(),
           onClose: vi.fn(),
         },
@@ -62,8 +62,71 @@ describe("RemoteDetailPane", () => {
       expect(
         (getByRole("button", { name: "Clone" }) as HTMLButtonElement).disabled,
       ).toBe(false);
-      unmount();
-    }
+    },
+  );
+
+  it.each([null, undefined] as const)(
+    "falls back to the manual hint when clone_policy is %s",
+    (policy) => {
+      const { getByText } = render(RemoteDetailPane, {
+        props: {
+          repo: { ...repo, clone_policy: policy },
+          onClone: vi.fn(),
+          onClose: vi.fn(),
+        },
+      });
+      expect(getByText(/Not cloned\. Clone it here/)).toBeTruthy();
+    },
+  );
+
+  it("clones to the repo path when parent_dir is empty", () => {
+    const { getByText } = render(RemoteDetailPane, {
+      props: {
+        repo: { ...repo, parent_dir: "" },
+        onClone: vi.fn(),
+        onClose: vi.fn(),
+      },
+    });
+    expect(getByText("Clones to /Users/me/code/acme/api")).toBeTruthy();
+  });
+
+  it("titles the pane with the alias when set, else the name", () => {
+    const aliased = render(RemoteDetailPane, {
+      props: { repo: { ...repo, alias: "Platform API" }, onClose: vi.fn() },
+    });
+    expect(aliased.getByRole("heading", { level: 2 }).textContent?.trim()).toBe(
+      "Platform API",
+    );
+    aliased.unmount();
+
+    const plain = render(RemoteDetailPane, {
+      props: { repo, onClose: vi.fn() },
+    });
+    expect(plain.getByRole("heading", { level: 2 }).textContent?.trim()).toBe(
+      "api",
+    );
+  });
+
+  it("omits the remote path and url lines when they are absent", () => {
+    const { queryByText, getByText } = render(RemoteDetailPane, {
+      props: {
+        repo: { ...repo, remote_full_path: null, remote_url: null },
+        onClone: vi.fn(),
+        onClose: vi.fn(),
+      },
+    });
+    expect(queryByText("acme/platform/api")).toBeNull();
+    expect(queryByText(/https:\/\/git\.example\.com/)).toBeNull();
+    expect(getByText(/Clones to/)).toBeTruthy();
+  });
+
+  it("disables Clone when no onClone handler is provided", () => {
+    const { getByRole } = render(RemoteDetailPane, {
+      props: { repo, onClose: vi.fn() },
+    });
+    expect(
+      (getByRole("button", { name: "Clone" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 
   it("disables Clone while cloning and closes via the back button", async () => {

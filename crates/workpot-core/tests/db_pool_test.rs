@@ -64,6 +64,8 @@ fn assert_schema_ready(conn: &Connection) {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("user_version");
+    // Literal on purpose: comparing the constant to itself would not pin the schema level.
+    assert_eq!(version, 2, "schema level (bump with the next migration)");
     assert_eq!(
         version,
         workpot_core::infra::migrations::LATEST_SCHEMA_VERSION

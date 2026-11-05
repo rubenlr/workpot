@@ -5,8 +5,12 @@
 //! - the repo is absent from a complete listing **and** a direct per-repo lookup returns 404
 //! - the clone is a plain (non-bare) checkout under the source's `clone_root` with no linked
 //!   worktrees
-//! - no tracked changes, no untracked files, no stash
+//! - no tracked changes, no untracked files, no stash, and no merge/rebase/cherry-pick/revert in
+//!   progress or conflicted files
 //! - every local branch has an upstream and nothing ahead of it
+//! - HEAD is not detached at a commit missing from every remote-tracking ref, and no local tag
+//!   points at such a commit
+//! - the repo has no submodules (conservative: `.gitmodules` or a non-empty `.git/modules`)
 //!
 //! Git-ignored files (build output, local `.env`) are removed along with the clone.
 
@@ -54,8 +58,17 @@ fn placement_blocker(canonical: &Path, root: &Path) -> Result<Option<String>> {
     if !canonical.join(".git").is_dir() {
         return Ok(Some("linked worktree, not a standalone clone".into()));
     }
-    if !git::list_worktree_paths(canonical)?.is_empty() {
+    let worktrees = git::list_worktrees(canonical)?;
+    if !worktrees.paths.is_empty() {
         return Ok(Some("has linked worktrees".into()));
+    }
+    if worktrees.unreadable > 0 {
+        log::warn!(
+            "prune: {} linked worktree entr(ies) of {} could not be read; keeping",
+            worktrees.unreadable,
+            canonical.display()
+        );
+        return Ok(Some("could not read linked worktree entries".into()));
     }
     Ok(None)
 }
@@ -84,19 +97,80 @@ fn repo_state_blocker(canonical: &Path) -> Result<Option<String>> {
     if untracked {
         return Ok(Some("untracked files".into()));
     }
+    match git::unfinished_operation_or_conflicts(&repo) {
+        Ok(None) => {}
+        Ok(Some(reason)) => return Ok(Some(reason)),
+        Err(e) => {
+            log::warn!(
+                "prune: operation/conflict check failed for {}: {e}; keeping",
+                canonical.display()
+            );
+            return Ok(Some(
+                "could not verify no merge/rebase is in progress".into(),
+            ));
+        }
+    }
     drop(repo);
     if git::has_stash(canonical)? {
         return Ok(Some("stash entries".into()));
     }
-    match git::check_all_branches_synced(canonical)? {
-        None => Ok(None),
+    if let Some(reason) = branch_sync_blocker(canonical)? {
+        return Ok(Some(reason));
+    }
+    Ok(unpushed_refs_blocker(canonical).or_else(|| submodule_blocker(canonical)))
+}
+
+fn branch_sync_blocker(canonical: &Path) -> Result<Option<String>> {
+    Ok(match git::check_all_branches_synced(canonical)? {
+        None => None,
         Some(git::SyncBlocker::NoUpstream { branch }) => {
-            Ok(Some(format!("branch {branch} has no upstream")))
+            Some(format!("branch {branch} has no upstream"))
         }
-        Some(git::SyncBlocker::UnpushedCommits { branch, count }) => Ok(Some(format!(
-            "branch {branch} has {count} unpushed commit(s)"
-        ))),
-        Some(git::SyncBlocker::NonUtf8BranchName) => Ok(Some("non-UTF-8 branch name".into())),
+        Some(git::SyncBlocker::UnpushedCommits { branch, count }) => {
+            Some(format!("branch {branch} has {count} unpushed commit(s)"))
+        }
+        Some(git::SyncBlocker::NonUtf8BranchName) => Some("non-UTF-8 branch name".into()),
+    })
+}
+
+/// Detached-HEAD commits and local tags not contained in any remote-tracking ref. Failing to
+/// determine either keeps the clone.
+fn unpushed_refs_blocker(canonical: &Path) -> Option<String> {
+    match git::has_unpushed_detached_head(canonical) {
+        Ok(true) => return Some("detached HEAD at a commit not on any remote branch".into()),
+        Ok(false) => {}
+        Err(e) => {
+            log::warn!(
+                "prune: detached-HEAD check failed for {}: {e}; keeping",
+                canonical.display()
+            );
+            return Some("could not verify detached HEAD is pushed".into());
+        }
+    }
+    match git::find_unpushed_tag(canonical) {
+        Ok(None) => None,
+        Ok(Some(tag)) => Some(format!("local tag {tag} is not on any remote branch")),
+        Err(e) => {
+            log::warn!(
+                "prune: tag check failed for {}: {e}; keeping",
+                canonical.display()
+            );
+            Some("could not verify local tags are pushed".into())
+        }
+    }
+}
+
+fn submodule_blocker(canonical: &Path) -> Option<String> {
+    match git::has_submodules(canonical) {
+        Ok(false) => None,
+        Ok(true) => Some("has submodules".into()),
+        Err(e) => {
+            log::warn!(
+                "prune: submodule check failed for {}: {e}; keeping",
+                canonical.display()
+            );
+            Some("could not verify submodules".into())
+        }
     }
 }
 
@@ -166,4 +240,144 @@ fn delete_location(pool: &DbPool, local: &str) -> Result<()> {
         conn.execute("DELETE FROM locations WHERE path = ?1", params![local])?;
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::git_cmd;
+    use std::path::PathBuf;
+
+    fn git(dir: &Path, args: &[&str]) {
+        let output = git_cmd()
+            .args(["-c", "user.name=T", "-c", "user.email=t@example.com"])
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("git");
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// Canonical temp dir (macOS `/var` is a symlink) with a `root` subdirectory.
+    fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let base = dir.path().canonicalize().expect("canonicalize");
+        let root = base.join("root");
+        std::fs::create_dir_all(&root).expect("root");
+        (dir, base, root)
+    }
+
+    fn init_repo(path: &Path) {
+        std::fs::create_dir_all(path).expect("repo dir");
+        git(path, &["init", "-q", "-b", "main"]);
+        git(path, &["commit", "--allow-empty", "-q", "-m", "seed"]);
+    }
+
+    fn reason(canonical: &Path, root: &Path) -> Option<String> {
+        placement_blocker(canonical, root).expect("placement")
+    }
+
+    #[test]
+    fn placement_accepts_a_standalone_clone_under_the_root() {
+        let (_dir, _base, root) = fixture();
+        let repo = root.join("web");
+        init_repo(&repo);
+        assert_eq!(reason(&repo, &root), None);
+    }
+
+    #[test]
+    fn placement_rejects_the_root_itself_and_paths_outside_it() {
+        let (_dir, base, root) = fixture();
+        init_repo(&root);
+        let elsewhere = base.join("elsewhere");
+        init_repo(&elsewhere);
+        // A sibling whose name merely starts with the root's name is outside, too.
+        let sibling = base.join("root-sibling");
+        init_repo(&sibling);
+
+        for outside in [&root, &elsewhere, &sibling] {
+            assert_eq!(
+                reason(outside, &root).as_deref(),
+                Some("outside the source clone_root"),
+                "{}",
+                outside.display()
+            );
+        }
+    }
+
+    #[test]
+    fn placement_rejects_bare_repos_and_plain_directories() {
+        let (_dir, _base, root) = fixture();
+        let bare = root.join("web.git");
+        std::fs::create_dir_all(&bare).expect("bare dir");
+        git(&bare, &["init", "--bare", "-q"]);
+        let plain = root.join("not-a-repo");
+        std::fs::create_dir_all(&plain).expect("plain dir");
+
+        for path in [&bare, &plain] {
+            assert_eq!(
+                reason(path, &root).as_deref(),
+                Some("not a plain checkout (bare layout)"),
+                "{}",
+                path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn placement_rejects_a_linked_worktree_checkout() {
+        let (_dir, base, root) = fixture();
+        let main = base.join("main-repo");
+        init_repo(&main);
+        let linked = root.join("wt");
+        git(
+            &main,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "feat",
+                &linked.display().to_string(),
+            ],
+        );
+        assert!(linked.join(".git").is_file());
+        assert_eq!(
+            reason(&linked, &root).as_deref(),
+            Some("linked worktree, not a standalone clone")
+        );
+    }
+
+    #[test]
+    fn placement_rejects_a_clone_that_has_linked_worktrees() {
+        let (_dir, base, root) = fixture();
+        let repo = root.join("web");
+        init_repo(&repo);
+        git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "feat",
+                &base.join("wt").display().to_string(),
+            ],
+        );
+        assert_eq!(
+            reason(&repo, &root).as_deref(),
+            Some("has linked worktrees")
+        );
+    }
+
+    #[test]
+    fn deletion_blocker_reports_unreadable_paths_instead_of_deleting() {
+        let (_dir, base, root) = fixture();
+        let err = deletion_blocker(&base.join("missing"), &root).expect_err("missing path");
+        assert!(matches!(err, WorkpotError::InvalidPath(_)), "{err:?}");
+    }
 }

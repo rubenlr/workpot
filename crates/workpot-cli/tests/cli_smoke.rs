@@ -40,7 +40,37 @@ fn workpot_cmd(home: &std::path::Path) -> Command {
     cmd.env("XDG_CONFIG_HOME", home.join(".config"));
     cmd.env("XDG_DATA_HOME", home.join(".local/share"));
     cmd.env_remove("XDG_STATE_HOME");
+    // Never reach a developer's real gh/glab: point the provider lookup at stubs that always
+    // fail. Tests that need a working provider override this with `fake_glab_dir` & co.
+    cmd.env("WORKPOT_CLI_DIR", denying_cli_dir(home));
     cmd
+}
+
+/// Directory holding `gh` / `glab` stubs that exit 1, so an un-overridden test can never run
+/// the real CLIs (`resolve_cli` checks `WORKPOT_CLI_DIR` first).
+fn denying_cli_dir(home: &std::path::Path) -> PathBuf {
+    let dir = home.join(".workpot-test-denied-cli");
+    for program in ["gh", "glab"] {
+        write_cli_stub(
+            &dir,
+            program,
+            "#!/bin/sh\necho 'blocked by test harness' >&2\nexit 1\n",
+        );
+    }
+    dir
+}
+
+fn write_cli_stub(dir: &std::path::Path, program: &str, script: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::create_dir_all(dir).expect("cli stub dir");
+    let path = dir.join(program);
+    if path.is_file() {
+        return;
+    }
+    fs::write(&path, script).expect("write cli stub");
+    let mut perms = fs::metadata(&path).expect("meta").permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&path, perms).expect("chmod");
 }
 
 #[test]
@@ -1437,14 +1467,18 @@ fn seeded_bare(parent: &std::path::Path, name: &str) -> PathBuf {
         .success();
     assert!(ok);
     let seed = parent.join(format!("{name}-seed"));
-    for args in [vec![
-        "clone",
-        "-q",
-        bare.to_str().expect("utf8"),
-        seed.to_str().expect("utf8"),
-    ]] {
-        assert!(git_cmd().args(args).status().expect("clone").success());
-    }
+    assert!(
+        git_cmd()
+            .args([
+                "clone",
+                "-q",
+                bare.to_str().expect("utf8"),
+                seed.to_str().expect("utf8"),
+            ])
+            .status()
+            .expect("clone")
+            .success()
+    );
     for args in [
         vec!["checkout", "-q", "-b", "main"],
         vec![
@@ -1472,17 +1506,36 @@ fn seeded_bare(parent: &std::path::Path, name: &str) -> PathBuf {
     bare
 }
 
-/// Fake `glab` that answers group listings with one project and reports `https` protocol.
-fn fake_glab_dir(parent: &std::path::Path, bare: &std::path::Path) -> PathBuf {
+/// One GitLab project object as the fake `glab` returns it from a group listing.
+fn gitlab_project_json(bare: &std::path::Path, name: &str, archived: bool) -> String {
+    let url = bare.display();
+    format!(
+        "{{\"path_with_namespace\":\"acme/platform/{name}\",\"path\":\"{name}\",\"web_url\":\"https://git.example.com/acme/platform/{name}\",\"http_url_to_repo\":\"{url}\",\"ssh_url_to_repo\":\"{url}\",\"default_branch\":\"main\",\"archived\":{archived}}}"
+    )
+}
+
+/// Fake `glab` answering group listings with `projects` (JSON objects) and reporting `https`.
+/// Anything else (and everything when `projects` is `None`) exits 1 like an HTTP 404.
+fn fake_glab_with_projects(
+    parent: &std::path::Path,
+    dir_name: &str,
+    projects: Option<&[String]>,
+) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
-    let dir = parent.join("fake-cli");
+    let dir = parent.join(dir_name);
     fs::create_dir_all(&dir).expect("fake cli dir");
     let script = dir.join("glab");
-    let url = bare.display();
+    let listing_arm = match projects {
+        Some(projects) => format!(
+            "  *\"groups/\"*) cat <<'JSON'\n[{}]\nJSON\n  ;;\n",
+            projects.join(",")
+        ),
+        None => String::new(),
+    };
     fs::write(
         &script,
         format!(
-            "#!/bin/sh\ncase \"$*\" in\n  *\"config get git_protocol\"*) echo https ;;\n  *\"groups/\"*) cat <<'JSON'\n[{{\"path_with_namespace\":\"acme/platform/api\",\"path\":\"api\",\"web_url\":\"https://git.example.com/acme/platform/api\",\"http_url_to_repo\":\"{url}\",\"ssh_url_to_repo\":\"{url}\",\"default_branch\":\"main\",\"archived\":false}}]\nJSON\n  ;;\n  *) echo '{{\"message\":\"404 Not Found\"}}' ; echo 'glab: 404 Not Found (HTTP 404)' >&2 ; exit 1 ;;\nesac\n"
+            "#!/bin/sh\ncase \"$*\" in\n  *\"config get git_protocol\"*) echo https ;;\n{listing_arm}  *) echo '{{\"message\":\"404 Not Found\"}}' ; echo 'glab: 404 Not Found (HTTP 404)' >&2 ; exit 1 ;;\nesac\n"
         ),
     )
     .expect("write fake glab");
@@ -1490,6 +1543,45 @@ fn fake_glab_dir(parent: &std::path::Path, bare: &std::path::Path) -> PathBuf {
     perms.set_mode(0o755);
     fs::set_permissions(&script, perms).expect("chmod");
     dir
+}
+
+/// Fake `glab` that answers group listings with one project and reports `https` protocol.
+fn fake_glab_dir(parent: &std::path::Path, bare: &std::path::Path) -> PathBuf {
+    fake_glab_with_projects(
+        parent,
+        "fake-cli",
+        Some(&[gitlab_project_json(bare, "api", false)]),
+    )
+}
+
+/// Fake `glab` whose every call fails (unauthenticated / host unreachable).
+fn failing_glab_dir(parent: &std::path::Path) -> PathBuf {
+    fake_glab_with_projects(parent, "failing-cli", None)
+}
+
+/// Adds the `platform` GitLab source (`acme/platform`) with `extra` flags; indexes unless
+/// `--no-sync` is among them.
+fn remotes_add_platform(
+    home: &std::path::Path,
+    cli_dir: &std::path::Path,
+    root: &std::path::Path,
+    extra: &[&str],
+) -> assert_cmd::assert::Assert {
+    workpot_cmd(home)
+        .env("WORKPOT_CLI_DIR", cli_dir)
+        .args([
+            "remotes",
+            "add",
+            "acme/platform",
+            "--provider",
+            "gitlab",
+            "--host",
+            "git.example.com",
+            "--clone-root",
+        ])
+        .arg(root)
+        .args(extra)
+        .assert()
 }
 
 #[test]
@@ -1577,8 +1669,10 @@ fn remotes_add_rejects_overlapping_clone_roots() {
         ])
         .arg(root.join("nested"))
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("overlaps"));
+        .code(1)
+        .stderr(predicate::str::contains(
+            "error: remotes[other].clone_root overlaps remotes[acme].clone_root",
+        ));
 }
 
 #[test]
@@ -1639,4 +1733,588 @@ fn remote_index_list_clone_roundtrip_with_fake_glab() {
         .assert()
         .success()
         .stdout(predicate::str::contains("already cloned:"));
+}
+
+// ---- remote catalog: sync scopes -----------------------------------------------------------
+
+/// Home with the `platform` source added (`--no-sync`, so the index is still empty), plus the
+/// fake-`glab` dir and the clone root.
+fn home_with_unsynced_platform(extra: &[&str]) -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let home = tempfile::tempdir().expect("tempdir");
+    let bare = seeded_bare(home.path(), "api-remote");
+    let cli_dir = fake_glab_dir(home.path(), &bare);
+    let root = home.path().join("clones");
+    let mut flags = vec!["--no-sync"];
+    flags.extend_from_slice(extra);
+    remotes_add_platform(home.path(), &cli_dir, &root, &flags)
+        .success()
+        .stdout(predicate::str::contains("added remote source platform"));
+    (home, cli_dir, root)
+}
+
+#[test]
+fn sync_remote_without_sources_says_none_configured() {
+    let home = tempfile::tempdir().expect("tempdir");
+    workpot_cmd(home.path())
+        .args(["sync", "remote"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "sync remote: no remote sources configured",
+        ));
+}
+
+#[test]
+fn sync_remote_indexes_configured_source_only() {
+    let (home, cli_dir, _root) = home_with_unsynced_platform(&[]);
+
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args(["sync", "remote"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("remote: 1 indexed, +1 new"))
+        // Remote-only scope: no local catalog line.
+        .stdout(predicate::str::contains("git:").not());
+
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("api (not cloned)"));
+}
+
+#[test]
+fn sync_local_does_not_touch_remote_index() {
+    let (home, cli_dir, _root) = home_with_unsynced_platform(&[]);
+
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args(["sync", "local"])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("sync local:"))
+        .stdout(predicate::str::contains("remote:").not());
+
+    // The remote pass never ran: nothing indexed, source still "never synced".
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("(not cloned)").not());
+    workpot_cmd(home.path())
+        .args(["remotes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("repos=0"))
+        .stdout(predicate::str::contains("last sync: never"));
+}
+
+#[test]
+fn bare_sync_prints_remote_summary_before_local_line() {
+    let (home, cli_dir, _root) = home_with_unsynced_platform(&[]);
+    // Index once so the source sits inside its TTL window when bare `sync` runs.
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args(["sync", "remote"])
+        .assert()
+        .success();
+
+    let assert = workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .arg("sync")
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8");
+    let remote_at = stdout
+        .find("remote: 1 indexed")
+        .expect("remote summary line");
+    let local_at = stdout.find("sync: +").expect("local summary line");
+    assert!(remote_at < local_at, "remote must run first:\n{stdout}");
+    assert!(
+        !stdout.contains("skipped: synced recently"),
+        "explicit sync is never TTL-skipped:\n{stdout}"
+    );
+}
+
+#[test]
+fn explicit_sync_remote_lists_again_right_after_remotes_add() {
+    // `remotes add` already indexed the source moments ago; the explicit command must bypass
+    // the remote_sync_ttl_minutes window (force) instead of reporting a skip.
+    let home = tempfile::tempdir().expect("tempdir");
+    let bare = seeded_bare(home.path(), "api-remote");
+    let cli_dir = fake_glab_dir(home.path(), &bare);
+    let root = home.path().join("clones");
+    remotes_add_platform(home.path(), &cli_dir, &root, &[])
+        .success()
+        .stdout(predicate::str::contains("remote: 1 indexed"));
+
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args(["sync", "remote"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("remote: 1 indexed"))
+        .stdout(predicate::str::contains("skipped: synced recently").not());
+}
+
+#[test]
+fn remotes_add_second_source_relists_first_source_despite_ttl() {
+    // The post-add sync covers every configured source and is forced: the first source was
+    // indexed moments ago (inside remote_sync_ttl_minutes) yet must be listed again, not skipped.
+    let home = tempfile::tempdir().expect("tempdir");
+    let bare = seeded_bare(home.path(), "api-remote");
+    let cli_dir = fake_glab_dir(home.path(), &bare);
+    remotes_add_platform(home.path(), &cli_dir, &home.path().join("clones"), &[])
+        .success()
+        .stdout(predicate::str::contains("remote: 1 indexed"));
+
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args([
+            "remotes",
+            "add",
+            "acme/tools",
+            "--provider",
+            "gitlab",
+            "--host",
+            "git.example.com",
+            "--clone-root",
+        ])
+        .arg(home.path().join("tools-clones"))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added remote source tools"))
+        .stdout(predicate::str::contains("remote: 2 indexed"))
+        .stdout(predicate::str::contains("skipped: synced recently").not());
+}
+
+#[test]
+fn provider_failure_is_soft_warns_and_counts_error() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let failing = failing_glab_dir(home.path());
+    let root = home.path().join("clones");
+
+    // Post-add sync fails softly: source is still added, exit 0, warning on stderr.
+    remotes_add_platform(home.path(), &failing, &root, &[])
+        .success()
+        .stdout(predicate::str::contains("added remote source platform"))
+        .stdout(predicate::str::contains("1 errors"))
+        .stderr(predicate::str::contains("warning: remote platform:"));
+
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &failing)
+        .args(["sync", "remote"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("remote: 0 indexed"))
+        .stdout(predicate::str::contains("1 errors"))
+        .stderr(predicate::str::contains("warning: remote platform:"));
+
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("(not cloned)").not());
+    workpot_cmd(home.path())
+        .args(["remotes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("last sync: error"));
+}
+
+// ---- remote catalog: open / clone / search ------------------------------------------------
+
+#[test]
+fn open_not_cloned_repo_under_manual_policy_exits_two() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+    let bare = seeded_bare(home.path(), "api-remote");
+    let cli_dir = fake_glab_dir(home.path(), &bare);
+    let root = home.path().join("clones");
+    remotes_add_platform(home.path(), &cli_dir, &root, &[]).success();
+
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args(["open", "api"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("is not cloned; clone it first"));
+    assert!(!root.join("api").exists(), "manual policy must not clone");
+}
+
+#[test]
+fn open_not_cloned_repo_under_on_open_policy_clones_then_launches() {
+    let home = tempfile::tempdir().expect("tempdir");
+    write_true_launch_config(home.path());
+    let bare = seeded_bare(home.path(), "api-remote");
+    let cli_dir = fake_glab_dir(home.path(), &bare);
+    let root = home.path().join("clones");
+    remotes_add_platform(home.path(), &cli_dir, &root, &["--policy", "on-open"]).success();
+    assert!(
+        !root.join("api").exists(),
+        "on_open does not clone at index time"
+    );
+
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args(["open", "api"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "opening: {}",
+            root.join("api").display()
+        )));
+    assert!(
+        root.join("api/.git").is_dir(),
+        "on_open clones before launch"
+    );
+}
+
+#[test]
+fn clone_by_source_qualified_path_works_under_manual_policy() {
+    let (home, cli_dir, root) = home_with_unsynced_platform(&[]);
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args(["sync", "remote"])
+        .assert()
+        .success();
+
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args(["clone", "platform:acme/platform/api"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cloned:"));
+    assert!(root.join("api/.git").is_dir());
+}
+
+#[test]
+fn clone_unknown_identifier_exits_one_with_refresh_hint() {
+    let home = tempfile::tempdir().expect("tempdir");
+    workpot_cmd(home.path())
+        .args(["clone", "nope/repo"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "remote repo not found: nope/repo (run `workpot sync remote` to refresh the index)",
+        ));
+}
+
+#[test]
+fn search_remote_only_rows_filter_by_query_and_match_full_path() {
+    let (home, cli_dir, _root) = home_with_unsynced_platform(&[]);
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args(["sync", "remote"])
+        .assert()
+        .success();
+
+    // Negative: a query matching nothing prints no remote-only row.
+    workpot_cmd(home.path())
+        .args(["search", "zzzqqq"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("(not cloned)").not());
+
+    // Matches via the remote full path (carried as the stand-in tag), not the repo name.
+    workpot_cmd(home.path())
+        .args(["search", "acme/platform"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("api (not cloned)"));
+
+    // Row shape: cloud marker, parent dir, name, suffix.
+    workpot_cmd(home.path())
+        .args(["search", "api"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_match(r"(?m)^☁️ \S+ api \(not cloned\)$").expect("regex"));
+}
+
+// ---- remote catalog: flag mapping and errors ----------------------------------------------
+
+#[test]
+fn remotes_add_prune_removed_flag_is_stored() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let bare = seeded_bare(home.path(), "api-remote");
+    let cli_dir = fake_glab_dir(home.path(), &bare);
+    remotes_add_platform(
+        home.path(),
+        &cli_dir,
+        &home.path().join("clones"),
+        &["--no-sync", "--prune-removed"],
+    )
+    .success();
+    workpot_cmd(home.path())
+        .args(["remotes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("prune=on"));
+
+    let other = tempfile::tempdir().expect("tempdir");
+    remotes_add_platform(
+        other.path(),
+        &cli_dir,
+        &other.path().join("clones"),
+        &["--no-sync"],
+    )
+    .success();
+    workpot_cmd(other.path())
+        .args(["remotes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("prune=off"));
+}
+
+#[test]
+fn remotes_add_exclude_archived_hides_archived_repos() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let bare = seeded_bare(home.path(), "api-remote");
+    let cli_dir = fake_glab_with_projects(
+        home.path(),
+        "archived-cli",
+        Some(&[
+            gitlab_project_json(&bare, "api", false),
+            gitlab_project_json(&bare, "old", true),
+        ]),
+    );
+
+    // Default: archived repos stay visible.
+    remotes_add_platform(home.path(), &cli_dir, &home.path().join("clones"), &[]).success();
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("api (not cloned)"))
+        .stdout(predicate::str::contains("old (not cloned)"));
+
+    // --exclude-archived: only the live repo is listed.
+    let other = tempfile::tempdir().expect("tempdir");
+    remotes_add_platform(
+        other.path(),
+        &cli_dir,
+        &other.path().join("clones"),
+        &["--exclude-archived"],
+    )
+    .success();
+    workpot_cmd(other.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("api (not cloned)"))
+        .stdout(predicate::str::contains("old (not cloned)").not());
+}
+
+/// The `protocol = ...` value pinned on a `[[remotes]]` entry (ignores the commented template).
+fn pinned_protocol(config_path: &std::path::Path) -> Option<String> {
+    fs::read_to_string(config_path)
+        .expect("config")
+        .lines()
+        .find_map(|line| line.strip_prefix("protocol = ").map(str::to_string))
+}
+
+#[test]
+fn remotes_add_name_and_protocol_flags_are_stored() {
+    let (home, _cli_dir, _root) = home_with_unsynced_platform(&[]);
+    let other = tempfile::tempdir().expect("tempdir");
+    workpot_cmd(other.path())
+        .args([
+            "remotes",
+            "add",
+            "acme/platform",
+            "--provider",
+            "gitlab",
+            "--no-sync",
+            "--name",
+            "custom",
+            "--protocol",
+            "ssh",
+            "--clone-root",
+        ])
+        .arg(other.path().join("clones"))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added remote source custom"));
+    workpot_cmd(other.path())
+        .args(["remotes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("custom gitlab:"));
+    assert_eq!(
+        pinned_protocol(&other.path().join(".config/workpot/config.toml")).as_deref(),
+        Some("\"ssh\"")
+    );
+
+    // Without --protocol / --name the defaults apply.
+    assert_eq!(
+        pinned_protocol(&home.path().join(".config/workpot/config.toml")),
+        None
+    );
+}
+
+#[test]
+fn remotes_set_protocol_pins_and_resets_and_rejects_bogus() {
+    let (home, _cli_dir, _root) = home_with_unsynced_platform(&[]);
+    let config_path = home.path().join(".config/workpot/config.toml");
+
+    workpot_cmd(home.path())
+        .args(["remotes", "set", "platform", "--protocol", "ssh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("updated remote source platform"));
+    assert_eq!(pinned_protocol(&config_path).as_deref(), Some("\"ssh\""));
+
+    workpot_cmd(home.path())
+        .args(["remotes", "set", "platform", "--protocol", "default"])
+        .assert()
+        .success();
+    assert_eq!(
+        pinned_protocol(&config_path),
+        None,
+        "`default` clears the pinned protocol"
+    );
+
+    workpot_cmd(home.path())
+        .args(["remotes", "set", "platform", "--protocol", "bogus"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "invalid protocol \"bogus\": use ssh, https, or default",
+        ));
+}
+
+#[test]
+fn remotes_remove_and_set_unknown_source_report_not_found() {
+    let home = tempfile::tempdir().expect("tempdir");
+    workpot_cmd(home.path())
+        .args(["remotes", "remove", "nope"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "error: not found: remote source \"nope\"",
+        ));
+    workpot_cmd(home.path())
+        .args(["remotes", "set", "nope", "--policy", "auto"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "error: not found: remote source \"nope\"",
+        ));
+}
+
+#[test]
+fn remotes_set_include_archived_toggles_and_hides_archived_repos() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let bare = seeded_bare(home.path(), "api-remote");
+    let cli_dir = fake_glab_with_projects(
+        home.path(),
+        "archived-cli",
+        Some(&[
+            gitlab_project_json(&bare, "api", false),
+            gitlab_project_json(&bare, "old", true),
+        ]),
+    );
+    remotes_add_platform(home.path(), &cli_dir, &home.path().join("clones"), &[]).success();
+    let config_path = home.path().join(".config/workpot/config.toml");
+    let config = fs::read_to_string(&config_path).expect("config");
+    assert!(
+        config.contains("include_archived = true"),
+        "default keeps archived:\n{config}"
+    );
+
+    workpot_cmd(home.path())
+        .args(["remotes", "set", "platform", "--include-archived", "false"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("updated remote source platform"));
+    let config = fs::read_to_string(&config_path).expect("config");
+    assert!(
+        config.contains("include_archived = false"),
+        "set must store false:\n{config}"
+    );
+    // The flag is include-archived, not prune-removed: prune stays at its default.
+    workpot_cmd(home.path())
+        .args(["remotes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("prune=off"));
+
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args(["sync", "remote"])
+        .assert()
+        .success();
+    workpot_cmd(home.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("api (not cloned)"))
+        .stdout(predicate::str::contains("old (not cloned)").not());
+
+    workpot_cmd(home.path())
+        .args(["remotes", "set", "platform", "--include-archived", "true"])
+        .assert()
+        .success();
+    let config = fs::read_to_string(&config_path).expect("config");
+    assert!(
+        config.contains("include_archived = true"),
+        "set must store true again:\n{config}"
+    );
+}
+
+#[test]
+fn remotes_set_clone_root_updates_root_and_guards_overlap() {
+    let (home, _cli_dir, root) = home_with_unsynced_platform(&[]);
+    let other_root = home.path().join("moved-clones");
+
+    workpot_cmd(home.path())
+        .args(["remotes", "set", "platform", "--clone-root"])
+        .arg(&other_root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("updated remote source platform"));
+    workpot_cmd(home.path())
+        .args(["remotes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "-> {}",
+            other_root.display()
+        )))
+        .stdout(predicate::str::contains(format!("-> {}", root.display())).not());
+
+    // A second source may not move its root inside the first source's (new) root.
+    workpot_cmd(home.path())
+        .args([
+            "remotes",
+            "add",
+            "acme/tools",
+            "--provider",
+            "gitlab",
+            "--host",
+            "git.example.com",
+            "--no-sync",
+            "--clone-root",
+        ])
+        .arg(home.path().join("tools-clones"))
+        .assert()
+        .success();
+    workpot_cmd(home.path())
+        .args(["remotes", "set", "tools", "--clone-root"])
+        .arg(other_root.join("nested"))
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "error: remotes[tools].clone_root overlaps remotes[platform].clone_root",
+        ));
+    // The rejected set left the previous root in place.
+    workpot_cmd(home.path())
+        .args(["remotes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "tools gitlab:git.example.com/acme/tools -> {}",
+            home.path().join("tools-clones").display()
+        )));
 }

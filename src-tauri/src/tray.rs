@@ -23,6 +23,21 @@ const TRAY_MENU_PREFERENCES: &str = "preferences";
 const TRAY_MENU_ABOUT: &str = "about";
 const TRAY_MENU_QUIT: &str = "quit";
 
+/// What started a background sync; decides whether the remote TTL is honoured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SyncTrigger {
+    /// Panel opened: honours `remote_sync_ttl_minutes`.
+    PanelOpen,
+    /// Explicit Sync (menu, Cmd+R / IPC refresh): always lists remotes.
+    Explicit,
+}
+
+impl SyncTrigger {
+    pub(crate) const fn force_remote(self) -> bool {
+        matches!(self, Self::Explicit)
+    }
+}
+
 /// Tray status icons loaded at setup (default, stale-dirty, syncing animation frames).
 pub(crate) struct TrayIcons {
     pub(crate) default: tauri::image::Image<'static>,
@@ -154,16 +169,16 @@ fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
     log::debug!("show_panel: emitting panel-opened");
     emit_or_log(app, "panel-opened", ());
     if let Some(state) = app.try_state::<Arc<AppState>>() {
-        // Panel open honours the remote TTL; explicit Sync / Cmd+R forces a remote listing.
-        spawn_background_sync(app.clone(), state.inner().clone(), false);
+        spawn_background_sync(app.clone(), state.inner().clone(), SyncTrigger::PanelOpen);
     }
 }
 
 pub(crate) fn spawn_background_sync(
     app: tauri::AppHandle,
     state: Arc<AppState>,
-    force_remote: bool,
+    trigger: SyncTrigger,
 ) {
+    let force_remote = trigger.force_remote();
     let guard = app
         .try_state::<CatalogSyncGuard>()
         .map(|g| g.inner().clone());
@@ -268,7 +283,7 @@ fn handle_tray_menu_event(app: &tauri::AppHandle, menu_id: &str) {
     match menu_id {
         TRAY_MENU_REFRESH_SYNC => {
             if let Some(state) = app.try_state::<Arc<AppState>>() {
-                spawn_background_sync(app.clone(), state.inner().clone(), true);
+                spawn_background_sync(app.clone(), state.inner().clone(), SyncTrigger::Explicit);
             }
         }
         TRAY_MENU_PREFERENCES => {
@@ -349,6 +364,7 @@ pub(crate) fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use workpot_core::services::remote_catalog_sync::{RemoteSourceError, RemoteSyncSummary};
 
     fn tray_icon_from_embedded() -> tauri::image::Image<'static> {
         tauri::image::Image::from_bytes(include_bytes!("../icons/tray-default.png"))
@@ -387,6 +403,61 @@ mod tests {
         assert_eq!(dto.skipped, 3);
         assert_eq!(dto.git_refreshed, 4);
         assert_eq!(dto.git_errors, 5);
+    }
+
+    #[test]
+    fn sync_summary_dto_from_local_summary_has_no_remote_data() {
+        let dto = SyncSummaryDto::from(LocalCatalogSyncSummary {
+            added: 1,
+            ..LocalCatalogSyncSummary::default()
+        });
+        assert_eq!(dto.added, 1);
+        assert_eq!(dto.remote_indexed, 0);
+        assert_eq!(dto.remote_added, 0);
+        assert_eq!(dto.remote_cloned, 0);
+        assert_eq!(dto.remote_pruned, 0);
+        assert!(dto.remote_errors.is_empty());
+    }
+
+    #[test]
+    fn sync_summary_dto_maps_remote_fields_from_full_summary() {
+        let summary = FullSyncSummary {
+            local: LocalCatalogSyncSummary {
+                added: 1,
+                removed: 2,
+                skipped: 3,
+                git_refreshed: 4,
+                git_errors: 5,
+            },
+            remote: RemoteSyncSummary {
+                indexed: 11,
+                added: 12,
+                cloned: 13,
+                pruned: 14,
+                // Not surfaced on the DTO; distinct so a mixed-up mapping would show.
+                gone: 15,
+                errors: 1,
+                source_errors: vec![RemoteSourceError {
+                    source: "acme".to_string(),
+                    message: "not authenticated".to_string(),
+                }],
+                ..RemoteSyncSummary::default()
+            },
+        };
+        let dto = SyncSummaryDto::from(summary);
+        assert_eq!(dto.added, 1);
+        assert_eq!(dto.git_errors, 5);
+        assert_eq!(dto.remote_indexed, 11);
+        assert_eq!(dto.remote_added, 12);
+        assert_eq!(dto.remote_cloned, 13);
+        assert_eq!(dto.remote_pruned, 14);
+        assert_eq!(dto.remote_errors, vec!["acme: not authenticated"]);
+    }
+
+    #[test]
+    fn sync_trigger_panel_open_honours_ttl_and_explicit_forces_remote() {
+        assert!(!SyncTrigger::PanelOpen.force_remote());
+        assert!(SyncTrigger::Explicit.force_remote());
     }
 
     #[test]

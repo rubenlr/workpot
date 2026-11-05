@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SectionConfig } from "$lib/tray/logic/list/sort";
 import { isCloned } from "$lib/types";
 import type { RepoDto } from "$lib/types";
+import { trayTrace } from "$lib/tray/logic/handlers/trayTrace";
 import { selectionIndexAfterBackgroundOpen } from "$lib/tray/logic/list/openSelection";
 
 interface TrayLaunchDeps {
@@ -59,6 +60,16 @@ export function createTrayLaunch(deps: TrayLaunchDeps) {
     }
   }
 
+  /** Hide the panel after an open; a failed hide is surfaced like a failed launch. */
+  async function hidePanelReportingErrors(): Promise<void> {
+    try {
+      await getCurrentWindow().hide();
+    } catch (e) {
+      trayTrace("hide panel failed", e);
+      launchError = String(e);
+    }
+  }
+
   return {
     get launchError() {
       return launchError;
@@ -66,6 +77,7 @@ export function createTrayLaunch(deps: TrayLaunchDeps) {
     openSelected,
     dismissLaunchError,
     hidePanel: () => getCurrentWindow().hide(),
+    hidePanelReportingErrors,
   };
 }
 

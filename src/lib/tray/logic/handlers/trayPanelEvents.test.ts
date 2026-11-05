@@ -21,7 +21,7 @@ function mockListen(): {
 }
 
 describe("subscribeTrayPanelEvents", () => {
-  it("registers sync listeners without git-refresh events", async () => {
+  it("registers listeners without git-refresh events and routes each event to its handler", async () => {
     const { listen, unsubs, handlers } = mockListen();
     const onPanelOpened = vi.fn();
     const onPanelClosed = vi.fn();
@@ -116,6 +116,30 @@ describe("subscribeTrayPanelEvents", () => {
       payload: { ...convertEvent, error: "failed" },
     });
     expect(onRepoConvertFailed).toHaveBeenCalled();
+
+    const cloneEvent = { repo_path: "/code/acme/api" };
+    const cloneHandlers = [
+      onRepoCloneStarted,
+      onRepoCloneComplete,
+      onRepoCloneFailed,
+    ];
+
+    handlers.get("repo-clone-started")!({ payload: cloneEvent });
+    expect(onRepoCloneStarted).toHaveBeenCalledExactlyOnceWith(cloneEvent);
+    expect(onRepoCloneComplete).not.toHaveBeenCalled();
+    expect(onRepoCloneFailed).not.toHaveBeenCalled();
+
+    const completeEvent = { ...cloneEvent, opened: true };
+    handlers.get("repo-clone-complete")!({ payload: completeEvent });
+    expect(onRepoCloneComplete).toHaveBeenCalledExactlyOnceWith(completeEvent);
+
+    const failedEvent = { ...cloneEvent, error: "clone boom" };
+    handlers.get("repo-clone-failed")!({ payload: failedEvent });
+    expect(onRepoCloneFailed).toHaveBeenCalledExactlyOnceWith(failedEvent);
+
+    // each clone event reached only its own handler
+    expect(onRepoCloneStarted).toHaveBeenCalledOnce();
+    expect(cloneHandlers.map((h) => h.mock.calls.length)).toEqual([1, 1, 1]);
 
     const ctx = { action: "pin", repo_path: "/tmp/x" };
     handlers.get("repo-context-action")!({ payload: ctx });

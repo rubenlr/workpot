@@ -564,6 +564,143 @@ mod tests {
         assert_eq!(provider.repo_exists(&src, "acme/here"), Ok(true));
     }
 
+    fn endpoint_of(runner: &FakeRunner, call: usize) -> String {
+        let calls = runner.calls.lock().expect("calls");
+        calls[call].join(" ")
+    }
+
+    #[test]
+    fn repo_exists_queries_the_provider_specific_endpoint() {
+        let runner = FakeRunner::new(vec![ok("{}"), ok("{}")]);
+        let provider = GhGlabProvider::with_runner(&runner);
+        assert_eq!(
+            provider.repo_exists(&source(RemoteProvider::Github, "acme"), "acme/web"),
+            Ok(true)
+        );
+        assert_eq!(
+            provider.repo_exists(&source(RemoteProvider::Gitlab, "acme"), "acme/platform/api"),
+            Ok(true)
+        );
+        assert_eq!(
+            endpoint_of(&runner, 0),
+            "gh api --hostname git.example.com repos/acme/web"
+        );
+        // GitLab needs the whole path as one encoded segment, or the host answers 404 and the
+        // repo would look "confirmed gone".
+        assert_eq!(
+            endpoint_of(&runner, 1),
+            "glab api --hostname git.example.com projects/acme%2Fplatform%2Fapi"
+        );
+    }
+
+    #[test]
+    fn repo_exists_does_not_treat_auth_failures_as_gone() {
+        let runner = FakeRunner::new(vec![
+            fail("gh: Resource not accessible (HTTP 403)"),
+            fail("glab: 401 Unauthorized"),
+        ]);
+        let provider = GhGlabProvider::with_runner(&runner);
+        for provider_kind in [RemoteProvider::Github, RemoteProvider::Gitlab] {
+            let result = provider.repo_exists(&source(provider_kind, "acme"), "acme/x");
+            assert!(
+                matches!(result, Err(RemoteError::NotAuthenticated { .. })),
+                "{provider_kind:?}: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn classify_failure_covers_auth_variants_and_stdout_borne_errors() {
+        for text in [
+            "gh: HTTP 403: Forbidden",
+            "You are not logged in to any hosts",
+            "no token found for host",
+            "authentication required",
+        ] {
+            assert!(
+                matches!(
+                    classify_failure("gh", "h", "e", text, ""),
+                    RemoteError::NotAuthenticated { .. }
+                ),
+                "{text}"
+            );
+        }
+        // The CLI sometimes prints the API error on stdout and leaves stderr empty.
+        assert!(matches!(
+            classify_failure("gh", "h", "e", "", "{\"message\":\"Not Found\"} (HTTP 404)"),
+            RemoteError::NotFound(_)
+        ));
+        match classify_failure("gh", "h", "ep", "", "gateway exploded") {
+            RemoteError::Failed(msg) => assert!(msg.contains("gateway exploded"), "{msg}"),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_failure_prefers_not_found_over_auth_wording() {
+        // A 404 body that also mentions authentication must stay "not found": that is what
+        // lets the org -> user fallback and prune's 404 confirmation work.
+        assert!(matches!(
+            classify_failure(
+                "gh",
+                "h",
+                "e",
+                "gh: Not Found (HTTP 404); authentication succeeded",
+                ""
+            ),
+            RemoteError::NotFound(_)
+        ));
+    }
+
+    #[test]
+    fn github_listing_does_not_fall_back_on_non_404_errors() {
+        let runner = FakeRunner::new(vec![
+            fail("gh: Server Error (HTTP 500)"),
+            ok(r#"[{"full_name":"me/tool"}]"#),
+        ]);
+        let provider = GhGlabProvider::with_runner(&runner);
+        let err = provider
+            .list_repos(&source(RemoteProvider::Github, "me"))
+            .expect_err("500 is not a missing org");
+        assert!(matches!(err, RemoteError::Failed(_)), "{err:?}");
+        assert_eq!(runner.calls.lock().expect("calls").len(), 1, "no user call");
+    }
+
+    #[test]
+    fn github_listing_reports_not_found_when_org_and_user_both_404() {
+        let runner = FakeRunner::new(vec![
+            fail("gh: Not Found (HTTP 404)"),
+            fail("gh: Not Found (HTTP 404)"),
+        ]);
+        let provider = GhGlabProvider::with_runner(&runner);
+        let err = provider
+            .list_repos(&source(RemoteProvider::Github, "ghost"))
+            .expect_err("nobody home");
+        match err {
+            RemoteError::NotFound(endpoint) => assert!(endpoint.contains("users/ghost/repos")),
+            other => panic!("expected NotFound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn list_repos_rejects_malformed_payloads_instead_of_returning_a_partial_listing() {
+        let src = source(RemoteProvider::Gitlab, "acme");
+        let runner = FakeRunner::new(vec![ok(r#"[{"path":"orphan"}]"#), ok("[{")]);
+        let provider = GhGlabProvider::with_runner(&runner);
+        let err = provider
+            .list_repos(&src)
+            .expect_err("no path_with_namespace");
+        assert!(
+            matches!(&err, RemoteError::Failed(m) if m.contains("path_with_namespace")),
+            "{err:?}"
+        );
+        let err = provider.list_repos(&src).expect_err("truncated JSON");
+        assert!(
+            matches!(&err, RemoteError::Failed(m) if m.contains("invalid JSON")),
+            "{err:?}"
+        );
+    }
+
     #[test]
     fn cli_git_protocol_reads_cli_config() {
         let runner = FakeRunner::new(vec![ok("ssh\n"), fail("unknown key")]);

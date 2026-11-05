@@ -28,6 +28,15 @@ describe("restoreRepoCloneStatus", () => {
     expect(add.mock.calls).toEqual([["/a"], ["/b"]]);
   });
 
+  it("propagates a rejected status query so the caller can see it", async () => {
+    const add = vi.fn();
+    const invoke = vi.fn().mockRejectedValue(new Error("ipc down"));
+    await expect(restoreRepoCloneStatus(invoke, add)).rejects.toThrow(
+      "ipc down",
+    );
+    expect(add).not.toHaveBeenCalled();
+  });
+
   it("tolerates a null status", async () => {
     const add = vi.fn();
     await restoreRepoCloneStatus(vi.fn().mockResolvedValue(null), add);
@@ -52,6 +61,24 @@ describe("cloneRepo", () => {
     await cloneRepo({ path: "/p" }, false, d);
     expect(d.removeCloning).toHaveBeenCalledWith("/p");
     expect(d.onError).toHaveBeenCalledWith("boom");
+  });
+
+  it("passes an Error rejection through to onError and still drops the spinner", async () => {
+    const err = new Error("spawn failed");
+    const d = deps({ invoke: vi.fn().mockRejectedValue(err) });
+    await cloneRepo({ path: "/p" }, false, d);
+    expect(d.removeCloning).toHaveBeenCalledWith("/p");
+    expect(d.onError).toHaveBeenCalledExactlyOnceWith(err);
+  });
+
+  it("keeps the spinner when an Error says this repo is already being cloned", async () => {
+    const d = deps({
+      invoke: vi
+        .fn()
+        .mockRejectedValue(new Error("this repo is already being cloned")),
+    });
+    await cloneRepo({ path: "/p" }, false, d);
+    expect(d.removeCloning).not.toHaveBeenCalled();
   });
 
   it("keeps the spinner when this repo is already being cloned", async () => {
@@ -81,6 +108,17 @@ describe("clone events", () => {
     expect(d.refresh).toHaveBeenCalled();
     expect(d.onOpened).toHaveBeenCalled();
     expect(d.onError).not.toHaveBeenCalled();
+  });
+
+  it("complete clears the spinner but rejects when the refresh fails, without opening", async () => {
+    const d = deps({
+      refresh: vi.fn().mockRejectedValue(new Error("db busy")),
+    });
+    await expect(
+      onRepoCloneComplete({ repo_path: "/p", opened: true }, d),
+    ).rejects.toThrow("db busy");
+    expect(d.removeCloning).toHaveBeenCalledWith("/p");
+    expect(d.onOpened).not.toHaveBeenCalled();
   });
 
   it("complete without open does not signal opened", async () => {

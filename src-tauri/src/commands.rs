@@ -25,6 +25,7 @@ const SECS_PER_DAY: i64 = 86_400;
 /// Labels naming the mutex in `lock_or_warn` poisoned-lock warnings.
 const LOCK_REPO_SYNC: &str = "repo sync state";
 const LOCK_REPO_CONVERT: &str = "repo convert state";
+const LOCK_REPO_CLONE: &str = "repo clone state";
 const LOCK_CONTEXT_MENU: &str = "context menu repo";
 /// `convert_to` / convert-target wire values shared with the frontend.
 const CONVERT_TO_BARE: &str = "bare";
@@ -1263,7 +1264,11 @@ pub(crate) async fn refresh_sync(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::tray::spawn_background_sync(app, state.inner().clone(), true);
+    crate::tray::spawn_background_sync(
+        app,
+        state.inner().clone(),
+        crate::tray::SyncTrigger::Explicit,
+    );
     Ok(())
 }
 
@@ -1273,7 +1278,11 @@ pub(crate) async fn refresh_all_git_state(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::tray::spawn_background_sync(app, state.inner().clone(), true);
+    crate::tray::spawn_background_sync(
+        app,
+        state.inner().clone(),
+        crate::tray::SyncTrigger::Explicit,
+    );
     Ok(())
 }
 
@@ -1489,6 +1498,9 @@ fn convert_failed_payload(repo_path: String, error: String) -> RepoConvertEventD
 }
 
 /// Tracks in-flight clones (several may run at once; one per repo path).
+///
+/// Deliberately not folded into `RepoSyncGuard` / `RepoConvertGuard`: those are single-slot
+/// guards (one job at a time, one payload), while clones are a set keyed by path.
 #[derive(Clone)]
 pub(crate) struct RepoCloneGuard {
     active: Arc<Mutex<HashSet<String>>>,
@@ -1501,38 +1513,27 @@ impl RepoCloneGuard {
         }
     }
 
-    /// Returns false when `repo_path` is already being cloned.
+    /// Returns false when `repo_path` is already being cloned (or the state lock is poisoned,
+    /// in which case starting is refused rather than risking a duplicate clone).
     fn try_start(&self, repo_path: &str) -> bool {
-        match self.active.lock() {
-            Ok(mut active) => active.insert(repo_path.to_string()),
-            Err(_) => {
-                log::warn!("clone guard lock poisoned; refusing to start {repo_path}");
-                false
-            }
-        }
+        lock_or_warn(&self.active, LOCK_REPO_CLONE)
+            .is_some_and(|mut active| active.insert(repo_path.to_string()))
     }
 
     fn finish(&self, repo_path: &str) {
-        match self.active.lock() {
-            Ok(mut active) => {
-                active.remove(repo_path);
-            }
-            Err(_) => log::warn!("clone guard lock poisoned; {repo_path} not released"),
+        if let Some(mut active) = lock_or_warn(&self.active, LOCK_REPO_CLONE) {
+            active.remove(repo_path);
         }
     }
 
     fn status(&self) -> Vec<String> {
-        match self.active.lock() {
-            Ok(active) => {
+        lock_or_warn(&self.active, LOCK_REPO_CLONE)
+            .map(|active| {
                 let mut paths: Vec<String> = active.iter().cloned().collect();
                 paths.sort();
                 paths
-            }
-            Err(_) => {
-                log::warn!("clone guard lock poisoned; active clones unavailable");
-                Vec::new()
-            }
-        }
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -1613,7 +1614,11 @@ fn run_clone_job(
     let outcome = state.clone_remote(repo_path).map_err(|e| e.to_string())?;
     let new_path = outcome.local_path.display().to_string();
     let launch_error = if open_after {
-        crate::launch::launch_repo(state, &new_path).err()
+        let err = crate::launch::launch_repo(state, &new_path).err();
+        if let Some(e) = &err {
+            log::warn!("repo clone: launch after clone failed path={new_path}: {e}");
+        }
+        err
     } else {
         None
     };
@@ -2409,7 +2414,7 @@ mod tests {
     }
 
     #[test]
-    fn list_repos_dto_pipeline_from_registered_repo() {
+    fn repo_records_to_dtos_maps_registered_local_repo() {
         let dir = tempfile::tempdir().expect("tempdir");
         let config_path = dir.path().join("config.toml");
         let db_path = dir.path().join("workpot.db");
@@ -2424,5 +2429,470 @@ mod tests {
         assert_eq!(dtos.len(), 1);
         assert_eq!(dtos[0].name, "sample");
         assert!(dtos[0].path.ends_with("/sample"));
+        assert!(dtos[0].cloned);
+        assert!(!dtos[0].removed_upstream);
+        assert_eq!(dtos[0].remote_url, None);
+        assert_eq!(dtos[0].remote_full_path, None);
+        assert_eq!(dtos[0].remote_source, None);
+        assert_eq!(dtos[0].clone_policy, None);
+    }
+
+    // ---- remote catalog / clone fixtures ------------------------------------------------
+
+    use std::collections::HashSet as StdHashSet;
+    use std::sync::Mutex as StdMutex;
+    use workpot_core::domain::config::{ClonePolicy, GitProtocol, RemoteProvider, RemoteSource};
+    use workpot_core::infra::remote_provider::{RemoteApi, RemoteError, RemoteRepoInfo};
+    use workpot_core::services::remote_catalog::RemoteState;
+    use workpot_core::services::remotes::RemotePatch;
+
+    /// Scripted provider: a fixed listing plus the `full_path`s the host reports as 404.
+    struct FakeRemoteApi {
+        listing: StdMutex<Vec<RemoteRepoInfo>>,
+        missing: StdMutex<StdHashSet<String>>,
+    }
+
+    impl RemoteApi for FakeRemoteApi {
+        fn list_repos(&self, _source: &RemoteSource) -> Result<Vec<RemoteRepoInfo>, RemoteError> {
+            Ok(self.listing.lock().expect("listing").clone())
+        }
+
+        fn repo_exists(
+            &self,
+            _source: &RemoteSource,
+            full_path: &str,
+        ) -> Result<bool, RemoteError> {
+            Ok(!self.missing.lock().expect("missing").contains(full_path))
+        }
+
+        fn cli_git_protocol(&self, _source: &RemoteSource) -> Option<GitProtocol> {
+            None
+        }
+    }
+
+    struct RemoteEnv {
+        _dir: tempfile::TempDir,
+        state: AppState,
+        api: Arc<FakeRemoteApi>,
+    }
+
+    fn init_upstream(path: &Path) {
+        std::fs::create_dir_all(path).expect("mkdir upstream");
+        let repo = git2::Repository::init(path).expect("init upstream");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        let tree_id = repo.index().expect("index").write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+    }
+
+    fn remote_info(full_path: &str, url: &Path) -> RemoteRepoInfo {
+        let url = url.display().to_string();
+        RemoteRepoInfo {
+            full_path: full_path.to_string(),
+            name: full_path.rsplit('/').next().expect("name").to_string(),
+            web_url: Some(format!("https://git.example.com/{full_path}")),
+            ssh_url: Some(url.clone()),
+            https_url: Some(url),
+            default_branch: Some("main".to_string()),
+            archived: false,
+            description: None,
+        }
+    }
+
+    /// Indexed (not cloned) remote source `acme` listing `names`, cloned from local upstreams.
+    fn remote_env(names: &[&str], launch_cmd: &str) -> RemoteEnv {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let upstreams: Vec<PathBuf> = names
+            .iter()
+            .map(|n| {
+                let path = dir.path().join("upstreams").join(n);
+                init_upstream(&path);
+                path
+            })
+            .collect();
+        let listing = names
+            .iter()
+            .zip(&upstreams)
+            .map(|(n, u)| remote_info(&format!("acme/platform/{n}"), u))
+            .collect();
+        let api = Arc::new(FakeRemoteApi {
+            listing: StdMutex::new(listing),
+            missing: StdMutex::new(StdHashSet::new()),
+        });
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            format!("watch_roots = []\nexcludes = []\nlaunch_cmd = \"{launch_cmd}\"\n"),
+        )
+        .expect("config");
+        let state = AppState::open_with_paths(config_path, dir.path().join("workpot.db"))
+            .expect("open")
+            .with_remote_api(api.clone());
+        let clone_root = dir.path().join("clones");
+        state
+            .remotes_add(RemoteSource {
+                name: "acme".to_string(),
+                provider: RemoteProvider::Gitlab,
+                host: Some("git.example.com".to_string()),
+                path: "acme/platform".to_string(),
+                clone_root,
+                clone_policy: ClonePolicy::Manual,
+                prune_removed: false,
+                include_archived: true,
+                protocol: None,
+            })
+            .expect("add remote");
+        state.run_remote_catalog_sync(true).expect("index");
+        RemoteEnv {
+            _dir: dir,
+            state,
+            api,
+        }
+    }
+
+    fn planned_clone_path(env: &RemoteEnv, name: &str) -> String {
+        env.state
+            .list_remote_only()
+            .expect("remote only")
+            .into_iter()
+            .find(|r| r.name == name)
+            .unwrap_or_else(|| panic!("{name} not indexed"))
+            .clone_path
+            .display()
+            .to_string()
+    }
+
+    // ---- clone_result_event --------------------------------------------------------------
+
+    fn clone_event(
+        joined: Result<Result<CloneJobOutput, String>, String>,
+    ) -> (&'static str, RepoCloneEventDto) {
+        clone_result_event("/clones/api".to_string(), joined)
+    }
+
+    #[test]
+    fn clone_result_event_maps_each_outcome() {
+        let new_path = "/catalog/api".to_string();
+
+        let (event, payload) = clone_event(Ok(Ok((new_path.clone(), true, None))));
+        assert_eq!(event, "repo-clone-complete");
+        assert_eq!(
+            payload,
+            RepoCloneEventDto {
+                repo_path: "/clones/api".to_string(),
+                new_path: Some(new_path.clone()),
+                opened: true,
+                error: None,
+            }
+        );
+
+        let (event, payload) = clone_event(Ok(Ok((new_path.clone(), false, None))));
+        assert_eq!(event, "repo-clone-complete");
+        assert!(!payload.opened);
+        assert_eq!(payload.error, None);
+
+        // Clone kept, IDE launch failed: still a completion, but not "opened" and the error shows.
+        let (event, payload) = clone_event(Ok(Ok((
+            new_path.clone(),
+            true,
+            Some("failed to launch cursor".to_string()),
+        ))));
+        assert_eq!(event, "repo-clone-complete");
+        assert_eq!(payload.new_path, Some(new_path));
+        assert!(!payload.opened);
+        assert_eq!(payload.error.as_deref(), Some("failed to launch cursor"));
+
+        let (event, payload) = clone_event(Ok(Err("target not empty".to_string())));
+        assert_eq!(event, EVENT_REPO_CLONE_FAILED);
+        assert_eq!(
+            payload,
+            RepoCloneEventDto {
+                repo_path: "/clones/api".to_string(),
+                new_path: None,
+                opened: false,
+                error: Some("target not empty".to_string()),
+            }
+        );
+
+        let (event, payload) = clone_event(Err("task aborted".to_string()));
+        assert_eq!(event, EVENT_REPO_CLONE_FAILED);
+        assert_eq!(payload.new_path, None);
+        assert!(!payload.opened);
+        let error = payload.error.expect("join error surfaced");
+        assert!(error.contains("task aborted"), "got: {error}");
+    }
+
+    // ---- RepoCloneGuard ------------------------------------------------------------------
+
+    #[test]
+    fn repo_clone_guard_refuses_duplicate_path_and_releases_on_finish() {
+        let guard = RepoCloneGuard::new();
+        assert!(guard.try_start("/clones/a"));
+        assert!(!guard.try_start("/clones/a"));
+        guard.finish("/clones/a");
+        assert!(guard.try_start("/clones/a"));
+    }
+
+    #[test]
+    fn repo_clone_guard_allows_different_paths_and_reports_them_sorted() {
+        let guard = RepoCloneGuard::new();
+        assert!(guard.status().is_empty());
+        assert!(guard.try_start("/clones/b"));
+        assert!(guard.try_start("/clones/a"));
+        assert_eq!(guard.status(), vec!["/clones/a", "/clones/b"]);
+        guard.finish("/clones/a");
+        assert_eq!(guard.status(), vec!["/clones/b"]);
+        // Finishing an unknown path is harmless.
+        guard.finish("/clones/never-started");
+        assert_eq!(guard.status(), vec!["/clones/b"]);
+    }
+
+    #[test]
+    fn repo_clone_guard_lease_releases_path_on_drop() {
+        let guard = RepoCloneGuard::new();
+        assert!(guard.try_start("/clones/a"));
+        {
+            let _lease = RepoCloneGuardLease(guard.clone(), "/clones/a".to_string());
+            assert_eq!(guard.status(), vec!["/clones/a"]);
+        }
+        assert!(guard.status().is_empty());
+        assert!(guard.try_start("/clones/a"));
+    }
+
+    #[test]
+    fn repo_clone_guard_lease_releases_path_when_task_panics() {
+        let guard = RepoCloneGuard::new();
+        assert!(guard.try_start("/clones/a"));
+        let guard_for_task = guard.clone();
+        let result = std::panic::catch_unwind(move || {
+            let _lease = RepoCloneGuardLease(guard_for_task, "/clones/a".to_string());
+            panic!("clone job blew up");
+        });
+        assert!(result.is_err());
+        assert!(guard.status().is_empty());
+    }
+
+    // ---- remote-only rows ----------------------------------------------------------------
+
+    #[test]
+    fn remote_record_to_dto_builds_not_cloned_row() {
+        let record = RemoteRepoRecord {
+            source_id: "acme".to_string(),
+            full_path: "acme/platform/api".to_string(),
+            name: "api".to_string(),
+            web_url: Some("https://git.example.com/acme/platform/api".to_string()),
+            ssh_url: None,
+            https_url: None,
+            url_normalized: "git.example.com/acme/platform/api".to_string(),
+            default_branch: Some("main".to_string()),
+            archived: false,
+            description: None,
+            clone_path: PathBuf::from("/var/tmp/clones/api"),
+            state: RemoteState::Present,
+            first_seen_at: 1,
+            last_seen_at: 2,
+        };
+
+        let dto = remote_record_to_dto(&record, Some("on_open".to_string()));
+        assert!(!dto.cloned);
+        assert_eq!(dto.path, "/var/tmp/clones/api");
+        assert_eq!(dto.parent_dir, "/var/tmp/clones");
+        assert_eq!(dto.name, "api");
+        assert_eq!(dto.remote_full_path.as_deref(), Some("acme/platform/api"));
+        assert_eq!(dto.remote_source.as_deref(), Some("acme"));
+        assert_eq!(
+            dto.remote_url.as_deref(),
+            Some("https://git.example.com/acme/platform/api")
+        );
+        assert_eq!(dto.clone_policy.as_deref(), Some("on_open"));
+        assert!(dto.tags.is_empty());
+        assert!(!dto.removed_upstream);
+        assert!(!dto.pinned);
+
+        // Source no longer configured: no policy.
+        assert_eq!(remote_record_to_dto(&record, None).clone_policy, None);
+    }
+
+    #[test]
+    fn append_remote_only_adds_not_cloned_rows_with_policy_from_config() {
+        let env = remote_env(&["api", "web"], "/usr/bin/true {path}");
+        env.state
+            .remotes_set(
+                "acme",
+                RemotePatch {
+                    clone_policy: Some(ClonePolicy::OnOpen),
+                    ..RemotePatch::default()
+                },
+            )
+            .expect("set policy");
+
+        let mut dtos = Vec::new();
+        append_remote_only(&env.state, &mut dtos).expect("append");
+
+        assert_eq!(dtos.len(), 2);
+        let api = dtos.iter().find(|d| d.name == "api").expect("api row");
+        assert!(!api.cloned);
+        assert_eq!(api.path, planned_clone_path(&env, "api"));
+        assert!(api.path.ends_with("/api"), "got: {}", api.path);
+        assert!(api.path.contains("clones"), "got: {}", api.path);
+        assert_eq!(api.remote_source.as_deref(), Some("acme"));
+        assert_eq!(api.remote_full_path.as_deref(), Some("acme/platform/api"));
+        assert_eq!(
+            api.remote_url.as_deref(),
+            Some("https://git.example.com/acme/platform/api")
+        );
+        assert_eq!(api.clone_policy.as_deref(), Some("on_open"));
+        assert!(api.tags.is_empty());
+    }
+
+    #[test]
+    fn append_remote_only_skips_cloned_repos_and_keeps_existing_rows() {
+        let env = remote_env(&["api", "web"], "/usr/bin/true {path}");
+        let api_path = planned_clone_path(&env, "api");
+        env.state.clone_remote(&api_path).expect("clone api");
+
+        let mut dtos =
+            repo_records_to_dtos(env.state.list_repos().expect("list"), &default_migration());
+        assert_eq!(dtos.len(), 1);
+        append_remote_only(&env.state, &mut dtos).expect("append");
+
+        assert_eq!(dtos.len(), 2);
+        assert!(dtos[0].cloned);
+        assert_eq!(dtos[0].name, "api");
+        assert!(!dtos[1].cloned);
+        assert_eq!(dtos[1].name, "web");
+        assert_eq!(dtos[1].clone_policy.as_deref(), Some("manual"));
+    }
+
+    // ---- flag_removed_upstream -----------------------------------------------------------
+
+    #[test]
+    fn flag_removed_upstream_flags_only_clones_gone_upstream_and_resets_others() {
+        let env = remote_env(&["api", "web"], "/usr/bin/true {path}");
+        for name in ["api", "web"] {
+            env.state
+                .clone_remote(&planned_clone_path(&env, name))
+                .expect("clone");
+        }
+        env.state
+            .remotes_set(
+                "acme",
+                RemotePatch {
+                    prune_removed: Some(true),
+                    ..RemotePatch::default()
+                },
+            )
+            .expect("enable prune");
+        // `web` disappears upstream; an untracked file makes prune keep (and flag) the clone.
+        env.api
+            .listing
+            .lock()
+            .expect("listing")
+            .retain(|r| r.name != "web");
+        env.api
+            .missing
+            .lock()
+            .expect("missing")
+            .insert("acme/platform/web".to_string());
+        let web_path = env
+            .state
+            .list_repos()
+            .expect("list")
+            .into_iter()
+            .find(|r| r.name == "web")
+            .expect("web registered")
+            .path;
+        std::fs::write(web_path.join("local.txt"), "wip").expect("write");
+        env.state.run_remote_catalog_sync(true).expect("sync");
+
+        let mut dtos =
+            repo_records_to_dtos(env.state.list_repos().expect("list"), &default_migration());
+        assert_eq!(dtos.len(), 2);
+        // Stale `true` everywhere: the flag must be recomputed per row, not only ever set.
+        for dto in &mut dtos {
+            dto.removed_upstream = true;
+        }
+        flag_removed_upstream(&env.state, &mut dtos);
+
+        let web = dtos.iter().find(|d| d.name == "web").expect("web");
+        let api = dtos.iter().find(|d| d.name == "api").expect("api");
+        assert!(web.removed_upstream, "web upstream is gone");
+        assert!(!api.removed_upstream, "api upstream still exists");
+    }
+
+    #[test]
+    fn flag_removed_upstream_leaves_all_rows_unflagged_when_nothing_removed() {
+        let env = remote_env(&["api"], "/usr/bin/true {path}");
+        env.state
+            .clone_remote(&planned_clone_path(&env, "api"))
+            .expect("clone");
+        let mut dtos =
+            repo_records_to_dtos(env.state.list_repos().expect("list"), &default_migration());
+        flag_removed_upstream(&env.state, &mut dtos);
+        assert!(dtos.iter().all(|d| !d.removed_upstream));
+    }
+
+    // ---- run_clone_job -------------------------------------------------------------------
+
+    const MISSING_LAUNCHER: &str = "/nonexistent/workpot-test-launcher {path}";
+
+    #[test]
+    fn run_clone_job_keeps_clone_and_reports_launch_error_when_open_fails() {
+        let env = remote_env(&["api"], MISSING_LAUNCHER);
+        let planned = planned_clone_path(&env, "api");
+
+        let (new_path, open_requested, launch_error) =
+            run_clone_job(&env.state, &planned, true).expect("clone itself succeeds");
+
+        assert!(open_requested);
+        let err = launch_error.expect("launch failure surfaced");
+        assert!(err.contains("failed to launch"), "got: {err}");
+        assert!(Path::new(&new_path).join(".git").exists(), "clone kept");
+        let repos = env.state.list_repos().expect("list");
+        assert_eq!(repos.len(), 1, "clone is registered despite launch failure");
+        assert_eq!(repos[0].last_opened_at, None);
+    }
+
+    #[test]
+    fn run_clone_job_does_not_launch_when_open_after_is_false() {
+        // A launcher that cannot start would surface an error if it were (wrongly) invoked.
+        let env = remote_env(&["api"], MISSING_LAUNCHER);
+        let planned = planned_clone_path(&env, "api");
+
+        let (new_path, open_requested, launch_error) =
+            run_clone_job(&env.state, &planned, false).expect("clone");
+
+        assert!(!open_requested);
+        assert_eq!(launch_error, None);
+        assert!(Path::new(&new_path).join(".git").exists());
+        assert_eq!(
+            env.state.list_repos().expect("list")[0].last_opened_at,
+            None
+        );
+    }
+
+    #[test]
+    fn run_clone_job_launches_and_marks_opened_when_open_after_succeeds() {
+        let env = remote_env(&["api"], "/usr/bin/true {path}");
+        let planned = planned_clone_path(&env, "api");
+
+        let (_, open_requested, launch_error) =
+            run_clone_job(&env.state, &planned, true).expect("clone");
+
+        assert!(open_requested);
+        assert_eq!(launch_error, None);
+        assert!(
+            env.state.list_repos().expect("list")[0]
+                .last_opened_at
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn run_clone_job_returns_clone_error_for_unknown_repo() {
+        let env = remote_env(&["api"], "/usr/bin/true {path}");
+        let err = run_clone_job(&env.state, "/nowhere/unknown", true).expect_err("unknown");
+        assert!(!err.is_empty());
     }
 }

@@ -130,4 +130,23 @@ describe("syncRemoteErrorMessage", () => {
       expect(d.setError).toHaveBeenCalledWith("Remote sync: acme: boom"),
     );
   });
+
+  it("onSyncComplete prefers the git error over remote errors when both are present", async () => {
+    const d = deps();
+    onSyncComplete(
+      {
+        ...base,
+        git_refreshed: 0,
+        git_errors: 2,
+        remote_errors: ["acme: boom"],
+      },
+      d,
+    );
+    await vi.waitFor(() => expect(d.setError).toHaveBeenCalledOnce());
+    const message = vi.mocked(d.setError).mock.calls[0][0];
+    expect(message).toBe(
+      syncGitErrorMessage({ ...base, git_refreshed: 0, git_errors: 2 }),
+    );
+    expect(message).not.toContain("Remote sync");
+  });
 });

@@ -191,8 +191,13 @@ describe("RepoListRow not cloned", () => {
   };
 
   it("shows the remote path, a Clone button, and no sync badge", () => {
+    // ahead/behind/branch set so a stray SyncBadge would render push/pull controls
     const { getByRole, getByText, queryByLabelText } = render(RepoListRow, {
-      props: { repo: remoteRepo, onOpen: vi.fn(), onDetail: vi.fn() },
+      props: {
+        repo: { ...remoteRepo, ahead: 2, behind: 1, branch: "main" },
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+      },
     });
     expect(getByText("acme/platform/api")).toBeTruthy();
     expect(getByRole("button", { name: "Clone api" })).toBeTruthy();
@@ -212,9 +217,10 @@ describe("RepoListRow not cloned", () => {
     expect(onDetail).not.toHaveBeenCalled();
   });
 
-  it("is available under every clone policy", () => {
-    for (const policy of ["manual", "on_open", "auto"] as const) {
-      const { getByRole, unmount } = render(RepoListRow, {
+  it.each(["manual", "on_open", "auto"] as const)(
+    "Clone is enabled under the %s clone policy",
+    (policy) => {
+      const { getByRole } = render(RepoListRow, {
         props: {
           repo: { ...remoteRepo, clone_policy: policy },
           onOpen: vi.fn(),
@@ -226,8 +232,53 @@ describe("RepoListRow not cloned", () => {
         (getByRole("button", { name: "Clone api" }) as HTMLButtonElement)
           .disabled,
       ).toBe(false);
-      unmount();
-    }
+    },
+  );
+
+  it("falls back to a Not cloned label when remote_full_path is missing", () => {
+    const { getByText } = render(RepoListRow, {
+      props: {
+        repo: { ...remoteRepo, remote_full_path: null },
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+      },
+    });
+    expect(getByText("Not cloned")).toBeTruthy();
+  });
+
+  it("shows a cloud icon instead of a dirty dot on a not-cloned row", () => {
+    const { container } = render(RepoListRow, {
+      props: {
+        repo: { ...remoteRepo, is_dirty: true },
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+      },
+    });
+    expect(container.querySelector(".h-2.w-2.rounded-full")).toBeNull();
+    expect(container.querySelector(".bg-dirty-amber")).toBeNull();
+  });
+
+  it("shows the dirty dot on a cloned dirty row (contrast case)", () => {
+    const { container } = render(RepoListRow, {
+      props: {
+        repo: { ...mockRepo, is_dirty: true },
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+      },
+    });
+    expect(
+      container.querySelector(".h-2.w-2.rounded-full.bg-dirty-amber"),
+    ).toBeTruthy();
+  });
+
+  it("disables Clone when no onClone handler is provided", () => {
+    const { getByRole } = render(RepoListRow, {
+      props: { repo: remoteRepo, onOpen: vi.fn(), onDetail: vi.fn() },
+    });
+    expect(
+      (getByRole("button", { name: "Clone api" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 
   it("disables the button while cloning", () => {
@@ -247,14 +298,25 @@ describe("RepoListRow not cloned", () => {
     expect(button.textContent).toContain("Cloning");
   });
 
-  it("flags a local clone that was removed upstream", () => {
+  it("flags a local clone that was removed upstream with its branch", () => {
     const { getByText } = render(RepoListRow, {
       props: {
-        repo: { ...mockRepo, removed_upstream: true },
+        repo: { ...mockRepo, branch: "main", removed_upstream: true },
         onOpen: vi.fn(),
         onDetail: vi.fn(),
       },
     });
-    expect(getByText(/removed upstream/)).toBeTruthy();
+    expect(getByText("removed upstream · main")).toBeTruthy();
+  });
+
+  it("drops the branch suffix from removed upstream when branch is null", () => {
+    const { getByText } = render(RepoListRow, {
+      props: {
+        repo: { ...mockRepo, branch: null, removed_upstream: true },
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+      },
+    });
+    expect(getByText("removed upstream")).toBeTruthy();
   });
 });
