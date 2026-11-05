@@ -42,7 +42,8 @@ pub fn build_command(template: &str, repo_path: &Path) -> Result<(String, Vec<St
 
 /// Launch an indexed repo via configured `launch_cmd` and record `last_opened_at` on success.
 pub fn launch_repo(ctx: &AppState, path: &str) -> Result<(), String> {
-    let catalog_path = Path::new(path);
+    let cloned_path = ensure_cloned_for_open(ctx, path)?;
+    let catalog_path = cloned_path.as_deref().unwrap_or_else(|| Path::new(path));
     let launch_path = ctx
         .catalog_launch_path(catalog_path)
         .map_err(|e| e.to_string())?;
@@ -59,6 +60,40 @@ pub fn launch_repo(ctx: &AppState, path: &str) -> Result<(), String> {
     ctx.touch_last_opened_at(catalog_path)
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// When `path` is an indexed-but-not-cloned remote repo, clone it first if its source policy
+/// allows (`on_open` / `auto`). Returns the catalog path of the fresh clone, or `None` when
+/// `path` is not a remote-only entry.
+pub fn ensure_cloned_for_open(
+    ctx: &AppState,
+    path: &str,
+) -> Result<Option<std::path::PathBuf>, String> {
+    let Some(record) = ctx
+        .remote_only_record(Path::new(path))
+        .map_err(|e| e.to_string())?
+    else {
+        return Ok(None);
+    };
+    let policy = ctx
+        .config()
+        .map_err(|e| e.to_string())?
+        .remote(&record.source_id)
+        .map(|s| s.clone_policy)
+        .ok_or_else(|| {
+            format!(
+                "remote source {:?} is no longer configured",
+                record.source_id
+            )
+        })?;
+    if policy == crate::domain::config::ClonePolicy::Manual {
+        return Err(format!(
+            "{} is not cloned; clone it first (`workpot clone {}`)",
+            record.full_path, record.full_path
+        ));
+    }
+    let outcome = ctx.clone_remote(path).map_err(|e| e.to_string())?;
+    Ok(Some(outcome.local_path))
 }
 
 #[cfg(test)]

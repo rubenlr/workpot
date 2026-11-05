@@ -28,6 +28,8 @@
     activeSync = null,
     onSync,
     activeConvert = null,
+    cloningPaths = [],
+    onClone,
   }: {
     sectionedRepos: SectionedRepos;
     flatIndexByPath: Map<string, number>;
@@ -45,6 +47,8 @@
       direction: SyncDirection,
     ) => void;
     activeConvert?: ActiveConvert | null;
+    cloningPaths?: string[];
+    onClone?: (repo: RepoDto) => void;
   } = $props();
 
   let hoveredRowIndex = $state<number | null>(null);
@@ -69,6 +73,10 @@
 
   function showRepoContextMenu(repo: RepoDto, e: MouseEvent) {
     e.preventDefault();
+    if (repo.cloned === false) {
+      // Not cloned: no catalog row yet, so pin / tag / convert actions do not apply.
+      return;
+    }
     const payload = {
       repoPath: repo.path,
       isPinned: repo.pinned,
@@ -197,6 +205,8 @@
               {activeSync}
               {onSync}
               {activeConvert}
+              cloning={cloningPaths.includes(repo.path)}
+              onClone={onClone ? () => onClone(repo) : undefined}
               onDetail={() => {
                 onSelectRow(idx);
                 onDetail(repo, idx);

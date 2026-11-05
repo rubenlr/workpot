@@ -2,6 +2,7 @@
   import { defineMeta } from "@storybook/addon-svelte-csf";
   import { expect, fn } from "storybook/test";
   import TrayPanelChrome from "./TrayPanelChrome.svelte";
+  import { storyRemoteRepo } from "$lib/tray/repo-list/repoStoryFixtures";
   import {
     emptySectionedRepos,
     storyFlatIndexByPath,
@@ -45,6 +46,46 @@
 </script>
 
 <Story name="PopulatedList" />
+
+<Story
+  name="WithNotClonedRepos"
+  args={{
+    sectionedRepos: storySectionedRepos([
+      ...storyTrayRepos(),
+      storyRemoteRepo(),
+      storyRemoteRepo({
+        path: "/Users/storybook/Developer/acme/ledger",
+        name: "ledger",
+        remote_full_path: "acme/platform/finance/ledger",
+        clone_policy: "on_open",
+      }),
+    ]),
+    flatIndexByPath: storyFlatIndexByPath(
+      storySectionedRepos([
+        ...storyTrayRepos(),
+        storyRemoteRepo(),
+        storyRemoteRepo({
+          path: "/Users/storybook/Developer/acme/ledger",
+          name: "ledger",
+          remote_full_path: "acme/platform/finance/ledger",
+          clone_policy: "on_open",
+        }),
+      ]),
+    ),
+    cloningPaths: ["/Users/storybook/Developer/acme/ledger"],
+    onClone: noop,
+  }}
+/>
+
+<Story
+  name="NotClonedDetail"
+  args={{
+    detailRepo: storyRemoteRepo(),
+    onCloseDetail: noop,
+    onDetailMutated: noop,
+    onClone: noop,
+  }}
+/>
 
 <Story name="DarkMode" parameters={{ backgrounds: { default: "dark" } }} />
 

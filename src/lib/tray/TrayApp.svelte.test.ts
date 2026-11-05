@@ -25,7 +25,7 @@ vi.mock("$lib/tray/state/createTrayPanel.svelte", () => ({
     onTagAutocompleteSelect: vi.fn(),
     bindFilterInput: vi.fn(),
     listView: "flat" as const,
-    sectionedRepos: { pinned: [], dirty: [], recent: [], rest: [] },
+    sectionedRepos: { pinned: [], dirty: [], recent: [], rest: [], remote: [] },
     flatIndexByPath: new Map<string, number>(),
     selectedIndex: 0,
     handlePinReorder: vi.fn(),

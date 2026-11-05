@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Remote catalog** — index every repo under a GitHub org/user or GitLab group (subgroups included) without cloning, via the logged-in `gh` / `glab` CLIs. New `[[remotes]]` config, `workpot remotes add|list|set|remove`, `workpot sync remote`, and `workpot clone`.
+- Per-source `clone_policy` (`manual`, `on_open`, `auto`) and safe-only `prune_removed`; the tray **Clone** button and `workpot clone` work under every policy.
+- Tray **Not cloned** section, Clone button, remote detail pane, and a "removed upstream" flag; `workpot list` / `search` mark not-cloned repos with `☁️`.
+- Schema migration `002_remote_catalog` (`remote_repos`, `remote_sync_runs`).
+
 ### Planned
 
 - CLI parity with the tray (`workpot list`, `workpot search`, `workpot open`) — Phase 6

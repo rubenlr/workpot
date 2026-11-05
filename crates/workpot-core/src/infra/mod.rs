@@ -3,4 +3,5 @@ pub mod db;
 pub mod git;
 pub mod migrations;
 pub mod paths;
+pub mod remote_provider;
 pub mod store;

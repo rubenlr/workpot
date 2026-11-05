@@ -7,6 +7,7 @@ use tauri::{
 };
 use workpot_core::AppState;
 use workpot_core::services::local_catalog_sync::LocalCatalogSyncSummary;
+use workpot_core::services::sync::FullSyncSummary;
 
 use crate::commands::{
     CatalogSyncGuard, reset_tray_icon_after_sync, start_tray_sync_animation,
@@ -33,6 +34,12 @@ pub struct SyncSummaryDto {
     pub skipped: u32,
     pub git_refreshed: u32,
     pub git_errors: u32,
+    pub remote_indexed: u32,
+    pub remote_added: u32,
+    pub remote_cloned: u32,
+    pub remote_pruned: u32,
+    /// Soft per-source errors from the remote catalog pass (e.g. not authenticated).
+    pub remote_errors: Vec<String>,
 }
 
 impl From<LocalCatalogSyncSummary> for SyncSummaryDto {
@@ -43,7 +50,29 @@ impl From<LocalCatalogSyncSummary> for SyncSummaryDto {
             skipped: s.skipped,
             git_refreshed: s.git_refreshed,
             git_errors: s.git_errors,
+            remote_indexed: 0,
+            remote_added: 0,
+            remote_cloned: 0,
+            remote_pruned: 0,
+            remote_errors: Vec::new(),
         }
+    }
+}
+
+impl From<FullSyncSummary> for SyncSummaryDto {
+    fn from(s: FullSyncSummary) -> Self {
+        let mut dto = Self::from(s.local);
+        dto.remote_indexed = s.remote.indexed;
+        dto.remote_added = s.remote.added;
+        dto.remote_cloned = s.remote.cloned;
+        dto.remote_pruned = s.remote.pruned;
+        dto.remote_errors = s
+            .remote
+            .source_errors
+            .into_iter()
+            .map(|e| format!("{}: {}", e.source, e.message))
+            .collect();
+        dto
     }
 }
 
@@ -114,29 +143,35 @@ fn show_panel(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
         log::warn!("failed to emit panel-opened: {e}");
     }
     if let Some(state) = app.try_state::<Arc<AppState>>() {
-        spawn_background_sync(app.clone(), state.inner().clone());
+        // Panel open honours the remote TTL; explicit Sync / Cmd+R forces a remote listing.
+        spawn_background_sync(app.clone(), state.inner().clone(), false);
     }
 }
 
-pub(crate) fn spawn_background_sync(app: tauri::AppHandle, state: Arc<AppState>) {
+pub(crate) fn spawn_background_sync(
+    app: tauri::AppHandle,
+    state: Arc<AppState>,
+    force_remote: bool,
+) {
     let guard = app
         .try_state::<CatalogSyncGuard>()
         .map(|g| g.inner().clone());
     let Some(guard) = guard else {
-        spawn_background_sync_inner(app, state, None);
+        spawn_background_sync_inner(app, state, None, force_remote);
         return;
     };
     if !guard.try_start() {
         log::debug!("background sync: skipped (already running)");
         return;
     }
-    spawn_background_sync_inner(app, state, Some(guard));
+    spawn_background_sync_inner(app, state, Some(guard), force_remote);
 }
 
 fn spawn_background_sync_inner(
     app: tauri::AppHandle,
     state: Arc<AppState>,
     guard: Option<CatalogSyncGuard>,
+    force_remote: bool,
 ) {
     let stale_dirty_days = state.config().map(|c| c.stale_dirty_days).unwrap_or(7);
     update_tray_icon_state(&app, &[], stale_dirty_days, true);
@@ -149,7 +184,9 @@ fn spawn_background_sync_inner(
         let started = Instant::now();
         let state_for_blocking = Arc::clone(&state);
         let blocking_result = tauri::async_runtime::spawn_blocking(move || {
-            state_for_blocking.run_sync().map_err(|e| e.to_string())
+            state_for_blocking
+                .run_sync_full(force_remote)
+                .map_err(|e| e.to_string())
         })
         .await;
 
@@ -163,10 +200,13 @@ fn spawn_background_sync_inner(
         match blocking_result {
             Ok(Ok(summary)) => {
                 log::info!(
-                    "background sync: complete elapsed_ms={elapsed_ms} added={} removed={} git_refreshed={}",
-                    summary.added,
-                    summary.removed,
-                    summary.git_refreshed
+                    "background sync: complete elapsed_ms={elapsed_ms} added={} removed={} git_refreshed={} remote_indexed={} remote_cloned={} remote_errors={}",
+                    summary.local.added,
+                    summary.local.removed,
+                    summary.local.git_refreshed,
+                    summary.remote.indexed,
+                    summary.remote.cloned,
+                    summary.remote.errors
                 );
                 let dto = SyncSummaryDto::from(summary);
                 if let Err(e) = app.emit("sync-complete", &dto) {
@@ -209,7 +249,7 @@ fn handle_tray_menu_event(app: &tauri::AppHandle, menu_id: &str) {
     match menu_id {
         "refresh_sync" => {
             if let Some(state) = app.try_state::<Arc<AppState>>() {
-                spawn_background_sync(app.clone(), state.inner().clone());
+                spawn_background_sync(app.clone(), state.inner().clone(), true);
             }
         }
         "preferences" => {

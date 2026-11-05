@@ -1,12 +1,14 @@
 import type { RepoDto } from "$lib/types";
 
-export type Section = "pinned" | "dirty" | "recent" | "rest";
+export type Section = "pinned" | "dirty" | "recent" | "rest" | "remote";
 
 export interface SectionedRepos {
   pinned: RepoDto[];
   dirty: RepoDto[];
   recent: RepoDto[];
   rest: RepoDto[];
+  /** Indexed remote repos that are not cloned yet. */
+  remote: RepoDto[];
 }
 
 export interface SectionConfig {
@@ -53,11 +55,19 @@ export function sectionSort(
   config: SectionConfig,
   nowSeconds: number,
 ): SectionedRepos {
-  const pinned = repos
+  const remote = repos
+    .filter((r) => r.cloned === false)
+    .sort((a, b) =>
+      (a.remote_full_path ?? a.name).localeCompare(
+        b.remote_full_path ?? b.name,
+      ),
+    );
+  const local = repos.filter((r) => r.cloned !== false);
+  const pinned = local
     .filter((r) => r.pinned)
     .sort((a, b) => (a.pin_order ?? 999) - (b.pin_order ?? 999));
 
-  const nonPinned = repos.filter((r) => !r.pinned);
+  const nonPinned = local.filter((r) => !r.pinned);
   const dirty = nonPinned
     .filter((r) => r.is_dirty === true)
     .sort(byLastOpenedDesc);
@@ -91,5 +101,5 @@ export function sectionSort(
     .filter((r) => !recentSet.has(r))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  return { pinned, dirty, recent, rest };
+  return { pinned, dirty, recent, rest, remote };
 }

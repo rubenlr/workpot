@@ -8,6 +8,7 @@ use tauri::menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, LogicalPosition, Manager, State, Window};
 use workpot_core::domain::config::MigrationConfig;
 use workpot_core::infra::git::{BranchKind, BranchRef};
+use workpot_core::services::remote_catalog::RemoteRepoRecord;
 use workpot_core::services::repo_convert::{
     ConvertResult, ConvertTarget, PreflightResult, convert_target_for_record, preflight_message,
     run_volatile_preflight,
@@ -204,6 +205,18 @@ pub struct RepoDto {
     pub is_bare: bool,
     pub convert_to: Option<String>,
     pub convert_block_reason: Option<String>,
+    /// `false` for indexed remote repos that have no local clone yet.
+    pub cloned: bool,
+    /// Web URL of the remote repo (remote catalog entries only).
+    pub remote_url: Option<String>,
+    /// Full path on the host, e.g. `acme/platform/api` (remote catalog entries only).
+    pub remote_full_path: Option<String>,
+    /// Configured `[[remotes]]` source name (remote catalog entries only).
+    pub remote_source: Option<String>,
+    /// `manual` | `on_open` | `auto` (remote catalog entries only).
+    pub clone_policy: Option<String>,
+    /// Local clone whose upstream repo no longer exists.
+    pub removed_upstream: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -269,6 +282,43 @@ fn record_to_dto(record: RepoRecord, migration: &MigrationConfig) -> RepoDto {
         is_bare,
         convert_to,
         convert_block_reason: record.convert_block_reason,
+        cloned: true,
+        remote_url: None,
+        remote_full_path: None,
+        remote_source: None,
+        clone_policy: None,
+        removed_upstream: false,
+    }
+}
+
+/// Row for an indexed remote repo that is not cloned. `path` is the planned clone path, so it
+/// doubles as the stable row key and is where a clone will land.
+fn remote_record_to_dto(record: &RemoteRepoRecord, clone_policy: Option<String>) -> RepoDto {
+    RepoDto {
+        path: record.clone_path.display().to_string(),
+        name: record.name.clone(),
+        alias: None,
+        branch: None,
+        ahead: None,
+        behind: None,
+        is_dirty: None,
+        parent_dir: parent_dir_display(&record.clone_path),
+        last_opened_at: None,
+        git_state_error: None,
+        pinned: false,
+        pin_order: None,
+        notes: None,
+        tags: vec![],
+        branches: vec![],
+        is_bare: false,
+        convert_to: None,
+        convert_block_reason: None,
+        cloned: false,
+        remote_url: record.web_url.clone(),
+        remote_full_path: Some(record.full_path.clone()),
+        remote_source: Some(record.source_id.clone()),
+        clone_policy,
+        removed_upstream: false,
     }
 }
 
@@ -365,7 +415,29 @@ pub async fn list_repos(state: State<'_, Arc<AppState>>) -> Result<Vec<RepoDto>,
     let repos = tauri::async_runtime::spawn_blocking(move || {
         let records = state.list_repos().map_err(|e| e.to_string())?;
         let migration = state.config().map_err(|e| e.to_string())?.migration.clone();
-        Ok::<Vec<RepoDto>, String>(repo_records_to_dtos(records, &migration))
+        let mut dtos = repo_records_to_dtos(records, &migration);
+
+        match state.removed_upstream_paths() {
+            Ok(flagged) => {
+                for dto in &mut dtos {
+                    dto.removed_upstream = flagged.contains(&dto.path);
+                }
+            }
+            Err(e) => log::warn!("list_repos: removed-upstream flags unavailable: {e}"),
+        }
+        match state.list_remote_only() {
+            Ok(remote_only) => {
+                let config = state.config().map_err(|e| e.to_string())?;
+                for record in &remote_only {
+                    let policy = config
+                        .remote(&record.source_id)
+                        .map(|s| s.clone_policy.as_str().to_string());
+                    dtos.push(remote_record_to_dto(record, policy));
+                }
+            }
+            Err(e) => log::warn!("list_repos: remote catalog unavailable: {e}"),
+        }
+        Ok::<Vec<RepoDto>, String>(dtos)
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -1109,7 +1181,7 @@ pub async fn checkout_repo_branch(
 
 #[tauri::command]
 pub async fn refresh_sync(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    crate::tray::spawn_background_sync(app, state.inner().clone());
+    crate::tray::spawn_background_sync(app, state.inner().clone(), true);
     Ok(())
 }
 
@@ -1119,7 +1191,7 @@ pub async fn refresh_all_git_state(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::tray::spawn_background_sync(app, state.inner().clone());
+    crate::tray::spawn_background_sync(app, state.inner().clone(), true);
     Ok(())
 }
 
@@ -1333,6 +1405,211 @@ pub async fn convert_repo(
     Ok(())
 }
 
+/// Tracks in-flight clones (several may run at once; one per repo path).
+#[derive(Clone)]
+pub struct RepoCloneGuard {
+    active: Arc<Mutex<HashSet<String>>>,
+}
+
+impl RepoCloneGuard {
+    pub fn new() -> Self {
+        Self {
+            active: Arc::new(Mutex::new(HashSet::new())),
+        }
+    }
+
+    /// Returns false when `repo_path` is already being cloned.
+    pub fn try_start(&self, repo_path: &str) -> bool {
+        match self.active.lock() {
+            Ok(mut active) => active.insert(repo_path.to_string()),
+            Err(_) => false,
+        }
+    }
+
+    pub fn finish(&self, repo_path: &str) {
+        match self.active.lock() {
+            Ok(mut active) => {
+                active.remove(repo_path);
+            }
+            Err(_) => log::warn!("clone guard lock poisoned; {repo_path} not released"),
+        }
+    }
+
+    pub fn status(&self) -> Vec<String> {
+        self.active
+            .lock()
+            .map(|active| {
+                let mut paths: Vec<String> = active.iter().cloned().collect();
+                paths.sort();
+                paths
+            })
+            .unwrap_or_default()
+    }
+}
+
+struct RepoCloneGuardLease(RepoCloneGuard, String);
+
+impl Drop for RepoCloneGuardLease {
+    fn drop(&mut self) {
+        self.0.finish(&self.1);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RepoCloneEventDto {
+    /// Planned clone path (the row key of the not-cloned entry).
+    pub repo_path: String,
+    /// Catalog path of the fresh clone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_path: Option<String>,
+    /// `true` when the repo was opened in the IDE after cloning.
+    pub opened: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Repo paths with a clone currently running (restores UI state after a webview reload).
+#[tauri::command]
+pub fn get_repo_clone_status(guard: State<'_, RepoCloneGuard>) -> Vec<String> {
+    guard.status()
+}
+
+/// Clone an indexed remote repo; allowed under every clone policy. Fire-and-forget with
+/// `repo-clone-started|complete|failed` events.
+#[tauri::command]
+pub async fn clone_repo(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    guard: State<'_, RepoCloneGuard>,
+    repo_path: String,
+    open_after: bool,
+) -> Result<(), String> {
+    if !guard.try_start(&repo_path) {
+        return Err("this repo is already being cloned".to_string());
+    }
+    log::info!("repo clone: started repo={repo_path} open_after={open_after}");
+    let started = RepoCloneEventDto {
+        repo_path: repo_path.clone(),
+        new_path: None,
+        opened: false,
+        error: None,
+    };
+    if let Err(e) = app.emit("repo-clone-started", &started) {
+        log_emit_err("repo-clone-started", e);
+    }
+
+    let state_clone = state.inner().clone();
+    let guard_clone = guard.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        let _lease = RepoCloneGuardLease(guard_clone, repo_path.clone());
+        let task_path = repo_path.clone();
+        let blocking = tauri::async_runtime::spawn_blocking(move || {
+            let outcome = state_clone
+                .clone_remote(&task_path)
+                .map_err(|e| e.to_string())?;
+            let new_path = outcome.local_path.display().to_string();
+            let launch_error = if open_after {
+                crate::launch::launch_repo(&state_clone, &new_path).err()
+            } else {
+                None
+            };
+            Ok::<(String, bool, Option<String>), String>((new_path, open_after, launch_error))
+        })
+        .await;
+
+        match blocking {
+            Ok(Ok((new_path, opened, launch_error))) => {
+                log::info!("repo clone: complete repo={repo_path} new_path={new_path}");
+                let payload = RepoCloneEventDto {
+                    repo_path,
+                    new_path: Some(new_path),
+                    opened: opened && launch_error.is_none(),
+                    error: launch_error,
+                };
+                if let Err(e) = app.emit("repo-clone-complete", &payload) {
+                    log_emit_err("repo-clone-complete", e);
+                }
+            }
+            Ok(Err(summary)) => {
+                log::warn!("repo clone: failed repo={repo_path}: {summary}");
+                let payload = RepoCloneEventDto {
+                    repo_path,
+                    new_path: None,
+                    opened: false,
+                    error: Some(summary),
+                };
+                if let Err(e) = app.emit("repo-clone-failed", &payload) {
+                    log_emit_err("repo-clone-failed", e);
+                }
+            }
+            Err(join_err) => {
+                let msg = format!("repo clone task panicked or was cancelled: {join_err}");
+                log::error!("repo clone: failed repo={repo_path}: {msg}");
+                let payload = RepoCloneEventDto {
+                    repo_path,
+                    new_path: None,
+                    opened: false,
+                    error: Some(msg),
+                };
+                if let Err(e) = app.emit("repo-clone-failed", &payload) {
+                    log_emit_err("repo-clone-failed", e);
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RemoteSourceDto {
+    pub name: String,
+    pub provider: String,
+    pub host: String,
+    pub path: String,
+    pub clone_root: String,
+    pub clone_policy: String,
+    pub prune_removed: bool,
+    pub repo_count: u32,
+    pub cloned_count: u32,
+    pub removed_upstream_count: u32,
+    pub last_sync_status: Option<String>,
+    pub last_sync_at: Option<i64>,
+    pub last_sync_message: Option<String>,
+}
+
+/// Read-only status of configured remote sources (edit via CLI or config.toml).
+#[tauri::command]
+pub async fn get_remote_sources(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<RemoteSourceDto>, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let statuses = state.remote_source_statuses().map_err(|e| e.to_string())?;
+        Ok::<Vec<RemoteSourceDto>, String>(
+            statuses
+                .into_iter()
+                .map(|s| RemoteSourceDto {
+                    name: s.name,
+                    provider: s.provider.as_str().to_string(),
+                    host: s.host,
+                    path: s.path,
+                    clone_root: s.clone_root.display().to_string(),
+                    clone_policy: s.clone_policy.as_str().to_string(),
+                    prune_removed: s.prune_removed,
+                    repo_count: s.repo_count,
+                    cloned_count: s.cloned_count,
+                    removed_upstream_count: s.gone_count,
+                    last_sync_status: s.last_run_status,
+                    last_sync_at: s.last_run_at,
+                    last_sync_message: s.last_run_message,
+                })
+                .collect(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub fn open_in_cursor(
     path: String,
@@ -1521,6 +1798,12 @@ mod tests {
             is_bare: false,
             convert_to: None,
             convert_block_reason: None,
+            cloned: true,
+            remote_url: None,
+            remote_full_path: None,
+            remote_source: None,
+            clone_policy: None,
+            removed_upstream: false,
         }
     }
 

@@ -579,6 +579,22 @@ fn finish_sync_run(
     Ok(())
 }
 
+/// Attach one freshly registered location to its project and persist its worktrees/branches
+/// (used right after a remote clone so the repo is fully usable before the next sync).
+pub fn attach_and_persist_location(conn: &Connection, path_key: &str) -> Result<()> {
+    let git_common_dir: String = conn.query_row(
+        "SELECT git_common_dir FROM locations WHERE path = ?1",
+        params![path_key],
+        |row| row.get(0),
+    )?;
+    let tx = conn.unchecked_transaction()?;
+    attach_one_location(&tx, path_key, &git_common_dir)?;
+    replace_worktrees(&tx, path_key)?;
+    replace_branches(&tx, path_key)?;
+    tx.commit()?;
+    Ok(())
+}
+
 /// Attach every location to a project (create/attach/conflict), then apply overlap merges (4A).
 fn sync_project_identity(tx: &Transaction<'_>) -> Result<()> {
     let locations = load_location_paths(tx)?;

@@ -11,6 +11,8 @@ export interface TrayLaunchDeps {
   getRepos: () => RepoDto[];
   refresh: (clearError: boolean) => Promise<void>;
   setSelectedIndex: (index: number) => void;
+  /** Clone a not-cloned repo, then open it (clone-on-open policies). */
+  cloneAndOpen?: (repo: RepoDto) => Promise<void>;
 }
 
 export function createTrayLaunch(deps: TrayLaunchDeps) {
@@ -26,6 +28,14 @@ export function createTrayLaunch(deps: TrayLaunchDeps) {
       return;
     }
     launchError = null;
+    if (repo.cloned === false) {
+      if (repo.clone_policy === "manual" || !deps.cloneAndOpen) {
+        launchError = `${repo.name} is not cloned yet. Use the Clone button.`;
+        return;
+      }
+      await deps.cloneAndOpen(repo);
+      return;
+    }
     try {
       await invoke("open_in_cursor", { path: repo.path, background });
       if (background) {

@@ -155,3 +155,36 @@ describe("sectionSort", () => {
     expect(sections.pinned.map((r) => r.name)).toEqual(["b", "a"]);
   });
 });
+
+describe("sectionSort remote section", () => {
+  const cfg = { maxRecentDays: 14, minRecentCount: 3 };
+
+  it("puts not-cloned repos in their own section sorted by remote path", () => {
+    const local = repo({ name: "local", is_dirty: true });
+    const b = {
+      ...repo({ name: "b" }),
+      cloned: false,
+      remote_full_path: "acme/z/b",
+    };
+    const a = {
+      ...repo({ name: "a" }),
+      cloned: false,
+      remote_full_path: "acme/a/a",
+    };
+    const sections = sectionSort([b, local, a], cfg, 1_000_000);
+    expect(sections.remote.map((r) => r.name)).toEqual(["a", "b"]);
+    expect(sections.dirty.map((r) => r.name)).toEqual(["local"]);
+    expect(sections.rest).toEqual([]);
+  });
+
+  it("never pins or marks not-cloned repos as recent", () => {
+    const remote = {
+      ...repo({ name: "r", pinned: true, last_opened_at: 999_999 }),
+      cloned: false,
+    };
+    const sections = sectionSort([remote], cfg, 1_000_000);
+    expect(sections.pinned).toEqual([]);
+    expect(sections.recent).toEqual([]);
+    expect(sections.remote).toHaveLength(1);
+  });
+});

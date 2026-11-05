@@ -4,18 +4,19 @@ Workpot sync keeps the local catalog and git metadata up to date. Sync is not au
 
 ## Scopes
 
-| Scope                 | Meaning                                                    | Status                                    |
-| --------------------- | ---------------------------------------------------------- | ----------------------------------------- |
-| `sync-local-catalog`  | Watch-root scan + catalog merge + project attach + git     | Implemented (`workpot sync local`)        |
-| `sync-remote-catalog` | Future remote directory index                              | Documented only — not implemented         |
-| `fetch-repo`          | Per-repo fetch via `Config.fetch` before git-state refresh | Implemented                               |
-| `sync` (full)         | Orchestrator: runs local catalog (+ later remote)          | Implemented thin wrapper (`workpot sync`) |
+| Scope                 | Meaning                                                    | Status                              |
+| --------------------- | ---------------------------------------------------------- | ----------------------------------- |
+| `sync-local-catalog`  | Watch-root scan + catalog merge + project attach + git     | Implemented (`workpot sync local`)  |
+| `sync-remote-catalog` | Index GitHub orgs / GitLab groups (no clone required)      | Implemented (`workpot sync remote`) |
+| `fetch-repo`          | Per-repo fetch via `Config.fetch` before git-state refresh | Implemented                         |
+| `sync` (full)         | Orchestrator: remote catalog, then local catalog           | Implemented (`workpot sync`)        |
 
 Push/pull via tray/`repo_sync` is **not** a catalog sync scope — those commands move commits for one branch.
 
 ```bash
-workpot sync         # full orchestrator (v1: local catalog only)
+workpot sync         # full orchestrator: remote catalog, then local catalog
 workpot sync local   # local catalog sync only
+workpot sync remote  # remote catalog only (index, auto-clone, prune per source policy)
 ```
 
 Tray **panel open**, tray **Sync** / Cmd+R, and `workpot sync` all run the **same** full catalog sync (not a git-only refresh). Concurrent runs are guarded so overlapping triggers skip.
@@ -131,11 +132,58 @@ After all attaches:
 
 ## Full sync (`sync`)
 
-`workpot sync`, tray Sync / Cmd+R, and panel open call the same orchestrator. In v1 it only runs local catalog sync. Remote catalog sync will plug in here later without changing the CLI/tray entry points.
+`workpot sync`, tray Sync / Cmd+R, and panel open call the same orchestrator: the remote catalog runs first (so fresh clones are picked up), then the local catalog sync. A remote failure never blocks the local pass; it is reported per source.
+
+Panel open honours `remote_sync_ttl_minutes` (default 15) so opening the panel does not hit the network every time. `workpot sync`, tray **Sync** and `Cmd+R` always list remotes.
 
 ## Remote catalog sync (`sync-remote-catalog`)
 
-Future: index remotes / remote directories into the catalog. Not implemented — no code path yet.
+Point Workpot at a GitHub org/user or a GitLab group and every repo under it appears in the catalog **without being cloned**. GitLab groups are indexed recursively, subgroups included.
+
+Workpot never handles credentials: it shells out to the `gh` / `glab` CLIs you already have, so you must be logged in for the host (`gh auth login`, `glab auth login --hostname <host>`). A missing CLI or login is reported as a soft per-source error. The tray app looks for the CLIs in `/opt/homebrew/bin`, `/usr/local/bin` and `~/.local/bin` as well as `PATH`.
+
+```bash
+workpot remotes add acme/platform --provider gitlab --host gitlab.example.com \
+  --clone-root ~/code/acme --policy on-open
+workpot remotes list
+workpot remotes set platform --policy auto --prune-removed true
+workpot remotes remove platform          # local clones stay as ordinary repos
+workpot clone acme/platform/billing-api  # clone one indexed repo (any policy)
+```
+
+Sources live in `config.toml` as `[[remotes]]` (see [SETTINGS.md](../SETTINGS.md#remote-catalog-remotes)).
+
+### Pipeline (per source)
+
+1. **List** — `gh api` / `glab api` with pagination; no database lock is held while talking to the network.
+2. **Index** — upsert into `remote_repos`; repos missing from a _complete_ listing are marked gone. An empty listing, a listing above `limits.max_remote_repos`, or any CLI error leaves the existing index untouched.
+3. **Prune** (when `prune_removed = true`) — see below.
+4. **Auto-clone** (when `clone_policy = "auto"`) — up to 4 clones in parallel; repos matching your `excludes` are skipped so `workpot repo remove` is respected.
+
+### Clone policies
+
+| Policy    | What happens automatically                                             |
+| --------- | ---------------------------------------------------------------------- |
+| `manual`  | Nothing. Clone from the tray or with `workpot clone`.                  |
+| `on_open` | Opening a not-cloned repo (tray row / `workpot open`) clones it first. |
+| `auto`    | Every indexed repo is cloned during sync.                              |
+
+The tray **Clone** button and `workpot clone` work under every policy. Clones land in `<clone_root>/<remote path relative to the source path>`, are registered in the catalog, and use the transport (`ssh` / `https`) configured in the CLI for that host (`gh|glab config get git_protocol`) unless the source sets `protocol`.
+
+### Cloned vs. not cloned
+
+A repo counts as cloned when a cataloged checkout has the same normalized remote URL (SSH, HTTPS and `.git` forms match), so a repo you cloned by hand is recognised too. Not-cloned repos show in the tray under **Not cloned** and in `workpot list` / `search` as `☁️ … (not cloned)`.
+
+### Removing local repos that disappeared upstream (`prune_removed`)
+
+Off by default. A local clone is deleted only when **all** of these hold; otherwise it is kept and shown as "removed upstream":
+
+- it is absent from a complete listing **and** a direct lookup of that repo returns 404 (an API error never leads to deletion);
+- it is a plain checkout under the source's `clone_root` (bare layouts and repos with linked worktrees are kept);
+- no uncommitted changes, no untracked files, no stash;
+- every local branch has an upstream and nothing is ahead of it.
+
+Git-ignored files (build output, a local `.env`) are deleted together with the clone. Repos that were _moved_ upstream appear as a new not-cloned repo, and the old clone is pruned only if it passes the checks above.
 
 ## Related commands
 
@@ -147,6 +195,8 @@ Future: index remotes / remote directories into the catalog. Not implemented —
 ## Where data lives
 
 Run `workpot paths` for the resolved locations on your machine. Settings live in `config.toml`; the catalog is SQLite. Details and defaults are in [SETTINGS.md](../SETTINGS.md).
+
+Remote listings keep an audit row per source in `remote_sync_runs` (status, counts, error); `workpot remotes list` and the tray show the last result.
 
 Each successful (and many failed) local catalog sync runs leave an audit trail in the database (`local_catalog_sync_runs` and per-path `local_catalog_sync_changes`) so you can see what a run added, removed, or skipped without inspecting the schema yourself.
 

@@ -81,4 +81,15 @@ describe("tray command capability parity", () => {
     expect(registered).toContain("convert_repo");
     expect(registered).toContain("get_repo_convert_status");
   });
+
+  it("registers repo clone and remote source IPC commands", () => {
+    for (const cmd of [
+      "clone_repo",
+      "get_repo_clone_status",
+      "get_remote_sources",
+    ]) {
+      expect(registered).toContain(cmd);
+      expect(permitted.has(cmd)).toBe(true);
+    }
+  });
 });

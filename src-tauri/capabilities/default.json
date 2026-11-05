@@ -21,6 +21,9 @@
     "allow-get-repo-sync-status",
     "allow-sync-repo-branch",
     "allow-get-repo-convert-status",
-    "allow-convert-repo"
+    "allow-convert-repo",
+    "allow-get-repo-clone-status",
+    "allow-clone-repo",
+    "allow-get-remote-sources"
   ]
 }

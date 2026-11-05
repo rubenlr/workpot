@@ -37,7 +37,20 @@ import {
   restoreRepoConvertStatus,
   type TrayRepoConvertDeps,
 } from "$lib/tray/logic/handlers/trayRepoConvert";
-import type { ActiveConvert, ActiveSync, SyncDirection } from "$lib/types";
+import {
+  cloneRepo,
+  onRepoCloneComplete,
+  onRepoCloneFailed,
+  onRepoCloneStarted,
+  restoreRepoCloneStatus,
+  type TrayRepoCloneDeps,
+} from "$lib/tray/logic/handlers/trayRepoClone";
+import type {
+  ActiveConvert,
+  ActiveSync,
+  RepoDto,
+  SyncDirection,
+} from "$lib/types";
 
 const MIN_SYNC_MS = 1000;
 const SYNC_SUCCESS_FLASH_MS = 400;
@@ -62,11 +75,13 @@ export function createTrayPanel() {
     setSelectedIndex: (index) => {
       list.selectedIndex = index;
     },
+    cloneAndOpen: (repo) => cloneRepo(repo, true, cloneDeps),
   });
 
   let unsubscribeEvents: (() => void) | null = null;
   let activeSync = $state<ActiveSync | null>(null);
   let activeConvert = $state<ActiveConvert | null>(null);
+  let cloningPaths = $state<string[]>([]);
   let syncing = $state(false);
   let syncSuccess = $state(false);
   let syncingStartedAt = $state<number | null>(null);
@@ -98,6 +113,25 @@ export function createTrayPanel() {
       activeConvert = convert;
     },
   };
+
+  const cloneDeps: TrayRepoCloneDeps = {
+    invoke,
+    refresh: () => data.refresh(),
+    onError: (e) => data.setListError(String(e)),
+    addCloning: (path) => {
+      if (!cloningPaths.includes(path)) {
+        cloningPaths = [...cloningPaths, path];
+      }
+    },
+    removeCloning: (path) => {
+      cloningPaths = cloningPaths.filter((p) => p !== path);
+    },
+    onOpened: () => void launch.hidePanel(),
+  };
+
+  async function handleClone(repo: RepoDto): Promise<void> {
+    await cloneRepo(repo, false, cloneDeps);
+  }
 
   async function handleConvert(repoPath: string): Promise<void> {
     const repo = data.repos.find((r) => r.path === repoPath);
@@ -227,6 +261,12 @@ export function createTrayPanel() {
       },
       onRepoConvertFailed: (payload) =>
         onRepoConvertFailed(payload, convertDeps),
+      onRepoCloneStarted: (payload) =>
+        onRepoCloneStarted(payload, cloneDeps.addCloning),
+      onRepoCloneComplete: (payload) => {
+        void onRepoCloneComplete(payload, cloneDeps);
+      },
+      onRepoCloneFailed: (payload) => onRepoCloneFailed(payload, cloneDeps),
       onRepoContextAction: (payload) => {
         void handleRepoContextAction(payload, data.repos, actionDeps);
       },
@@ -238,6 +278,7 @@ export function createTrayPanel() {
       config.loadConfig(),
       restoreRepoSyncStatus(invoke, syncDeps.setActiveSync),
       restoreRepoConvertStatus(invoke, convertDeps.setActiveConvert),
+      restoreRepoCloneStatus(invoke, cloneDeps.addCloning),
     ]);
     trayTrace("mount ready", { repos: data.repos.length });
     keyboard.focusFilter();
@@ -298,6 +339,9 @@ export function createTrayPanel() {
     get activeConvert() {
       return activeConvert;
     },
+    get cloningPaths() {
+      return cloningPaths;
+    },
     get syncing() {
       return syncing;
     },
@@ -319,6 +363,7 @@ export function createTrayPanel() {
     removeTagFromRepo,
     handlePinReorder,
     handleSync,
+    cloneRepo: handleClone,
     onFilterKeydown: keyboard.onFilterKeydown,
     onPanelKeydown: keyboard.onPanelKeydown,
     dismissLaunchError: launch.dismissLaunchError,

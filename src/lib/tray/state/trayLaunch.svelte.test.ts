@@ -42,6 +42,7 @@ function createLaunch(
     selected?: RepoDto | undefined;
     repos?: RepoDto[];
     filterQuery?: string;
+    cloneAndOpen?: (repo: RepoDto) => Promise<void>;
   } = {},
 ) {
   const repos = overrides.repos ?? [repo("/tmp/a"), repo("/tmp/b")];
@@ -55,6 +56,7 @@ function createLaunch(
       getRepos: () => repos,
       refresh,
       setSelectedIndex,
+      cloneAndOpen: overrides.cloneAndOpen,
     }),
     refresh,
     setSelectedIndex,
@@ -125,4 +127,35 @@ describe("createTrayLaunch", () => {
     launch.dismissLaunchError();
     expect(launch.launchError).toBeNull();
   });
+
+  it("not-cloned repo with manual policy shows a hint instead of opening", async () => {
+    const cloneAndOpen = vi.fn().mockResolvedValue(undefined);
+    const remote = {
+      ...repo("/code/acme/api"),
+      cloned: false,
+      clone_policy: "manual" as const,
+    };
+    const { launch } = createLaunch({ selected: remote, cloneAndOpen });
+    await launch.openSelected(false);
+    expect(launch.launchError).toContain("not cloned");
+    expect(cloneAndOpen).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it.each(["on_open", "auto"] as const)(
+    "not-cloned repo with %s policy clones then opens",
+    async (policy) => {
+      const cloneAndOpen = vi.fn().mockResolvedValue(undefined);
+      const remote = {
+        ...repo("/code/acme/api"),
+        cloned: false,
+        clone_policy: policy,
+      };
+      const { launch } = createLaunch({ selected: remote, cloneAndOpen });
+      await launch.openSelected(false);
+      expect(cloneAndOpen).toHaveBeenCalledWith(remote);
+      expect(invoke).not.toHaveBeenCalled();
+      expect(hide).not.toHaveBeenCalled();
+    },
+  );
 });

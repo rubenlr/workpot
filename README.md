@@ -26,14 +26,14 @@ Built with Rust (shared `workpot-core` crate, `git2`, SQLite), Tauri 2 and Svelt
 
 ## Documentation
 
-| Doc                                              | What's in it                                         |
-| ------------------------------------------------ | ---------------------------------------------------- |
-| [docs/FEATURES.md](docs/FEATURES.md)             | Feature overview for the tray and the CLI            |
-| [INSTALL.md](INSTALL.md)                         | Install, update, uninstall, PATH troubleshooting     |
-| [SETTINGS.md](SETTINGS.md)                       | Every `config.toml` key                              |
-| [docs/sync.md](docs/sync.md)                     | How catalog sync, fetch and projects work            |
-| [CONTRIBUTING.md](CONTRIBUTING.md)               | PR gates and semver policy                           |
-| [CHANGELOG.md](CHANGELOG.md)                     | Release history                                      |
+| Doc                                  | What's in it                                              |
+| ------------------------------------ | --------------------------------------------------------- |
+| [docs/FEATURES.md](docs/FEATURES.md) | Feature overview for the tray and the CLI                 |
+| [INSTALL.md](INSTALL.md)             | Install, update, uninstall, PATH troubleshooting          |
+| [SETTINGS.md](SETTINGS.md)           | Every `config.toml` key                                   |
+| [docs/sync.md](docs/sync.md)         | How catalog sync, remote sources, fetch and projects work |
+| [CONTRIBUTING.md](CONTRIBUTING.md)   | PR gates and semver policy                                |
+| [CHANGELOG.md](CHANGELOG.md)         | Release history                                           |
 
 ## Installing Workpot
 

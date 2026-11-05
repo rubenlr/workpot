@@ -1,5 +1,6 @@
 <script lang="ts">
   import DetailPane from "$lib/tray/repo-detail/DetailPane.svelte";
+  import RemoteDetailPane from "$lib/tray/repo-detail/RemoteDetailPane.svelte";
   import type { TrayListView } from "$lib/tray/logic/list/listState";
   import type { SectionedRepos } from "$lib/tray/logic/list/sort";
   import type {
@@ -50,6 +51,8 @@
     activeSync = null,
     onSync,
     activeConvert = null,
+    cloningPaths = [],
+    onClone,
     branchRevision = 0,
   }: {
     listMaxHeightPx: number;
@@ -91,6 +94,8 @@
       direction: SyncDirection,
     ) => void;
     activeConvert?: ActiveConvert | null;
+    cloningPaths?: string[];
+    onClone?: (repo: RepoDto) => void;
     branchRevision?: number;
   } = $props();
 </script>
@@ -125,7 +130,14 @@
   {/if}
 
   <div class="min-h-0 flex-1 overflow-y-auto">
-    {#if detailRepo && onCloseDetail && onDetailMutated}
+    {#if detailRepo && detailRepo.cloned === false && onCloseDetail}
+      <RemoteDetailPane
+        repo={detailRepo}
+        cloning={cloningPaths.includes(detailRepo.path)}
+        {onClone}
+        onClose={onCloseDetail}
+      />
+    {:else if detailRepo && onCloseDetail && onDetailMutated}
       <DetailPane
         repo={detailRepo}
         {allTags}
@@ -150,6 +162,8 @@
         {activeSync}
         {onSync}
         {activeConvert}
+        {cloningPaths}
+        {onClone}
         {onOpen}
         {onDetail}
       />

@@ -13,6 +13,7 @@ const emptySections: SectionedRepos = {
   dirty: [],
   recent: [],
   rest: [],
+  remote: [],
 };
 
 const baseRepo: RepoDto = {

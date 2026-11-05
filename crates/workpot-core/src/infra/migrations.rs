@@ -2,8 +2,8 @@ use crate::error::{Result, WorkpotError};
 use rusqlite::Connection;
 use rusqlite_migration::{M, Migrations};
 
-/// Single bootstrap step (`001_bootstrap.sql`). Bump when adding a new `M::up`.
-pub const LATEST_SCHEMA_VERSION: i32 = 1;
+/// Bootstrap (`001_bootstrap.sql`) + remote catalog (`002_remote_catalog.sql`). Bump when adding a new `M::up`.
+pub const LATEST_SCHEMA_VERSION: i32 = 2;
 
 const SCHEMA_RESET_HINT: &str = "quit Workpot, run `workpot db reset`, then `workpot sync` (see docs/sync.md#database-wipe-schema-bootstrap)";
 
@@ -52,7 +52,8 @@ pub fn apply_migrations(conn: &mut Connection) -> Result<()> {
     reject_incompatible_schema(conn)?;
 
     static MIGRATION_001: &str = include_str!("migrations/001_bootstrap.sql");
-    let steps = [M::up(MIGRATION_001)];
+    static MIGRATION_002: &str = include_str!("migrations/002_remote_catalog.sql");
+    let steps = [M::up(MIGRATION_001), M::up(MIGRATION_002)];
     let migrations = Migrations::from_slice(&steps);
     migrations.to_latest(conn)?;
     Ok(())

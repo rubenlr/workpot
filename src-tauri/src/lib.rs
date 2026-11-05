@@ -88,6 +88,7 @@ pub fn run() {
         .manage(commands::CatalogSyncGuard::new())
         .manage(commands::RepoSyncGuard::new())
         .manage(commands::RepoConvertGuard::new())
+        .manage(commands::RepoCloneGuard::new())
         .manage(state)
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -121,6 +122,9 @@ pub fn run() {
             commands::sync_repo_branch,
             commands::get_repo_convert_status,
             commands::convert_repo,
+            commands::get_repo_clone_status,
+            commands::clone_repo,
+            commands::get_remote_sources,
             commands::open_in_cursor,
             commands::open_in_finder,
             commands::set_tags,

@@ -10,6 +10,7 @@ export function flatSectioned(sectioned: SectionedRepos): RepoDto[] {
     ...sectioned.dirty,
     ...sectioned.recent,
     ...sectioned.rest,
+    ...sectioned.remote,
   ];
 }
 

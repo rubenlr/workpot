@@ -1,12 +1,12 @@
 //! Documented `config.toml` rendering and comment-preserving updates.
 
 use crate::domain::Config;
-use crate::domain::config::{ProjectNameSource, RepoLayout};
+use crate::domain::config::{ProjectNameSource, RemoteSource, RepoLayout};
 use crate::error::{Result, WorkpotError};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use toml_edit::{DocumentMut, Item, Table, value};
+use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, value};
 
 const SETTINGS_TEMPLATE: &str = include_str!("settings.template.toml");
 
@@ -199,6 +199,14 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         write: |c, item| assign_u32(item, c.limits.max_repos),
     },
     ConfigFieldSpec {
+        section: Some("limits"),
+        key: "max_remote_repos",
+        comment_path: "limits.max_remote_repos",
+        is_section: false,
+        optional: false,
+        write: |c, item| assign_u32(item, c.limits.max_remote_repos),
+    },
+    ConfigFieldSpec {
         section: None,
         key: "launch_cmd",
         comment_path: "launch_cmd",
@@ -269,6 +277,14 @@ const CONFIG_FIELDS: &[ConfigFieldSpec] = &[
         is_section: false,
         optional: false,
         write: |c, item| assign_u32(item, c.stale_dirty_days),
+    },
+    ConfigFieldSpec {
+        section: None,
+        key: "remote_sync_ttl_minutes",
+        comment_path: "remote_sync_ttl_minutes",
+        is_section: false,
+        optional: false,
+        write: |c, item| assign_u32(item, c.remote_sync_ttl_minutes),
     },
     ConfigFieldSpec {
         section: None,
@@ -473,6 +489,72 @@ pub fn apply_config_to_document(doc: &mut DocumentMut, config: &Config) {
     let root = doc.as_table_mut();
     for spec in CONFIG_FIELDS {
         apply_config_field(root, config, spec);
+    }
+    apply_remotes(root, &config.remotes);
+}
+
+/// Sync `[[remotes]]` with `sources`: update matching tables in place (keeps their comments),
+/// drop tables for removed sources, append new ones.
+fn apply_remotes(root: &mut Table, sources: &[RemoteSource]) {
+    if sources.is_empty() {
+        root.remove("remotes");
+        return;
+    }
+    if !root.get("remotes").is_some_and(Item::is_array_of_tables) {
+        root.insert("remotes", Item::ArrayOfTables(ArrayOfTables::new()));
+    }
+    let Some(tables) = root
+        .get_mut("remotes")
+        .and_then(Item::as_array_of_tables_mut)
+    else {
+        return;
+    };
+    tables.retain(|t| {
+        t.get("name")
+            .and_then(Item::as_str)
+            .is_some_and(|n| sources.iter().any(|s| s.name == n))
+    });
+    for source in sources {
+        let existing = tables
+            .iter_mut()
+            .find(|t| t.get("name").and_then(Item::as_str) == Some(source.name.as_str()));
+        match existing {
+            Some(table) => write_remote_table(table, source),
+            None => {
+                let mut table = Table::new();
+                write_remote_table(&mut table, source);
+                tables.push(table);
+            }
+        }
+    }
+}
+
+fn write_remote_table(table: &mut Table, source: &RemoteSource) {
+    table.insert("name", value(source.name.as_str()));
+    table.insert("provider", value(source.provider.as_str()));
+    match source.host.as_deref() {
+        Some(host) => {
+            table.insert("host", value(host));
+        }
+        None => {
+            table.remove("host");
+        }
+    }
+    table.insert("path", value(source.path.as_str()));
+    table.insert(
+        "clone_root",
+        value(source.clone_root.display().to_string().as_str()),
+    );
+    table.insert("clone_policy", value(source.clone_policy.as_str()));
+    table.insert("prune_removed", value(source.prune_removed));
+    table.insert("include_archived", value(source.include_archived));
+    match source.protocol {
+        Some(protocol) => {
+            table.insert("protocol", value(protocol.as_str()));
+        }
+        None => {
+            table.remove("protocol");
+        }
     }
 }
 

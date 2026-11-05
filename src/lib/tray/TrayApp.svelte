@@ -64,6 +64,8 @@
   activeSync={panel.activeSync}
   onSync={panel.handleSync}
   activeConvert={panel.activeConvert}
+  cloningPaths={panel.cloningPaths}
+  onClone={(repo) => void panel.cloneRepo(repo)}
   branchRevision={panel.branchRevision}
   detailRepo={panel.detailRepo}
   focusTagOnDetailOpen={panel.focusTagOnDetailOpen}

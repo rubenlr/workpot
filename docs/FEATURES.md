@@ -2,12 +2,13 @@
 
 Workpot is a macOS menu-bar assistant for engineers who juggle many git repositories. This page lists what it does today (v0.0.7). For install steps see [INSTALL.md](../INSTALL.md); for every config key see [SETTINGS.md](../SETTINGS.md).
 
-Everything is local: the catalog lives in SQLite on disk, config is a TOML file, and nothing needs an account or a network connection (other than the `git fetch` you already run).
+Everything is local: the catalog lives in SQLite on disk and config is a TOML file. Nothing needs an account; the only network use is the `git fetch` you already run and, if you configure remote sources, the `gh` / `glab` CLIs you already use.
 
 ## Contents
 
 - [Surfaces](#surfaces)
 - [Discovery and catalog](#discovery-and-catalog)
+- [Remote catalog](#remote-catalog)
 - [Git awareness](#git-awareness)
 - [Finding a repo](#finding-a-repo)
 - [Launching](#launching)
@@ -20,10 +21,10 @@ Everything is local: the catalog lives in SQLite on disk, config is a TOML file,
 
 ## Surfaces
 
-| Surface   | What it is                                                                                              |
-| --------- | ------------------------------------------------------------------------------------------------------- |
-| Tray app  | `Workpot.app`, a Tauri 2 menu-bar app. Click the icon to open the repo finder panel.                    |
-| CLI       | `workpot`, bundled inside the app and symlinked onto your PATH by Homebrew. Shares one Rust core with the tray. |
+| Surface  | What it is                                                                                                      |
+| -------- | --------------------------------------------------------------------------------------------------------------- |
+| Tray app | `Workpot.app`, a Tauri 2 menu-bar app. Click the icon to open the repo finder panel.                            |
+| CLI      | `workpot`, bundled inside the app and symlinked onto your PATH by Homebrew. Shares one Rust core with the tray. |
 
 Both read and write the same catalog, so a repo you tag in the tray shows its tags in `workpot list`.
 
@@ -47,11 +48,22 @@ The tray context menu has **Sync**, **Preferences…**, **About Workpot** and **
 
 Sync is explicit; Workpot does not rescan on its own. These all run the same pipeline:
 
-- `workpot sync` (and `workpot sync local`, the local-only scope)
+- `workpot sync` (and `workpot sync local` / `workpot sync remote` for one scope)
 - Tray **Sync** menu item or `Cmd+R` in the panel
 - Opening the panel
 
-Pipeline: discover watch roots, merge into the catalog and attach projects, optionally `git fetch`, refresh git state in parallel, then persist worktrees and branches. A failure on one repo is counted and logged without aborting the rest. Overlapping runs are skipped. Details: [docs/sync.md](sync.md).
+Remote sources (if any) are indexed first; panel open respects `remote_sync_ttl_minutes`, explicit sync always lists. Local pipeline: discover watch roots, merge into the catalog and attach projects, optionally `git fetch`, refresh git state in parallel, then persist worktrees and branches. A failure on one repo is counted and logged without aborting the rest. Overlapping runs are skipped. Details: [docs/sync.md](sync.md).
+
+## Remote catalog
+
+Point Workpot at a GitHub org/user or GitLab group and every repo under it (GitLab subgroups included) is indexed without cloning:
+
+- `workpot remotes add|list|set|remove` manages sources; they live in `config.toml` as `[[remotes]]`. Access goes through your logged-in `gh` / `glab`, so Workpot stores no credentials.
+- Indexed repos that are not cloned appear in the tray under **Not cloned** and in `workpot list` / `search` as `☁️ … (not cloned)`, with a **Clone** button (tray) or `workpot clone` (CLI).
+- Per source, `clone_policy` chooses what is automatic: `manual`, `on_open` (opening it clones first) or `auto` (everything is cloned on sync). The Clone button always works.
+- `prune_removed` optionally deletes local clones whose repo disappeared upstream, only when they are clean, fully pushed and the host confirms a 404; otherwise they are flagged "removed upstream".
+
+Details: [docs/sync.md](sync.md#remote-catalog-sync-sync-remote-catalog).
 
 ## Git awareness
 
@@ -99,12 +111,12 @@ workpot open my-repo      # open by name, alias, path key or canonical path
 
 ## Organizing repos
 
-| Feature   | Tray                                              | CLI                                      |
-| --------- | ------------------------------------------------- | ---------------------------------------- |
-| Tags      | `#` autocomplete in the detail pane, context menu | `workpot tag add\|remove\|list <repo>`   |
-| Pin       | Pin from the context menu; drag to reorder pinned | not available                            |
-| Alias     | Set in the detail pane                            | accepted by `workpot open`               |
-| Notes     | Free text in the detail pane, searchable          | not available                            |
+| Feature | Tray                                              | CLI                                    |
+| ------- | ------------------------------------------------- | -------------------------------------- |
+| Tags    | `#` autocomplete in the detail pane, context menu | `workpot tag add\|remove\|list <repo>` |
+| Pin     | Pin from the context menu; drag to reorder pinned | not available                          |
+| Alias   | Set in the detail pane                            | accepted by `workpot open`             |
+| Notes   | Free text in the detail pane, searchable          | not available                          |
 
 Pinned repos are capped by `max_pinned` (default 5). Right-clicking a list row opens a context menu with Pin, Add/Remove tag, and Convert.
 
@@ -139,21 +151,22 @@ The tray shows **Convert to bare** / **Convert to local** according to the `migr
 
 ## Keyboard reference
 
-| Key                       | Action                                    |
-| ------------------------- | ----------------------------------------- |
-| Type                      | Filter the list                           |
-| `↑` / `↓`, `Tab`          | Move the selection                        |
-| `→`                       | Open the detail pane for the selection    |
-| `←`                       | Close the detail pane                     |
-| `Enter`                   | Open the selected repo in the editor      |
-| `Cmd+R`                   | Sync                                      |
-| `Esc`                     | Close the detail pane, then hide the panel |
+| Key              | Action                                     |
+| ---------------- | ------------------------------------------ |
+| Type             | Filter the list                            |
+| `↑` / `↓`, `Tab` | Move the selection                         |
+| `→`              | Open the detail pane for the selection     |
+| `←`              | Close the detail pane                      |
+| `Enter`          | Open the selected repo in the editor       |
+| `Cmd+R`          | Sync                                       |
+| `Esc`            | Close the detail pane, then hide the panel |
 
 ## Not yet available
 
 Planned, not implemented (see the [changelog](../CHANGELOG.md)):
 
 - Configurable recipes (shell steps, multi-step workflows)
-- Remote catalog sync; `sync` currently runs the local catalog only
+- Editing remote sources from the tray (use `workpot remotes` or `config.toml`)
+- Providers other than GitHub and GitLab
 - Cross-repo content search; search is metadata-only
 - Platforms other than macOS

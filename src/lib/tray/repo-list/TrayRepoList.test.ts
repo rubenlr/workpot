@@ -68,6 +68,7 @@ function renderList(
     ...sectionedRepos.dirty,
     ...sectionedRepos.recent,
     ...sectionedRepos.rest,
+    ...sectionedRepos.remote,
   ];
   const flatIndexByPath = new Map(repos.map((r, i) => [r.path, i]));
   const onOpen = opts.onOpen ?? vi.fn();
@@ -94,7 +95,13 @@ function renderList(
   };
 }
 
-const empty: SectionedRepos = { pinned: [], dirty: [], recent: [], rest: [] };
+const empty: SectionedRepos = {
+  pinned: [],
+  dirty: [],
+  recent: [],
+  rest: [],
+  remote: [],
+};
 
 describe("TrayRepoList", () => {
   beforeAll(() => {

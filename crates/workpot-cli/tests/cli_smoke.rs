@@ -1424,3 +1424,219 @@ fn db_reset_help_warns_about_tray_lock() {
                 .and(predicate::str::contains("locked")),
         );
 }
+
+// ---- remote catalog ---------------------------------------------------------------------
+
+fn seeded_bare(parent: &std::path::Path, name: &str) -> PathBuf {
+    let bare = parent.join(format!("{name}.git"));
+    let ok = git_cmd()
+        .args(["init", "--bare", "-q", "-b", "main"])
+        .arg(&bare)
+        .status()
+        .expect("init bare")
+        .success();
+    assert!(ok);
+    let seed = parent.join(format!("{name}-seed"));
+    for args in [vec![
+        "clone",
+        "-q",
+        bare.to_str().expect("utf8"),
+        seed.to_str().expect("utf8"),
+    ]] {
+        assert!(git_cmd().args(args).status().expect("clone").success());
+    }
+    for args in [
+        vec!["checkout", "-q", "-b", "main"],
+        vec![
+            "-c",
+            "user.name=T",
+            "-c",
+            "user.email=t@example.com",
+            "commit",
+            "--allow-empty",
+            "-q",
+            "-m",
+            "seed",
+        ],
+        vec!["push", "-q", "origin", "main"],
+    ] {
+        let ok = git_cmd()
+            .args(args)
+            .current_dir(&seed)
+            .status()
+            .expect("seed step")
+            .success();
+        assert!(ok);
+    }
+    fs::remove_dir_all(&seed).expect("seed cleanup");
+    bare
+}
+
+/// Fake `glab` that answers group listings with one project and reports `https` protocol.
+fn fake_glab_dir(parent: &std::path::Path, bare: &std::path::Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = parent.join("fake-cli");
+    fs::create_dir_all(&dir).expect("fake cli dir");
+    let script = dir.join("glab");
+    let url = bare.display();
+    fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\ncase \"$*\" in\n  *\"config get git_protocol\"*) echo https ;;\n  *\"groups/\"*) cat <<'JSON'\n[{{\"path_with_namespace\":\"acme/platform/api\",\"path\":\"api\",\"web_url\":\"https://git.example.com/acme/platform/api\",\"http_url_to_repo\":\"{url}\",\"ssh_url_to_repo\":\"{url}\",\"default_branch\":\"main\",\"archived\":false}}]\nJSON\n  ;;\n  *) echo '{{\"message\":\"404 Not Found\"}}' ; echo 'glab: 404 Not Found (HTTP 404)' >&2 ; exit 1 ;;\nesac\n"
+        ),
+    )
+    .expect("write fake glab");
+    let mut perms = fs::metadata(&script).expect("meta").permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&script, perms).expect("chmod");
+    dir
+}
+
+#[test]
+fn remotes_add_list_remove_roundtrip_without_sync() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let root = home.path().join("acme-clones");
+    workpot_cmd(home.path())
+        .args([
+            "remotes",
+            "add",
+            "acme/platform",
+            "--provider",
+            "gitlab",
+            "--no-sync",
+            "--clone-root",
+        ])
+        .arg(&root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added remote source platform"));
+    workpot_cmd(home.path())
+        .args(["remotes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "platform gitlab:gitlab.com/acme/platform",
+        ))
+        .stdout(predicate::str::contains("policy=manual"))
+        .stdout(predicate::str::contains("never"));
+    workpot_cmd(home.path())
+        .args([
+            "remotes",
+            "set",
+            "platform",
+            "--policy",
+            "on-open",
+            "--prune-removed",
+            "true",
+        ])
+        .assert()
+        .success();
+    workpot_cmd(home.path())
+        .args(["remotes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("policy=on_open"))
+        .stdout(predicate::str::contains("prune=on"));
+    workpot_cmd(home.path())
+        .args(["remotes", "remove", "platform"])
+        .assert()
+        .success();
+    workpot_cmd(home.path())
+        .args(["remotes", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no remote sources configured"));
+}
+
+#[test]
+fn remotes_add_rejects_overlapping_clone_roots() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let root = home.path().join("clones");
+    workpot_cmd(home.path())
+        .args([
+            "remotes",
+            "add",
+            "acme",
+            "--provider",
+            "github",
+            "--no-sync",
+            "--clone-root",
+        ])
+        .arg(&root)
+        .assert()
+        .success();
+    workpot_cmd(home.path())
+        .args([
+            "remotes",
+            "add",
+            "other",
+            "--provider",
+            "github",
+            "--no-sync",
+            "--clone-root",
+        ])
+        .arg(root.join("nested"))
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("overlaps"));
+}
+
+#[test]
+fn remote_index_list_clone_roundtrip_with_fake_glab() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let bare = seeded_bare(home.path(), "api-remote");
+    let cli_dir = fake_glab_dir(home.path(), &bare);
+    let root = home.path().join("clones");
+
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args([
+            "remotes",
+            "add",
+            "acme/platform",
+            "--provider",
+            "gitlab",
+            "--host",
+            "git.example.com",
+            "--clone-root",
+        ])
+        .arg(&root)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("remote: 1 indexed"));
+
+    workpot_cmd(home.path())
+        .args(["list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("☁️"))
+        .stdout(predicate::str::contains("api (not cloned)"));
+
+    workpot_cmd(home.path())
+        .args(["search", "api"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("api (not cloned)"));
+
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args(["clone", "acme/platform/api"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cloned:"));
+    assert!(root.join("api/.git").is_dir());
+
+    workpot_cmd(home.path())
+        .args(["list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("(not cloned)").not())
+        .stdout(predicate::str::contains("api"));
+
+    workpot_cmd(home.path())
+        .env("WORKPOT_CLI_DIR", &cli_dir)
+        .args(["clone", "acme/platform/api"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("already cloned:"));
+}

@@ -64,7 +64,10 @@ fn assert_schema_ready(conn: &Connection) {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("user_version");
-    assert_eq!(version, 1);
+    assert_eq!(
+        version,
+        workpot_core::infra::migrations::LATEST_SCHEMA_VERSION
+    );
 
     let locations_exists: i32 = conn
         .query_row(

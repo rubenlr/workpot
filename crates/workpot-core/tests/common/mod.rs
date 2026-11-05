@@ -55,3 +55,111 @@ pub fn seed_bare_repo(bare: &Path) {
     assert!(status.success(), "seed push failed");
     std::fs::remove_dir_all(&seed).expect("seed cleanup");
 }
+
+// ---- Remote catalog test doubles -------------------------------------------------------
+
+use std::collections::HashSet;
+use std::sync::Mutex;
+use workpot_core::domain::config::{GitProtocol, RemoteSource};
+use workpot_core::infra::remote_provider::{RemoteApi, RemoteError, RemoteRepoInfo};
+
+/// Scripted [`RemoteApi`]: `list_repos` pops queued responses (last one repeats).
+#[allow(dead_code)]
+pub struct FakeRemoteApi {
+    listings: Mutex<Vec<Result<Vec<RemoteRepoInfo>, RemoteError>>>,
+    pub list_calls: Mutex<u32>,
+    /// `full_path`s for which `repo_exists` answers `Ok(false)`.
+    pub missing: Mutex<HashSet<String>>,
+    /// `full_path`s for which `repo_exists` fails.
+    pub exists_error: Mutex<HashSet<String>>,
+    pub protocol: Mutex<Option<GitProtocol>>,
+}
+
+#[allow(dead_code)]
+impl FakeRemoteApi {
+    pub fn new(listings: Vec<Result<Vec<RemoteRepoInfo>, RemoteError>>) -> Self {
+        Self {
+            listings: Mutex::new(listings),
+            list_calls: Mutex::new(0),
+            missing: Mutex::new(HashSet::new()),
+            exists_error: Mutex::new(HashSet::new()),
+            protocol: Mutex::new(None),
+        }
+    }
+
+    pub fn push_listing(&self, listing: Result<Vec<RemoteRepoInfo>, RemoteError>) {
+        self.listings.lock().expect("listings").push(listing);
+    }
+
+    /// Replace the queue: every following `list_repos` returns `listing`.
+    pub fn set_listing(&self, listing: Result<Vec<RemoteRepoInfo>, RemoteError>) {
+        *self.listings.lock().expect("listings") = vec![listing];
+    }
+
+    pub fn calls(&self) -> u32 {
+        *self.list_calls.lock().expect("calls")
+    }
+}
+
+impl RemoteApi for FakeRemoteApi {
+    fn list_repos(&self, _source: &RemoteSource) -> Result<Vec<RemoteRepoInfo>, RemoteError> {
+        *self.list_calls.lock().expect("calls") += 1;
+        let mut listings = self.listings.lock().expect("listings");
+        if listings.len() > 1 {
+            listings.remove(0)
+        } else {
+            listings.first().cloned().unwrap_or_else(|| Ok(Vec::new()))
+        }
+    }
+
+    fn repo_exists(&self, _source: &RemoteSource, full_path: &str) -> Result<bool, RemoteError> {
+        if self
+            .exists_error
+            .lock()
+            .expect("exists_error")
+            .contains(full_path)
+        {
+            return Err(RemoteError::Failed("boom".into()));
+        }
+        Ok(!self.missing.lock().expect("missing").contains(full_path))
+    }
+
+    fn cli_git_protocol(&self, _source: &RemoteSource) -> Option<GitProtocol> {
+        *self.protocol.lock().expect("protocol")
+    }
+}
+
+/// Repo info whose clone URLs point at `url` (an https URL or a local bare repo path).
+#[allow(dead_code)]
+pub fn remote_info(full_path: &str, url: &str) -> RemoteRepoInfo {
+    RemoteRepoInfo {
+        full_path: full_path.to_string(),
+        name: full_path
+            .rsplit('/')
+            .next()
+            .unwrap_or(full_path)
+            .to_string(),
+        web_url: None,
+        ssh_url: Some(url.to_string()),
+        https_url: Some(url.to_string()),
+        default_branch: Some("main".into()),
+        archived: false,
+        description: None,
+    }
+}
+
+#[allow(dead_code)]
+pub fn gitlab_source(name: &str, path: &str, clone_root: &Path) -> RemoteSource {
+    use workpot_core::domain::config::{ClonePolicy, RemoteProvider};
+    RemoteSource {
+        name: name.to_string(),
+        provider: RemoteProvider::Gitlab,
+        host: Some("git.example.com".into()),
+        path: path.to_string(),
+        clone_root: clone_root.to_path_buf(),
+        clone_policy: ClonePolicy::Manual,
+        prune_removed: false,
+        include_archived: true,
+        protocol: None,
+    }
+}

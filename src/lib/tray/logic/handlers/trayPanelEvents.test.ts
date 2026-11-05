@@ -34,6 +34,9 @@ describe("subscribeTrayPanelEvents", () => {
     const onRepoConvertStarted = vi.fn();
     const onRepoConvertComplete = vi.fn();
     const onRepoConvertFailed = vi.fn();
+    const onRepoCloneStarted = vi.fn();
+    const onRepoCloneComplete = vi.fn();
+    const onRepoCloneFailed = vi.fn();
     const onRepoContextAction = vi.fn();
 
     const unsubscribe = await subscribeTrayPanelEvents(
@@ -49,12 +52,15 @@ describe("subscribeTrayPanelEvents", () => {
         onRepoConvertStarted,
         onRepoConvertComplete,
         onRepoConvertFailed,
+        onRepoCloneStarted,
+        onRepoCloneComplete,
+        onRepoCloneFailed,
         onRepoContextAction,
       },
       listen,
     );
 
-    expect(listen).toHaveBeenCalledTimes(12);
+    expect(listen).toHaveBeenCalledTimes(15);
     expect(handlers.has("git-refresh-started")).toBe(false);
     expect(handlers.has("git-refresh-complete")).toBe(false);
     expect(handlers.has("git-refresh-failed")).toBe(false);

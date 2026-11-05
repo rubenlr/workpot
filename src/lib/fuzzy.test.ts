@@ -117,3 +117,15 @@ describe("fuzzyMatch", () => {
     expect(fuzzyScore("zzz", r)).toBe(0);
   });
 });
+
+describe("fuzzyMatch remote repos", () => {
+  it("matches the full remote path", () => {
+    const r = {
+      ...repo({ name: "api" }),
+      cloned: false,
+      remote_full_path: "acme/platform/billing/api",
+    };
+    expect(fuzzyMatch("billing", r)).toBe(true);
+    expect(fuzzyMatch("zzz", r)).toBe(false);
+  });
+});

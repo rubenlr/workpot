@@ -2,6 +2,8 @@
 export const MATERIAL_ICON_FALLBACKS: Readonly<Record<string, string>> = {
   arrow_back: "←",
   check: "✓",
+  cloud_download: "☁",
+  download: "⇩",
   chevron_right: "›",
   folder: "📁",
   keep: "📌",

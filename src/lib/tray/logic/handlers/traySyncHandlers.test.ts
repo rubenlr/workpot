@@ -6,6 +6,7 @@ import {
   onSyncFailed,
   onSyncStarted,
   syncGitErrorMessage,
+  syncRemoteErrorMessage,
   type SyncHandlerDeps,
 } from "./traySyncHandlers";
 
@@ -90,5 +91,43 @@ describe("traySyncHandlers", () => {
     const setError = vi.fn();
     onSyncFailed("boom", { setError });
     expect(setError).toHaveBeenCalledWith("boom");
+  });
+});
+
+describe("syncRemoteErrorMessage", () => {
+  const base = {
+    added: 0,
+    removed: 0,
+    skipped: 0,
+    git_refreshed: 1,
+    git_errors: 0,
+  };
+
+  it("is null without remote errors", () => {
+    expect(syncRemoteErrorMessage(base)).toBeNull();
+    expect(syncRemoteErrorMessage({ ...base, remote_errors: [] })).toBeNull();
+  });
+
+  it("shows the first error and counts the rest", () => {
+    expect(
+      syncRemoteErrorMessage({
+        ...base,
+        remote_errors: ["acme: not logged in"],
+      }),
+    ).toBe("Remote sync: acme: not logged in");
+    expect(
+      syncRemoteErrorMessage({
+        ...base,
+        remote_errors: ["a: x", "b: y", "c: z"],
+      }),
+    ).toBe("Remote sync: a: x (+2 more)");
+  });
+
+  it("onSyncComplete shows remote errors when git is fine", async () => {
+    const d = deps();
+    onSyncComplete({ ...base, remote_errors: ["acme: boom"] }, d);
+    await vi.waitFor(() =>
+      expect(d.setError).toHaveBeenCalledWith("Remote sync: acme: boom"),
+    );
   });
 });

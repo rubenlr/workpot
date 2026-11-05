@@ -58,12 +58,14 @@ describe("flatSectioned", () => {
       dirty: [repo({ name: "dirty" })],
       recent: [repo({ name: "recent" })],
       rest: [repo({ name: "rest" })],
+      remote: [repo({ name: "remote", cloned: false })],
     };
     expect(flatSectioned(sections).map((r) => r.name)).toEqual([
       "pin",
       "dirty",
       "recent",
       "rest",
+      "remote",
     ]);
   });
 });

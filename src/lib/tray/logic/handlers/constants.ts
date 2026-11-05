@@ -3,6 +3,7 @@ export const SECTION_META = [
   { key: "dirty" as const, label: "Dirty", draggable: false },
   { key: "recent" as const, label: "Recent", draggable: false },
   { key: "rest" as const, label: "Rest", draggable: false },
+  { key: "remote" as const, label: "Not cloned", draggable: false },
 ] as const;
 
 export const DEFAULT_MAX_VISIBLE_ROWS = 15;
