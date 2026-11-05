@@ -61,6 +61,12 @@ pub enum WorkpotError {
 
     #[error("conversion failed: {0}")]
     ConversionFailed(String),
+
+    #[error("remote catalog: {0}")]
+    Remote(#[from] crate::infra::remote_provider::RemoteError),
+
+    #[error("clone failed: {0}")]
+    CloneFailed(String),
 }
 
 pub type Result<T> = std::result::Result<T, WorkpotError>;

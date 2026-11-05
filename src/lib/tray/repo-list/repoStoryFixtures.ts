@@ -28,6 +28,23 @@ export function storyRepo(overrides: Partial<RepoDto>): RepoDto {
   return { ...storyRepoBase, ...overrides };
 }
 
+/** Indexed remote repo that is not cloned yet (`path` is the planned clone path). */
+export function storyRemoteRepo(overrides: Partial<RepoDto> = {}): RepoDto {
+  return storyRepo({
+    path: `${STORY_REPO_PATH_PREFIX}/acme/billing-api`,
+    name: "billing-api",
+    branch: null,
+    branches: [],
+    parent_dir: "~/Developer/acme",
+    cloned: false,
+    remote_url: "https://git.example.com/acme/platform/billing-api",
+    remote_full_path: "acme/platform/billing-api",
+    remote_source: "acme",
+    clone_policy: "manual",
+    ...overrides,
+  });
+}
+
 export function storyRepoWithSync(overrides: Partial<RepoDto> = {}): RepoDto {
   return storyRepo({ ahead: 2, behind: 1, ...overrides });
 }

@@ -155,3 +155,66 @@ describe("sectionSort", () => {
     expect(sections.pinned.map((r) => r.name)).toEqual(["b", "a"]);
   });
 });
+
+describe("sectionSort remote section", () => {
+  const cfg = { maxRecentDays: 14, minRecentCount: 3 };
+
+  it("puts not-cloned repos in their own section sorted by remote path, not by name", () => {
+    const local = repo({ name: "local", is_dirty: true });
+    // name order (a, b) is the opposite of remote-path order (acme/a/z, acme/z/a)
+    const byNameFirst = {
+      ...repo({ name: "a" }),
+      cloned: false,
+      remote_full_path: "acme/z/a",
+    };
+    const byPathFirst = {
+      ...repo({ name: "z" }),
+      cloned: false,
+      remote_full_path: "acme/a/z",
+    };
+    const sections = sectionSort(
+      [byNameFirst, local, byPathFirst],
+      cfg,
+      1_000_000,
+    );
+    expect(sections.remote.map((r) => r.name)).toEqual(["z", "a"]);
+    expect(sections.dirty.map((r) => r.name)).toEqual(["local"]);
+    expect(sections.rest).toEqual([]);
+  });
+
+  it("falls back to name when a not-cloned repo has no remote_full_path", () => {
+    const withPath = {
+      ...repo({ name: "zzz" }),
+      cloned: false,
+      remote_full_path: "acme/m/zzz",
+    };
+    const noPathLate = {
+      ...repo({ name: "n-late" }),
+      cloned: false,
+      remote_full_path: null,
+    };
+    const noPathEarly = { ...repo({ name: "a-early" }), cloned: false };
+    const sections = sectionSort(
+      [withPath, noPathLate, noPathEarly],
+      cfg,
+      1_000_000,
+    );
+    // "a-early" < "acme/m/zzz" < "n-late"
+    expect(sections.remote.map((r) => r.name)).toEqual([
+      "a-early",
+      "zzz",
+      "n-late",
+    ]);
+  });
+
+  it("never pins or marks not-cloned repos as recent", () => {
+    const remote = {
+      ...repo({ name: "r", pinned: true, last_opened_at: 999_999 }),
+      cloned: false,
+    };
+    const sections = sectionSort([remote], cfg, 1_000_000);
+    expect(sections.pinned).toEqual([]);
+    expect(sections.recent).toEqual([]);
+    expect(sections.remote).toHaveLength(1);
+  });
+});

@@ -2,6 +2,7 @@
   import MaterialIcon from "$lib/tray/commons/MaterialIcon.svelte";
   import SyncBadge from "$lib/tray/commons/SyncBadge.svelte";
   import { dirtyDotClass } from "$lib/tray/logic/list/repoRow";
+  import { isCloned } from "$lib/types";
   import type {
     ActiveConvert,
     ActiveSync,
@@ -17,9 +18,11 @@
     listRowDraggable = false,
     activeSync = null,
     activeConvert = null,
+    cloning = false,
     onOpen,
     onDetail,
     onSync,
+    onClone,
     onRowDragStart,
     onRowDragOver,
     onRowDrop,
@@ -34,8 +37,11 @@
     listRowDraggable?: boolean;
     activeSync?: ActiveSync | null;
     activeConvert?: ActiveConvert | null;
+    /** A clone of this (not yet cloned) repo is running. */
+    cloning?: boolean;
     onOpen: () => void;
     onDetail: () => void;
+    onClone?: () => void;
     onSync?: (
       repoPath: string,
       branch: string,
@@ -50,6 +56,8 @@
   } = $props();
 
   const rowLabel = $derived(repo.alias ?? repo.name);
+
+  const notCloned = $derived(!isCloned(repo));
 
   const syncingDirection = $derived(
     activeSync &&
@@ -145,15 +153,36 @@
       onclick={handleRoleButtonClick}
       onkeydown={handleRoleButtonKeydown}
     >
-      <span
-        class="h-2 w-2 shrink-0 rounded-full {dirtyDotClass(repo)}"
-        aria-hidden="true"
-      ></span>
+      {#if notCloned}
+        <span class="flex w-2 shrink-0 justify-center opacity-70">
+          <MaterialIcon name="cloud_download" size={14} />
+        </span>
+      {:else}
+        <span
+          class="h-2 w-2 shrink-0 rounded-full {dirtyDotClass(repo)}"
+          aria-hidden="true"
+        ></span>
+      {/if}
       <span class="min-w-0 flex-1">
         <span class="block truncate text-sm font-medium leading-tight"
           >{rowLabel}</span
         >
-        {#if repo.branch}
+        {#if notCloned}
+          <span
+            class="block truncate text-xs leading-tight {selected
+              ? 'text-primary-foreground'
+              : 'text-inverse-on-surface-variant'}"
+          >
+            {repo.remote_full_path ?? "Not cloned"}
+          </span>
+        {:else if repo.removed_upstream}
+          <span
+            class="block truncate text-xs leading-tight text-dirty-amber-text"
+            title="This repository no longer exists upstream"
+          >
+            removed upstream{repo.branch ? ` · ${repo.branch}` : ""}
+          </span>
+        {:else if repo.branch}
           <span
             class="block truncate text-xs leading-tight {selected
               ? 'text-primary-foreground'
@@ -165,27 +194,50 @@
       </span>
     </div>
     <div class="flex shrink-0 items-center self-center pr-1" data-sync-action>
-      <SyncBadge
-        ahead={repo.ahead}
-        behind={repo.behind}
-        branch={repo.branch}
-        tone={selected ? "on-primary" : "default"}
-        {syncingDirection}
-        disabled={syncDisabled}
-        onPush={repo.branch && onSync
-          ? () => onSync(repo.path, repo.branch!, "push")
-          : undefined}
-        onPull={repo.branch && onSync
-          ? () => onSync(repo.path, repo.branch!, "pull")
-          : undefined}
-      />
-      {#if repo.convert_to && converting}
-        <span
-          class="flex shrink-0 items-center self-center p-1.5 opacity-80"
-          aria-label="Converting to {repo.convert_to}"
+      {#if notCloned}
+        <button
+          type="button"
+          class="inline-flex cursor-pointer items-center gap-1 rounded-full border-0 px-2 py-0.5 text-[11px] font-medium shadow-none outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:cursor-wait disabled:opacity-70 {selected
+            ? 'bg-black/15 text-primary-foreground hover:bg-black/25'
+            : 'bg-hover-overlay text-inherit hover:bg-primary/20'}"
+          aria-label="Clone {rowLabel}"
+          disabled={cloning || !onClone}
+          onclick={(e) => {
+            e.stopPropagation();
+            onClone?.();
+          }}
         >
-          <MaterialIcon name="sync" size={14} class="animate-spin" />
-        </span>
+          <MaterialIcon
+            name={cloning ? "sync" : "download"}
+            size={13}
+            class={cloning ? "animate-spin" : ""}
+          />
+          {cloning ? "Cloning…" : "Clone"}
+        </button>
+      {:else}
+        {@const branch = repo.branch}
+        <SyncBadge
+          ahead={repo.ahead}
+          behind={repo.behind}
+          {branch}
+          tone={selected ? "on-primary" : "default"}
+          {syncingDirection}
+          disabled={syncDisabled}
+          onPush={branch && onSync
+            ? () => onSync(repo.path, branch, "push")
+            : undefined}
+          onPull={branch && onSync
+            ? () => onSync(repo.path, branch, "pull")
+            : undefined}
+        />
+        {#if repo.convert_to && converting}
+          <span
+            class="flex shrink-0 items-center self-center p-1.5 opacity-80"
+            aria-label="Converting to {repo.convert_to}"
+          >
+            <MaterialIcon name="sync" size={14} class="animate-spin" />
+          </span>
+        {/if}
       {/if}
     </div>
     <div

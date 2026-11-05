@@ -45,12 +45,18 @@ min_recent_count = 3
 # Days before a dirty repo triggers the stale-dirty tray icon (1–365).
 stale_dirty_days = 7
 
-# Catalog sync caps (hard ceilings: 5000 roots, 20000 repos).
+# Minutes between remote catalog listings triggered by opening the tray panel (0–1440).
+# Explicit sync (tray Sync / Cmd+R, `workpot sync`) always lists remotes.
+remote_sync_ttl_minutes = 15
+
+# Catalog sync caps (hard ceilings: 5000 roots, 20000 repos, 50000 remote repos).
 [limits]
 # Maximum watch roots allowed in config.
 max_watch_roots = 100
 # Maximum cataloged repositories across all roots.
 max_repos = 1000
+# Maximum remote repositories indexed per [[remotes]] source.
+max_remote_repos = 2000
 
 # Repo layout conversion (`workpot repo convert`). Templates are global only.
 [migration]
@@ -82,3 +88,18 @@ project_name_source = "folder_name"
 # Default layout hint for tray convert: bare | local (default: local).
 # Enables convert actions when set to the target layout, even if allow_conversion_* is false.
 # default_repo_layout = "local"
+
+# Remote catalog sources: index every repo under a GitHub org/user or GitLab group
+# (subgroups included) without cloning. Requires `gh` / `glab` logged in for the host.
+# Manage with `workpot remotes add|list|remove|set`. Example:
+#
+# [[remotes]]
+# name = "acme"
+# provider = "gitlab"            # github | gitlab
+# host = "gitlab.example.com"    # optional; default github.com / gitlab.com
+# path = "acme/platform"         # GitHub org/user, or GitLab group path
+# clone_root = "~/code/acme"     # clones land under here, mirroring the remote path
+# clone_policy = "manual"        # manual | on_open | auto (Clone button works in all modes)
+# prune_removed = false          # safe-only delete of clean, pushed clones removed upstream
+# include_archived = true
+# protocol = "ssh"               # optional override; default is gh/glab `git_protocol`

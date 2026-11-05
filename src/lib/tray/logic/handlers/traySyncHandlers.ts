@@ -21,6 +21,16 @@ export function syncGitErrorMessage(summary: SyncSummary): string | null {
   return null;
 }
 
+/** Surface soft remote-catalog failures (not authenticated, CLI missing, ...). */
+export function syncRemoteErrorMessage(summary: SyncSummary): string | null {
+  const errors = summary.remote_errors ?? [];
+  if (errors.length === 0) {
+    return null;
+  }
+  const more = errors.length > 1 ? ` (+${errors.length - 1} more)` : "";
+  return `Remote sync: ${errors[0]}${more}`;
+}
+
 /**
  * Panel open: focus filter only. Rust spawns catalog sync; list refresh runs
  * once on sync-complete (avoids double list_repos with panel-opened).
@@ -50,7 +60,9 @@ export function onSyncComplete(
   deps.bumpBranchRevision?.();
   void deps.refresh(true).then(() => {
     deps.resyncDetail();
-    deps.setError(syncGitErrorMessage(summary));
+    deps.setError(
+      syncGitErrorMessage(summary) ?? syncRemoteErrorMessage(summary),
+    );
   });
 }
 

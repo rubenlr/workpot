@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable recipes (shell steps, Cursor launch, multi-step workflows) — Phase 7
 - macOS `.app` / DMG distribution and install/update UX
 
+## [0.0.8] - 2026-11-05
+
+### Added
+
+- **Remote catalog** — index every repo under a GitHub org/user or GitLab group (subgroups included) without cloning, via the logged-in `gh` / `glab` CLIs. New `[[remotes]]` config, `workpot remotes add|list|set|remove`, `workpot sync remote`, and `workpot clone`.
+- Per-source `clone_policy` (`manual`, `on_open`, `auto`) and safe-only `prune_removed`; the tray **Clone** button and `workpot clone` work under every policy.
+- Tray **Not cloned** section, Clone button, remote detail pane, and a "removed upstream" flag; `workpot list` / `search` mark not-cloned repos with `☁️`.
+- Schema migration `002_remote_catalog` (`remote_repos`, `remote_sync_runs`).
+
 ## [0.0.7] - 2026-08-01
 
 Corrected re-release of the sync work after the broken 0.0.6 merge. Use this instead of 0.0.6.

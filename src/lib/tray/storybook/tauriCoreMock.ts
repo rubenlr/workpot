@@ -41,7 +41,10 @@ export async function invoke(cmd: string, _args?: unknown): Promise<unknown> {
     case "sync_repo_branch":
     case "get_repo_convert_status":
     case "convert_repo":
+    case "clone_repo":
       return undefined;
+    case "get_repo_clone_status":
+      return [];
     default:
       return undefined;
   }

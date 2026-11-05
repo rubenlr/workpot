@@ -58,12 +58,14 @@ describe("flatSectioned", () => {
       dirty: [repo({ name: "dirty" })],
       recent: [repo({ name: "recent" })],
       rest: [repo({ name: "rest" })],
+      remote: [repo({ name: "remote", cloned: false })],
     };
     expect(flatSectioned(sections).map((r) => r.name)).toEqual([
       "pin",
       "dirty",
       "recent",
       "rest",
+      "remote",
     ]);
   });
 });
@@ -200,5 +202,51 @@ describe("filterAndSectionRepos", () => {
     const sectionsLater = filterAndSectionRepos([stale], "", config, now);
     expect(sectionsLater.recent).toHaveLength(0);
     expect(sectionsLater.rest.map((r) => r.name)).toEqual(["stale"]);
+  });
+
+  describe("with a not-cloned repo", () => {
+    const remote = {
+      ...repo({ name: "api" }),
+      cloned: false,
+      remote_full_path: "acme/platform/api",
+    };
+
+    it("places it in the remote section and keeps it out of the local ones", () => {
+      const sections = filterAndSectionRepos(
+        [...sample, remote],
+        "",
+        config,
+        now,
+      );
+      expect(sections.remote.map((r) => r.name)).toEqual(["api"]);
+      const local = [
+        ...sections.pinned,
+        ...sections.dirty,
+        ...sections.recent,
+        ...sections.rest,
+      ].map((r) => r.name);
+      expect(local).not.toContain("api");
+    });
+
+    it("matches it by remote_full_path through the composed filter", () => {
+      const sections = filterAndSectionRepos(
+        [...sample, remote],
+        "platform",
+        config,
+        now,
+      );
+      expect(sections.remote.map((r) => r.name)).toEqual(["api"]);
+      expect(sections.rest).toEqual([]);
+    });
+
+    it("excludes it when a tag filter is active because remote repos carry no tags", () => {
+      const sections = filterAndSectionRepos(
+        [...sample, remote],
+        "#backend",
+        config,
+        now,
+      );
+      expect(sections.remote).toEqual([]);
+    });
   });
 });

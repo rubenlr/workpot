@@ -1,4 +1,4 @@
-import { cleanup, render } from "@testing-library/svelte";
+import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import TrayListBody from "./TrayListBody.svelte";
 import type { TrayListView } from "$lib/tray/logic/list/listState";
@@ -18,6 +18,7 @@ const emptySections: SectionedRepos = {
   dirty: [],
   recent: [],
   rest: [],
+  remote: [],
 };
 
 const noop = vi.fn();
@@ -113,5 +114,44 @@ describe("TrayListBody", () => {
       },
     });
     expect(getAllByRole("list").length).toBeGreaterThan(0);
+  });
+
+  it("forwards_cloningPaths_and_onClone_to_the_not_cloned_rows", async () => {
+    const api: RepoDto = {
+      ...repo("api"),
+      path: "/code/acme/api",
+      cloned: false,
+      remote_full_path: "acme/platform/api",
+    };
+    const web: RepoDto = {
+      ...repo("web"),
+      path: "/code/acme/web",
+      cloned: false,
+      remote_full_path: "acme/platform/web",
+    };
+    const onClone = vi.fn();
+    const { getByRole } = render(TrayListBody, {
+      props: {
+        listView: { kind: "list" },
+        sectionedRepos: { ...emptySections, remote: [api, web] },
+        flatIndexByPath: new Map([
+          [api.path, 0],
+          [web.path, 1],
+        ]),
+        cloningPaths: [api.path],
+        onClone,
+        onPinReorder: noop,
+        onSelectRow: noop,
+        onOpen: noop,
+        onDetail: noop as (repo: RepoDto, index: number) => void,
+      },
+    });
+
+    const apiButton = getByRole("button", { name: "Clone api" });
+    expect((apiButton as HTMLButtonElement).disabled).toBe(true);
+    expect(apiButton.textContent).toContain("Cloning");
+
+    await fireEvent.click(getByRole("button", { name: "Clone web" }));
+    expect(onClone).toHaveBeenCalledExactlyOnceWith(web);
   });
 });

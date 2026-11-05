@@ -8,6 +8,7 @@
   --color-inverse-on-surface-variant: var(--stitch-inverse-on-surface-variant);
   --color-dirty-amber: var(--stitch-dirty-amber);
   --color-dirty-amber-foreground: var(--stitch-dirty-amber-foreground);
+  --color-dirty-amber-text: var(--stitch-dirty-amber-text);
   --color-clean-emerald: var(--stitch-clean-emerald);
   --color-clean-emerald-foreground: var(--stitch-clean-emerald-foreground);
   --color-git-error-neutral: var(--stitch-git-error-neutral);
@@ -44,6 +45,9 @@
   --stitch-primary-accent: #1d4ed8;
   --stitch-dirty-amber: #f59e0b;
   --stitch-dirty-amber-foreground: #1c1c1e;
+
+  /* Amber for text: #f59e0b fails 4.5:1 on the light surface, so light mode uses a darker amber. */
+  --stitch-dirty-amber-text: #92400e;
   --stitch-clean-emerald: #10b981;
   --stitch-clean-emerald-foreground: #1c1c1e;
   --stitch-git-error-neutral: #52525b;
@@ -70,6 +74,7 @@
     --stitch-inverse-surface: #1c1c1e;
     --stitch-inverse-on-surface: #f5f5f7;
     --stitch-inverse-on-surface-variant: #a1a1aa;
+    --stitch-dirty-amber-text: #f59e0b;
     --stitch-primary-accent: #60a5fa;
     --stitch-tag-blue-text: #93c5fd;
     --stitch-card-surface: rgba(255, 255, 255, 0.06);
@@ -87,6 +92,7 @@ html[data-theme="dark"] {
   --stitch-inverse-surface: #1c1c1e;
   --stitch-inverse-on-surface: #f5f5f7;
   --stitch-inverse-on-surface-variant: #a1a1aa;
+  --stitch-dirty-amber-text: #f59e0b;
   --stitch-primary-accent: #60a5fa;
   --stitch-tag-blue-text: #93c5fd;
   --stitch-card-surface: rgba(255, 255, 255, 0.06);

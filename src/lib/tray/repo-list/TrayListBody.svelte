@@ -29,6 +29,8 @@
     activeSync = null,
     onSync,
     activeConvert = null,
+    cloningPaths = [],
+    onClone,
   }: {
     listView: TrayListView;
     emptyListMessage?: string;
@@ -49,6 +51,8 @@
       direction: SyncDirection,
     ) => void;
     activeConvert?: ActiveConvert | null;
+    cloningPaths?: string[];
+    onClone?: (repo: RepoDto) => void;
   } = $props();
 </script>
 
@@ -66,6 +70,8 @@
     {activeSync}
     {onSync}
     {activeConvert}
+    {cloningPaths}
+    {onClone}
     {onOpen}
     {onDetail}
   />

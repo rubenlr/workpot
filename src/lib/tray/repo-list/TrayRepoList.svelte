@@ -9,6 +9,7 @@
     toPinOrderPayload,
   } from "$lib/tray/logic/list/pinOrder";
   import type { SectionedRepos } from "$lib/tray/logic/list/sort";
+  import { isCloned } from "$lib/types";
   import type {
     ActiveConvert,
     ActiveSync,
@@ -28,6 +29,8 @@
     activeSync = null,
     onSync,
     activeConvert = null,
+    cloningPaths = [],
+    onClone,
   }: {
     sectionedRepos: SectionedRepos;
     flatIndexByPath: Map<string, number>;
@@ -45,6 +48,8 @@
       direction: SyncDirection,
     ) => void;
     activeConvert?: ActiveConvert | null;
+    cloningPaths?: string[];
+    onClone?: (repo: RepoDto) => void;
   } = $props();
 
   let hoveredRowIndex = $state<number | null>(null);
@@ -69,6 +74,10 @@
 
   function showRepoContextMenu(repo: RepoDto, e: MouseEvent) {
     e.preventDefault();
+    if (!isCloned(repo)) {
+      // Not cloned: no catalog row yet, so pin / tag / convert actions do not apply.
+      return;
+    }
     const payload = {
       repoPath: repo.path,
       isPinned: repo.pinned,
@@ -83,10 +92,11 @@
 
   onMount(() => {
     const handleContextMenu = (e: MouseEvent) => {
-      if ((e.target as Element)?.closest("[data-sync-action]")) {
+      const target = e.target instanceof Element ? e.target : null;
+      if (target?.closest("[data-sync-action]")) {
         return;
       }
-      const rowEl = (e.target as Element)?.closest("[data-row-index]");
+      const rowEl = target?.closest("[data-row-index]");
       if (!rowEl) {
         return;
       }
@@ -197,6 +207,8 @@
               {activeSync}
               {onSync}
               {activeConvert}
+              cloning={cloningPaths.includes(repo.path)}
+              onClone={onClone ? () => onClone(repo) : undefined}
               onDetail={() => {
                 onSelectRow(idx);
                 onDetail(repo, idx);

@@ -92,7 +92,12 @@ fn migrations_apply() {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .expect("user_version");
-    assert_eq!(version, 1);
+    // Literal on purpose: comparing the constant to itself would not pin the schema level.
+    assert_eq!(version, 2, "schema level (bump with the next migration)");
+    assert_eq!(
+        version,
+        workpot_core::infra::migrations::LATEST_SCHEMA_VERSION
+    );
 
     let table_exists: i32 = conn
         .query_row(

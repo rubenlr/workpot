@@ -14,8 +14,8 @@
     void panel.mount();
 
     const onContextMenu = (e: MouseEvent) => {
-      const row = (e.target as Element)?.closest("[data-row-index]");
-      if (row) {
+      const target = e.target instanceof Element ? e.target : null;
+      if (target?.closest("[data-row-index]")) {
         e.preventDefault();
       }
     };
@@ -64,6 +64,8 @@
   activeSync={panel.activeSync}
   onSync={panel.handleSync}
   activeConvert={panel.activeConvert}
+  cloningPaths={panel.cloningPaths}
+  onClone={(repo) => void panel.cloneRepo(repo)}
   branchRevision={panel.branchRevision}
   detailRepo={panel.detailRepo}
   focusTagOnDetailOpen={panel.focusTagOnDetailOpen}

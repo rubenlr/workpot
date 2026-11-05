@@ -10,6 +10,7 @@ export function flatSectioned(sectioned: SectionedRepos): RepoDto[] {
     ...sectioned.dirty,
     ...sectioned.recent,
     ...sectioned.rest,
+    ...sectioned.remote,
   ];
 }
 
@@ -18,7 +19,7 @@ export function filterAndSortRepos(repos: RepoDto[], query: string): RepoDto[] {
   return repos.filter((r) => fuzzyMatch(query, r)).sort(traySort);
 }
 
-/** Fuzzy + tag AND filter, then four-tier section grouping. */
+/** Fuzzy + tag AND filter, then grouping into pinned / dirty / recent / rest / remote sections. */
 export function filterAndSectionRepos(
   repos: RepoDto[],
   query: string,

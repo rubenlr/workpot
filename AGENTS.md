@@ -1,5 +1,3 @@
-<!-- GSD:project-start source:PROJECT.md -->
-
 ## Project
 
 **Workpot**
@@ -17,10 +15,6 @@ Built on Tauri with a CLI and menu-bar tray. v1 is a prioritized fuzzy finder wi
 - **Privacy**: Local-only — catalog and config stay on disk
 - **Search**: Metadata-first in v1; no cross-repo code index until v2
 - **Discovery**: Watch roots + local catalog sync + manual register/exclude
-
-<!-- GSD:project-end -->
-
-<!-- GSD:stack-start source:research/STACK.md -->
 
 ## Technology Stack
 
@@ -90,10 +84,6 @@ Built on Tauri with a CLI and menu-bar tray. v1 is a prioritized fuzzy finder wi
 - git2 crate: https://docs.rs/git2/latest/git2/
 - Cursor CLI: `cursor --help` (ships with Cursor.app)
 
-<!-- GSD:stack-end -->
-
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
-
 ## Conventions
 
 ### Observability
@@ -103,48 +93,13 @@ Built on Tauri with a CLI and menu-bar tray. v1 is a prioritized fuzzy finder wi
 - **Tray webview:** Dev-only `[workpot-tray]` console traces; user-visible errors via panel error state.
 - **Tray UI customization:** Presentational tray chrome in `TrayPanelChrome`; tune empty list and panel states in Storybook (`Tray/Panel` stories), not by editing runtime wiring in `TrayApp`.
 
-<!-- GSD:conventions-end -->
-
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
-
 ## Architecture
 
 Architecture not yet mapped. Follow existing patterns found in the codebase.
 
-<!-- GSD:architecture-end -->
-
-<!-- GSD:skills-start source:skills/ -->
-
 ## Project Skills
 
 No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, `.github/skills/`, or `.codex/skills/` with a `SKILL.md` index file.
-
-<!-- GSD:skills-end -->
-
-<!-- GSD:workflow-start source:GSD defaults -->
-
-## GSD Workflow Enforcement
-
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
-
-Use these entry points:
-
-- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd-debug` for investigation and bug fixing
-- `/gsd-execute-phase` for planned phase work
-
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-
-<!-- GSD:workflow-end -->
-
-<!-- GSD:profile-start -->
-
-## Developer Profile
-
-> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-
-<!-- GSD:profile-end -->
 
 ## rr-test Project Testing Context
 

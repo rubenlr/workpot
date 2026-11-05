@@ -3,6 +3,7 @@
   import { expect, fireEvent, fn } from "storybook/test";
   import RepoListRowStory from "./RepoListRowStory.svelte";
   import {
+    storyRemoteRepo,
     storyRepo,
     storyRepoWithSync,
   } from "$lib/tray/repo-list/repoStoryFixtures";
@@ -155,5 +156,44 @@
     await fireEvent.click(button, { metaKey: true });
     await expect(args.onDetail).toHaveBeenCalledOnce();
     await expect(args.onOpen).not.toHaveBeenCalled();
+  }}
+/>
+
+<Story
+  name="NotCloned"
+  args={{
+    repo: storyRemoteRepo(),
+    selected: false,
+    onClone: fn(),
+    onOpen: fn(),
+    onDetail: fn(),
+  }}
+  play={async ({ canvas, userEvent, args }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Clone billing-api" }),
+    );
+    await expect(args.onClone).toHaveBeenCalledOnce();
+    await expect(args.onOpen).not.toHaveBeenCalled();
+  }}
+/>
+
+<Story
+  name="NotClonedSelected"
+  args={{ repo: storyRemoteRepo(), selected: true, onClone: fn() }}
+/>
+
+<Story
+  name="Cloning"
+  args={{ repo: storyRemoteRepo(), cloning: true, onClone: fn() }}
+/>
+
+<Story
+  name="RemovedUpstream"
+  args={{
+    repo: storyRepo({
+      branch: "main",
+      is_dirty: false,
+      removed_upstream: true,
+    }),
   }}
 />
