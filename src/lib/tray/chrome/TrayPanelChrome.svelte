@@ -3,6 +3,7 @@
   import RemoteDetailPane from "$lib/tray/repo-detail/RemoteDetailPane.svelte";
   import type { TrayListView } from "$lib/tray/logic/list/listState";
   import type { SectionedRepos } from "$lib/tray/logic/list/sort";
+  import { isCloned } from "$lib/types";
   import type {
     ActiveConvert,
     ActiveSync,
@@ -130,7 +131,7 @@
   {/if}
 
   <div class="min-h-0 flex-1 overflow-y-auto">
-    {#if detailRepo && detailRepo.cloned === false && onCloseDetail}
+    {#if detailRepo && !isCloned(detailRepo) && onCloseDetail}
       <RemoteDetailPane
         repo={detailRepo}
         cloning={cloningPaths.includes(detailRepo.path)}

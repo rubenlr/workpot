@@ -11,8 +11,12 @@ use crate::error::{Result, WorkpotError};
 use crate::infra::db::DbPool;
 use crate::infra::remote_provider::{RemoteApi, RemoteRepoInfo};
 use crate::services::git_state::unix_now_secs;
+use crate::services::remote_catalog_store::{
+    IndexedRepo, SourceOutcome, apply_listing, purge_gone_uncloned, purge_unconfigured_sources,
+    record_error_run, record_post_index,
+};
 use crate::services::{remote_clone, remote_prune};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{OptionalExtension, params};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -43,7 +47,7 @@ pub struct RemoteSyncSummary {
 ///
 /// `None` when a segment is unsafe (`..`, empty, backslash, NUL), so a hostile or odd remote
 /// path can never escape `clone_root`.
-pub fn clone_path_for(source: &RemoteSource, full_path: &str) -> Option<PathBuf> {
+fn clone_path_for(source: &RemoteSource, full_path: &str) -> Option<PathBuf> {
     let base = source.trimmed_path();
     let full = full_path.trim().trim_matches('/');
     let relative = match full.get(..base.len()) {
@@ -75,7 +79,7 @@ fn url_key(info: &RemoteRepoInfo) -> Option<String> {
 }
 
 /// Index every configured source. `force` bypasses the TTL.
-pub fn run_remote_sync(
+pub(crate) fn run_remote_sync(
     pool: &DbPool,
     config: &Config,
     api: &dyn RemoteApi,
@@ -93,52 +97,7 @@ pub fn run_remote_sync(
             summary.skipped_ttl += 1;
             continue;
         }
-        let started_at = unix_now_secs();
-        match sync_source(pool, config, api, source, started_at) {
-            Ok(outcome) => {
-                summary.indexed += outcome.indexed;
-                summary.added += outcome.added;
-                summary.gone += outcome.gone;
-
-                let pruned = remote_prune::prune_source(pool, api, source);
-                summary.pruned += pruned.pruned;
-
-                let (cloned, clone_errors) =
-                    remote_clone::auto_clone_source(pool, config, api, source);
-                summary.cloned += cloned;
-                for message in clone_errors {
-                    summary.errors += 1;
-                    summary.source_errors.push(RemoteSourceError {
-                        source: source.name.clone(),
-                        message,
-                    });
-                }
-                if let Err(e) = pool.with_write(|conn| {
-                    record_post_index(conn, &source.name, started_at, cloned, pruned.pruned)
-                }) {
-                    log::warn!(
-                        "remote sync {}: failed to record clone/prune counts: {e}",
-                        source.name
-                    );
-                }
-            }
-            Err(e) => {
-                log::warn!("remote sync {}: {e}", source.name);
-                if let Err(audit) = pool.with_write(|conn| {
-                    record_error_run(conn, &source.name, started_at, &e.to_string())
-                }) {
-                    log::warn!(
-                        "remote sync {}: failed to record error run: {audit}",
-                        source.name
-                    );
-                }
-                summary.errors += 1;
-                summary.source_errors.push(RemoteSourceError {
-                    source: source.name.clone(),
-                    message: e.to_string(),
-                });
-            }
-        }
+        sync_one_source(pool, config, api, source, &mut summary);
     }
     if let Err(e) = pool.with_write(purge_gone_uncloned) {
         log::warn!("remote sync: failed to purge stale gone rows: {e}");
@@ -146,54 +105,71 @@ pub fn run_remote_sync(
     Ok(summary)
 }
 
-/// Attach clone/prune counts to the run row written by [`apply_listing`].
-fn record_post_index(
-    conn: &Connection,
-    source_id: &str,
+fn push_source_error(summary: &mut RemoteSyncSummary, source: &RemoteSource, message: String) {
+    summary.errors += 1;
+    summary.source_errors.push(RemoteSourceError {
+        source: source.name.clone(),
+        message,
+    });
+}
+
+/// Index one source, then prune and auto-clone per its policy. Failures are folded into `summary`.
+fn sync_one_source(
+    pool: &DbPool,
+    config: &Config,
+    api: &dyn RemoteApi,
+    source: &RemoteSource,
+    summary: &mut RemoteSyncSummary,
+) {
+    let started_at = unix_now_secs();
+    match sync_source(pool, config, api, source, started_at) {
+        Ok(outcome) => {
+            summary.indexed += outcome.indexed;
+            summary.added += outcome.added;
+            summary.gone += outcome.gone;
+            prune_and_clone_source(pool, config, api, source, started_at, summary);
+        }
+        Err(e) => {
+            log::warn!("remote sync {}: {e}", source.name);
+            if let Err(audit) = pool
+                .with_write(|conn| record_error_run(conn, &source.name, started_at, &e.to_string()))
+            {
+                log::warn!(
+                    "remote sync {}: failed to record error run: {audit}",
+                    source.name
+                );
+            }
+            push_source_error(summary, source, e.to_string());
+        }
+    }
+}
+
+/// Post-index steps for a successfully listed source: prune removed upstreams, auto-clone, and
+/// record both counts on the run row.
+fn prune_and_clone_source(
+    pool: &DbPool,
+    config: &Config,
+    api: &dyn RemoteApi,
+    source: &RemoteSource,
     started_at: i64,
-    cloned: u32,
-    pruned: u32,
-) -> Result<()> {
-    if cloned == 0 && pruned == 0 {
-        return Ok(());
-    }
-    conn.execute(
-        "UPDATE remote_sync_runs SET cloned_count = ?3, pruned_count = ?4
-         WHERE id = (SELECT MAX(id) FROM remote_sync_runs WHERE source_id = ?1 AND started_at = ?2)",
-        params![source_id, started_at, cloned, pruned],
-    )?;
-    Ok(())
-}
+    summary: &mut RemoteSyncSummary,
+) {
+    let pruned = remote_prune::prune_source(pool, api, source);
+    summary.pruned += pruned.pruned;
 
-/// Drop `gone` rows that have no local clone left (nothing to flag or prune).
-fn purge_gone_uncloned(conn: &Connection) -> Result<()> {
-    conn.execute(
-        "DELETE FROM remote_repos AS r WHERE r.state = 'gone' AND NOT EXISTS (
-            SELECT 1 FROM locations l
-            JOIN project_remotes pr ON pr.project_id = l.project_id
-            WHERE l.excluded = 0 AND pr.url_normalized = r.url_normalized
-         )",
-        [],
-    )?;
-    Ok(())
-}
-
-fn purge_unconfigured_sources(conn: &Connection, config: &Config) -> Result<()> {
-    let known: HashSet<&str> = config.remotes.iter().map(|r| r.name.as_str()).collect();
-    let mut stmt = conn.prepare("SELECT DISTINCT source_id FROM remote_repos")?;
-    let stale: Vec<String> = stmt
-        .query_map([], |row| row.get::<_, String>(0))?
-        .filter_map(|r| r.ok())
-        .filter(|id| !known.contains(id.as_str()))
-        .collect();
-    for id in stale {
-        conn.execute("DELETE FROM remote_repos WHERE source_id = ?1", params![id])?;
-        conn.execute(
-            "DELETE FROM remote_sync_runs WHERE source_id = ?1",
-            params![id],
-        )?;
+    let (cloned, clone_errors) = remote_clone::auto_clone_source(pool, config, api, source);
+    summary.cloned += cloned;
+    for message in clone_errors {
+        push_source_error(summary, source, message);
     }
-    Ok(())
+    if let Err(e) = pool
+        .with_write(|conn| record_post_index(conn, &source.name, started_at, cloned, pruned.pruned))
+    {
+        log::warn!(
+            "remote sync {}: failed to record clone/prune counts: {e}",
+            source.name
+        );
+    }
 }
 
 fn within_ttl(pool: &DbPool, config: &Config, source: &RemoteSource) -> Result<bool> {
@@ -215,29 +191,9 @@ fn within_ttl(pool: &DbPool, config: &Config, source: &RemoteSource) -> Result<b
     Ok(last_ok.is_some_and(|finished| unix_now_secs() - finished < ttl_secs))
 }
 
-#[derive(Debug, Default)]
-struct SourceOutcome {
-    indexed: u32,
-    added: u32,
-    gone: u32,
-}
-
-struct IndexedRepo {
-    info: RemoteRepoInfo,
-    clone_path: PathBuf,
-    url_normalized: String,
-}
-
-fn sync_source(
-    pool: &DbPool,
-    config: &Config,
-    api: &dyn RemoteApi,
-    source: &RemoteSource,
-    started_at: i64,
-) -> Result<SourceOutcome> {
-    // Network: no DB lock held.
-    let listing = api.list_repos(source)?;
-
+/// Listing entries that are safe to index: de-duplicated, with a contained clone path and a
+/// usable clone URL. Anything else is skipped with a warning.
+fn indexable_repos(source: &RemoteSource, listing: Vec<RemoteRepoInfo>) -> Vec<IndexedRepo> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut repos: Vec<IndexedRepo> = Vec::new();
     for info in listing {
@@ -266,6 +222,19 @@ fn sync_source(
             url_normalized,
         });
     }
+    repos
+}
+
+fn sync_source(
+    pool: &DbPool,
+    config: &Config,
+    api: &dyn RemoteApi,
+    source: &RemoteSource,
+    started_at: i64,
+) -> Result<SourceOutcome> {
+    // Network: no DB lock held.
+    let listing = api.list_repos(source)?;
+    let repos = indexable_repos(source, listing);
 
     let max = config.limits.max_remote_repos;
     if repos.len() > max as usize {
@@ -277,109 +246,6 @@ fn sync_source(
     }
 
     pool.with_write(|conn| apply_listing(conn, source, &repos, started_at))
-}
-
-fn apply_listing(
-    conn: &Connection,
-    source: &RemoteSource,
-    repos: &[IndexedRepo],
-    started_at: i64,
-) -> Result<SourceOutcome> {
-    let tx = conn.unchecked_transaction()?;
-    let now = unix_now_secs();
-
-    let existing: HashSet<String> = {
-        let mut stmt = tx.prepare("SELECT full_path FROM remote_repos WHERE source_id = ?1")?;
-        stmt.query_map(params![source.name], |row| row.get::<_, String>(0))?
-            .collect::<std::result::Result<_, _>>()?
-    };
-    let present_before: u32 = tx.query_row(
-        "SELECT COUNT(*) FROM remote_repos WHERE source_id = ?1 AND state = 'present'",
-        params![source.name],
-        |row| row.get(0),
-    )?;
-    if repos.is_empty() && present_before > 0 {
-        return Err(WorkpotError::Config(format!(
-            "remote source {} returned an empty listing; keeping {present_before} indexed repos",
-            source.name
-        )));
-    }
-
-    let mut outcome = SourceOutcome::default();
-    for repo in repos {
-        let info = &repo.info;
-        if !existing.contains(&info.full_path) {
-            outcome.added += 1;
-        }
-        tx.execute(
-            "INSERT INTO remote_repos (
-                source_id, full_path, name, web_url, ssh_url, https_url, url_normalized,
-                default_branch, archived, description, clone_path, state,
-                first_seen_at, last_seen_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'present', ?12, ?12)
-             ON CONFLICT(source_id, full_path) DO UPDATE SET
-                name = excluded.name, web_url = excluded.web_url, ssh_url = excluded.ssh_url,
-                https_url = excluded.https_url, url_normalized = excluded.url_normalized,
-                default_branch = excluded.default_branch, archived = excluded.archived,
-                description = excluded.description, clone_path = excluded.clone_path,
-                state = 'present', last_seen_at = excluded.last_seen_at",
-            params![
-                source.name,
-                info.full_path,
-                info.name,
-                info.web_url,
-                info.ssh_url,
-                info.https_url,
-                repo.url_normalized,
-                info.default_branch,
-                i64::from(info.archived),
-                info.description,
-                repo.clone_path.display().to_string(),
-                now,
-            ],
-        )?;
-    }
-    outcome.indexed = u32::try_from(repos.len()).unwrap_or(u32::MAX);
-
-    let listed: HashSet<&str> = repos.iter().map(|r| r.info.full_path.as_str()).collect();
-    for path in existing.iter().filter(|p| !listed.contains(p.as_str())) {
-        let changed = tx.execute(
-            "UPDATE remote_repos SET state = 'gone'
-             WHERE source_id = ?1 AND full_path = ?2 AND state = 'present'",
-            params![source.name, path],
-        )?;
-        outcome.gone += u32::try_from(changed).unwrap_or(0);
-    }
-
-    tx.execute(
-        "INSERT INTO remote_sync_runs (
-            source_id, started_at, finished_at, status, repo_count, new_count, gone_count
-         ) VALUES (?1, ?2, ?3, 'ok', ?4, ?5, ?6)",
-        params![
-            source.name,
-            started_at,
-            unix_now_secs(),
-            outcome.indexed,
-            outcome.added,
-            outcome.gone
-        ],
-    )?;
-    tx.commit()?;
-    Ok(outcome)
-}
-
-fn record_error_run(
-    conn: &Connection,
-    source_id: &str,
-    started_at: i64,
-    message: &str,
-) -> Result<()> {
-    conn.execute(
-        "INSERT INTO remote_sync_runs (source_id, started_at, finished_at, status, message)
-         VALUES (?1, ?2, ?3, 'error', ?4)",
-        params![source_id, started_at, unix_now_secs(), message],
-    )?;
-    Ok(())
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 /// A repo is cloned when a non-excluded location is attached to a project that has the same
 /// normalized remote URL. `r` is the `remote_repos` alias.
-const CLONED_EXISTS: &str = "EXISTS (
+pub(crate) const CLONED_EXISTS: &str = "EXISTS (
     SELECT 1 FROM locations l
     JOIN project_remotes pr ON pr.project_id = l.project_id
     WHERE l.excluded = 0 AND pr.url_normalized = r.url_normalized
@@ -18,6 +18,9 @@ const CLONED_EXISTS: &str = "EXISTS (
 const REMOTE_ROW_SELECT: &str = "SELECT r.source_id, r.full_path, r.name, r.web_url, r.ssh_url,
     r.https_url, r.url_normalized, r.default_branch, r.archived, r.description, r.clone_path,
     r.state, r.first_seen_at, r.last_seen_at";
+
+/// Index of the column a query appends right after [`REMOTE_ROW_SELECT`] (which selects 14).
+const EXTRA_COLUMN: usize = 14;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemoteState {
@@ -106,7 +109,10 @@ pub fn list_remote_only(conn: &Connection, config: &Config) -> Result<Vec<Remote
 }
 
 /// Remote record whose planned clone path is `path`, if any.
-pub fn find_by_clone_path(conn: &Connection, path: &Path) -> Result<Option<RemoteRepoRecord>> {
+pub(crate) fn find_by_clone_path(
+    conn: &Connection,
+    path: &Path,
+) -> Result<Option<RemoteRepoRecord>> {
     let key = path.display().to_string();
     let sql = format!("{REMOTE_ROW_SELECT} FROM remote_repos r WHERE r.clone_path = ?1");
     conn.query_row(&sql, params![key], remote_record_from_row)
@@ -115,7 +121,7 @@ pub fn find_by_clone_path(conn: &Connection, path: &Path) -> Result<Option<Remot
 }
 
 /// Remote record by `(source, full_path)`.
-pub fn find_remote_repo(
+fn find_remote_repo(
     conn: &Connection,
     source_id: &str,
     full_path: &str,
@@ -130,7 +136,7 @@ pub fn find_remote_repo(
 
 /// Resolve a user-supplied identifier (clone path, `source:full_path`, `full_path`, or repo
 /// name) to a remote record. Ambiguous names are rejected.
-pub fn resolve_remote_identifier(
+pub(crate) fn resolve_remote_identifier(
     conn: &Connection,
     identifier: &str,
 ) -> Result<Option<RemoteRepoRecord>> {
@@ -165,7 +171,7 @@ pub fn resolve_remote_identifier(
 }
 
 /// Whether a remote record currently has a cataloged local clone.
-pub fn is_cloned(conn: &Connection, record: &RemoteRepoRecord) -> Result<bool> {
+pub(crate) fn is_cloned(conn: &Connection, record: &RemoteRepoRecord) -> Result<bool> {
     let sql = format!(
         "SELECT {CLONED_EXISTS} FROM remote_repos r WHERE r.source_id = ?1 AND r.full_path = ?2"
     );
@@ -178,7 +184,10 @@ pub fn is_cloned(conn: &Connection, record: &RemoteRepoRecord) -> Result<bool> {
 }
 
 /// Catalog `locations.path` of the local clone for a remote record, if cloned.
-pub fn local_path_for(conn: &Connection, record: &RemoteRepoRecord) -> Result<Option<String>> {
+pub(crate) fn local_path_for(
+    conn: &Connection,
+    record: &RemoteRepoRecord,
+) -> Result<Option<String>> {
     conn.query_row(
         "SELECT l.path FROM locations l
          JOIN project_remotes pr ON pr.project_id = l.project_id
@@ -195,7 +204,7 @@ pub fn local_path_for(conn: &Connection, record: &RemoteRepoRecord) -> Result<Op
 }
 
 /// Cloned remote records whose upstream repo is gone (candidates for prune / UI flag).
-pub fn list_gone_cloned(conn: &Connection) -> Result<Vec<(RemoteRepoRecord, String)>> {
+pub(crate) fn list_gone_cloned(conn: &Connection) -> Result<Vec<(RemoteRepoRecord, String)>> {
     let sql = format!(
         "{REMOTE_ROW_SELECT}, (
             SELECT l.path FROM locations l
@@ -209,7 +218,10 @@ pub fn list_gone_cloned(conn: &Connection) -> Result<Vec<(RemoteRepoRecord, Stri
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], |row| {
-        Ok((remote_record_from_row(row)?, row.get::<_, String>(14)?))
+        Ok((
+            remote_record_from_row(row)?,
+            row.get::<_, String>(EXTRA_COLUMN)?,
+        ))
     })?;
     rows.collect::<std::result::Result<Vec<_>, _>>()
         .map_err(WorkpotError::Database)
@@ -224,7 +236,7 @@ pub fn removed_upstream_paths(conn: &Connection) -> Result<HashSet<String>> {
 }
 
 /// Remote record + cloned flag, for every record of a source (used by auto-clone).
-pub fn list_present_for_source(
+pub(crate) fn list_present_for_source(
     conn: &Connection,
     source_id: &str,
 ) -> Result<Vec<(RemoteRepoRecord, bool)>> {
@@ -234,7 +246,10 @@ pub fn list_present_for_source(
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params![source_id], |row| {
-        Ok((remote_record_from_row(row)?, row.get::<_, bool>(14)?))
+        Ok((
+            remote_record_from_row(row)?,
+            row.get::<_, bool>(EXTRA_COLUMN)?,
+        ))
     })?;
     rows.collect::<std::result::Result<Vec<_>, _>>()
         .map_err(WorkpotError::Database)
@@ -258,7 +273,10 @@ pub struct RemoteSourceStatus {
     pub last_run_message: Option<String>,
 }
 
-pub fn source_statuses(conn: &Connection, config: &Config) -> Result<Vec<RemoteSourceStatus>> {
+pub(crate) fn source_statuses(
+    conn: &Connection,
+    config: &Config,
+) -> Result<Vec<RemoteSourceStatus>> {
     config
         .remotes
         .iter()

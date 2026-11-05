@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SectionConfig } from "$lib/tray/logic/list/sort";
+import { isCloned } from "$lib/types";
 import type { RepoDto } from "$lib/types";
 import { selectionIndexAfterBackgroundOpen } from "$lib/tray/logic/list/openSelection";
 
@@ -28,7 +29,7 @@ export function createTrayLaunch(deps: TrayLaunchDeps) {
       return;
     }
     launchError = null;
-    if (repo.cloned === false) {
+    if (!isCloned(repo)) {
       if (repo.clone_policy === "manual" || !deps.cloneAndOpen) {
         launchError = `${repo.name} is not cloned yet. Use the Clone button.`;
         return;

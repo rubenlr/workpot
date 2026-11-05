@@ -208,7 +208,13 @@ impl<R: CommandRunner> RemoteApi for GhGlabProvider<R> {
             "--host".into(),
             source.effective_host().into(),
         ];
-        let output = self.runner.run(cli, &args).ok()?;
+        let output = match self.runner.run(cli, &args) {
+            Ok(output) => output,
+            Err(e) => {
+                log::warn!("remote provider: `{cli} config get git_protocol` failed: {e}");
+                return None;
+            }
+        };
         if !output.success {
             return None;
         }

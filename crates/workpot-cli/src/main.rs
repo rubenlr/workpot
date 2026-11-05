@@ -11,7 +11,7 @@ use workpot_core::domain::config::{ClonePolicy, GitProtocol, RemoteProvider, Rem
 use workpot_core::infra::paths;
 use workpot_core::infra::store;
 use workpot_core::services::launch::launch_repo;
-use workpot_core::services::remote_catalog::RemoteRepoRecord;
+use workpot_core::services::remote_catalog::{RemoteRepoRecord, RemoteSourceStatus};
 use workpot_core::services::remotes::RemotePatch;
 use workpot_core::services::repo_convert::{ConvertResult, ConvertTarget};
 use workpot_core::services::repo_fuzzy::fuzzy_match;
@@ -130,37 +130,7 @@ enum SyncCommands {
 #[derive(Subcommand)]
 enum RemotesCommands {
     /// Add a remote source: every repo under a GitHub org/user or GitLab group (subgroups included).
-    Add {
-        /// GitHub org/user, or GitLab group path (e.g. `acme/platform`).
-        path: String,
-        /// Hosting provider.
-        #[arg(long, value_enum)]
-        provider: CliProvider,
-        /// Directory clones are placed under (`~` allowed).
-        #[arg(long)]
-        clone_root: PathBuf,
-        /// Source label (default: last segment of PATH).
-        #[arg(long)]
-        name: Option<String>,
-        /// Host for GitHub Enterprise / self-hosted GitLab (default: provider's public host).
-        #[arg(long)]
-        host: Option<String>,
-        /// What happens automatically to repos that are not cloned.
-        #[arg(long, value_enum, default_value = "manual")]
-        policy: CliClonePolicy,
-        /// Safe-only delete of clean, fully pushed clones whose upstream repo was removed.
-        #[arg(long)]
-        prune_removed: bool,
-        /// Hide archived repos.
-        #[arg(long)]
-        exclude_archived: bool,
-        /// Override the CLI's configured `git_protocol` for this source.
-        #[arg(long, value_enum)]
-        protocol: Option<CliProtocol>,
-        /// Do not index right after adding.
-        #[arg(long)]
-        no_sync: bool,
-    },
+    Add(RemoteAddArgs),
     /// List configured remote sources with index status.
     List,
     /// Remove a source and its index (local clones stay as ordinary repos).
@@ -169,21 +139,57 @@ enum RemotesCommands {
         name: String,
     },
     /// Change settings of a source.
-    Set {
-        /// Source name.
-        name: String,
-        #[arg(long, value_enum)]
-        policy: Option<CliClonePolicy>,
-        #[arg(long)]
-        prune_removed: Option<bool>,
-        #[arg(long)]
-        include_archived: Option<bool>,
-        #[arg(long)]
-        clone_root: Option<PathBuf>,
-        /// `ssh`, `https`, or `default` to follow the CLI's `git_protocol`.
-        #[arg(long)]
-        protocol: Option<String>,
-    },
+    Set(RemoteSetArgs),
+}
+
+#[derive(clap::Args)]
+struct RemoteAddArgs {
+    /// GitHub org/user, or GitLab group path (e.g. `acme/platform`).
+    path: String,
+    /// Hosting provider.
+    #[arg(long, value_enum)]
+    provider: CliProvider,
+    /// Directory clones are placed under (`~` allowed).
+    #[arg(long)]
+    clone_root: PathBuf,
+    /// Source label (default: last segment of PATH).
+    #[arg(long)]
+    name: Option<String>,
+    /// Host for GitHub Enterprise / self-hosted GitLab (default: provider's public host).
+    #[arg(long)]
+    host: Option<String>,
+    /// What happens automatically to repos that are not cloned.
+    #[arg(long, value_enum, default_value = "manual")]
+    policy: CliClonePolicy,
+    /// Safe-only delete of clean, fully pushed clones whose upstream repo was removed.
+    #[arg(long)]
+    prune_removed: bool,
+    /// Hide archived repos.
+    #[arg(long)]
+    exclude_archived: bool,
+    /// Override the CLI's configured `git_protocol` for this source.
+    #[arg(long, value_enum)]
+    protocol: Option<CliProtocol>,
+    /// Do not index right after adding.
+    #[arg(long)]
+    no_sync: bool,
+}
+
+#[derive(clap::Args)]
+struct RemoteSetArgs {
+    /// Source name.
+    name: String,
+    #[arg(long, value_enum)]
+    policy: Option<CliClonePolicy>,
+    #[arg(long)]
+    prune_removed: Option<bool>,
+    #[arg(long)]
+    include_archived: Option<bool>,
+    #[arg(long)]
+    clone_root: Option<PathBuf>,
+    /// `ssh`, `https`, or `default` to follow the CLI's `git_protocol`.
+    #[arg(long)]
+    protocol: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -532,122 +538,129 @@ fn run_sync_cmd(scope: Option<SyncCommands>) -> anyhow::Result<()> {
 fn run_remotes(sub: RemotesCommands) -> anyhow::Result<()> {
     let ctx = AppContext::open().context("failed to open workpot")?;
     match sub {
-        RemotesCommands::Add {
-            path,
-            provider,
-            clone_root,
-            name,
-            host,
-            policy,
-            prune_removed,
-            exclude_archived,
-            protocol,
-            no_sync,
-        } => {
-            let trimmed = path.trim().trim_matches('/').to_string();
-            let name =
-                name.unwrap_or_else(|| trimmed.rsplit('/').next().unwrap_or(&trimmed).to_string());
-            let source = RemoteSource {
-                name: name.clone(),
-                provider: provider.into(),
-                host,
-                path: trimmed,
-                clone_root,
-                clone_policy: policy.into(),
-                prune_removed,
-                include_archived: !exclude_archived,
-                protocol: protocol.map(Into::into),
-            };
-            ctx.remotes_add(source).map_err(map_remote_error)?;
-            println!("added remote source {name}");
-            if !no_sync {
-                let summary = ctx.run_remote_catalog_sync(true)?;
-                print_remote_summary(&summary);
-            }
-            Ok(())
-        }
-        RemotesCommands::List => {
-            let statuses = ctx.remote_source_statuses()?;
-            if statuses.is_empty() {
-                println!("no remote sources configured (see `workpot remotes add`)");
-            }
-            let now = unix_now_secs();
-            for s in statuses {
-                println!(
-                    "{} {}:{}/{} -> {} policy={} prune={} repos={} cloned={}{}",
-                    s.name,
-                    s.provider.as_str(),
-                    s.host,
-                    s.path,
-                    s.clone_root.display(),
-                    s.clone_policy.as_str(),
-                    if s.prune_removed { "on" } else { "off" },
-                    s.repo_count,
-                    s.cloned_count,
-                    if s.gone_count > 0 {
-                        format!(" removed-upstream={}", s.gone_count)
-                    } else {
-                        String::new()
-                    },
-                );
-                match (s.last_run_status.as_deref(), s.last_run_at) {
-                    (Some(status), Some(at)) => {
-                        let ago = format_ago(now.saturating_sub(at));
-                        match s.last_run_message {
-                            Some(msg) if status == "error" => {
-                                println!("  last sync: error {ago} ago: {msg}")
-                            }
-                            _ => println!("  last sync: {status} {ago} ago"),
-                        }
-                    }
-                    _ => println!("  last sync: never (run `workpot sync remote`)"),
-                }
-            }
-            Ok(())
-        }
-        RemotesCommands::Remove { name } => {
-            ctx.remotes_remove(&name).map_err(map_remote_error)?;
-            println!("removed remote source {name}");
-            Ok(())
-        }
-        RemotesCommands::Set {
-            name,
-            policy,
-            prune_removed,
-            include_archived,
-            clone_root,
-            protocol,
-        } => {
-            let protocol = match protocol.as_deref() {
-                None => None,
-                Some("default") => Some(None),
-                Some(raw) => Some(Some(GitProtocol::parse(raw).ok_or_else(|| {
-                    anyhow::anyhow!("invalid protocol {raw:?}: use ssh, https, or default")
-                })?)),
-            };
-            ctx.remotes_set(
-                &name,
-                RemotePatch {
-                    clone_policy: policy.map(Into::into),
-                    prune_removed,
-                    include_archived,
-                    clone_root,
-                    protocol,
-                },
-            )
-            .map_err(map_remote_error)?;
-            println!("updated remote source {name}");
-            Ok(())
-        }
+        RemotesCommands::Add(args) => run_remotes_add(&ctx, args),
+        RemotesCommands::List => run_remotes_list(&ctx),
+        RemotesCommands::Remove { name } => run_remotes_remove(&ctx, &name),
+        RemotesCommands::Set(args) => run_remotes_set(&ctx, args),
     }
 }
 
+fn run_remotes_add(ctx: &AppContext, args: RemoteAddArgs) -> anyhow::Result<()> {
+    let trimmed = args.path.trim().trim_matches('/').to_string();
+    let name = args
+        .name
+        .unwrap_or_else(|| trimmed.rsplit('/').next().unwrap_or(&trimmed).to_string());
+    let source = RemoteSource {
+        name: name.clone(),
+        provider: args.provider.into(),
+        host: args.host,
+        path: trimmed,
+        clone_root: args.clone_root,
+        clone_policy: args.policy.into(),
+        prune_removed: args.prune_removed,
+        include_archived: !args.exclude_archived,
+        protocol: args.protocol.map(Into::into),
+    };
+    ctx.remotes_add(source).map_err(map_remote_error)?;
+    println!("added remote source {name}");
+    if !args.no_sync {
+        let summary = ctx.run_remote_catalog_sync(true)?;
+        print_remote_summary(&summary);
+    }
+    Ok(())
+}
+
+fn run_remotes_list(ctx: &AppContext) -> anyhow::Result<()> {
+    let statuses = ctx.remote_source_statuses()?;
+    if statuses.is_empty() {
+        println!("no remote sources configured (see `workpot remotes add`)");
+    }
+    let now = unix_now_secs();
+    for status in &statuses {
+        println!("{}", format_remote_source_line(status));
+        println!("{}", format_last_sync_line(status, now));
+    }
+    Ok(())
+}
+
+fn format_remote_source_line(s: &RemoteSourceStatus) -> String {
+    let removed_upstream = if s.gone_count > 0 {
+        format!(" removed-upstream={}", s.gone_count)
+    } else {
+        String::new()
+    };
+    format!(
+        "{} {}:{}/{} -> {} policy={} prune={} repos={} cloned={}{}",
+        s.name,
+        s.provider.as_str(),
+        s.host,
+        s.path,
+        s.clone_root.display(),
+        s.clone_policy.as_str(),
+        if s.prune_removed { "on" } else { "off" },
+        s.repo_count,
+        s.cloned_count,
+        removed_upstream,
+    )
+}
+
+fn format_last_sync_line(s: &RemoteSourceStatus, now: i64) -> String {
+    match (s.last_run_status.as_deref(), s.last_run_at) {
+        (Some(status), Some(at)) => {
+            let ago = format_ago(now.saturating_sub(at));
+            match s.last_run_message.as_deref() {
+                Some(msg) if status == "error" => format!("  last sync: error {ago} ago: {msg}"),
+                _ => format!("  last sync: {status} {ago} ago"),
+            }
+        }
+        _ => "  last sync: never (run `workpot sync remote`)".to_string(),
+    }
+}
+
+fn run_remotes_remove(ctx: &AppContext, name: &str) -> anyhow::Result<()> {
+    ctx.remotes_remove(name).map_err(map_remote_error)?;
+    println!("removed remote source {name}");
+    Ok(())
+}
+
+/// `None` = leave unchanged, `Some(None)` = follow the CLI's `git_protocol`, `Some(Some(p))` = pin `p`.
+fn parse_protocol_override(raw: Option<&str>) -> anyhow::Result<Option<Option<GitProtocol>>> {
+    match raw {
+        None => Ok(None),
+        Some("default") => Ok(Some(None)),
+        Some(raw) => GitProtocol::parse(raw)
+            .map(|protocol| Some(Some(protocol)))
+            .ok_or_else(|| anyhow::anyhow!("invalid protocol {raw:?}: use ssh, https, or default")),
+    }
+}
+
+fn run_remotes_set(ctx: &AppContext, args: RemoteSetArgs) -> anyhow::Result<()> {
+    let protocol = parse_protocol_override(args.protocol.as_deref())?;
+    ctx.remotes_set(
+        &args.name,
+        RemotePatch {
+            clone_policy: args.policy.map(Into::into),
+            prune_removed: args.prune_removed,
+            include_archived: args.include_archived,
+            clone_root: args.clone_root,
+            protocol,
+        },
+    )
+    .map_err(map_remote_error)?;
+    println!("updated remote source {}", args.name);
+    Ok(())
+}
+
+const SECS_PER_MINUTE: i64 = 60;
+const SECS_PER_HOUR: i64 = 60 * SECS_PER_MINUTE;
+const SECS_PER_DAY: i64 = 24 * SECS_PER_HOUR;
+
 fn format_ago(secs: i64) -> String {
     match secs {
-        s if s < 60 => format!("{s}s"),
-        s if s < 3600 => format!("{}m", s / 60),
-        s if s < 86400 => format!("{}h", s / 3600),
-        s => format!("{}d", s / 86400),
+        s if s < SECS_PER_MINUTE => format!("{s}s"),
+        s if s < SECS_PER_HOUR => format!("{}m", s / SECS_PER_MINUTE),
+        s if s < SECS_PER_DAY => format!("{}h", s / SECS_PER_HOUR),
+        s => format!("{}d", s / SECS_PER_DAY),
     }
 }
 

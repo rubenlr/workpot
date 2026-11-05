@@ -212,7 +212,7 @@ impl AppState {
     }
 
     /// Remote-only (indexed, not cloned) record whose planned clone path is `path`.
-    pub fn remote_only_record(
+    pub(crate) fn remote_only_record(
         &self,
         path: &Path,
     ) -> Result<Option<remote_catalog::RemoteRepoRecord>> {

@@ -581,7 +581,7 @@ fn finish_sync_run(
 
 /// Attach one freshly registered location to its project and persist its worktrees/branches
 /// (used right after a remote clone so the repo is fully usable before the next sync).
-pub fn attach_and_persist_location(conn: &Connection, path_key: &str) -> Result<()> {
+pub(crate) fn attach_and_persist_location(conn: &Connection, path_key: &str) -> Result<()> {
     let git_common_dir: String = conn.query_row(
         "SELECT git_common_dir FROM locations WHERE path = ?1",
         params![path_key],

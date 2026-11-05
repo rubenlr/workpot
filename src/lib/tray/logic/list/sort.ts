@@ -1,3 +1,4 @@
+import { isCloned } from "$lib/types";
 import type { RepoDto } from "$lib/types";
 
 export type Section = "pinned" | "dirty" | "recent" | "rest" | "remote";
@@ -56,13 +57,13 @@ export function sectionSort(
   nowSeconds: number,
 ): SectionedRepos {
   const remote = repos
-    .filter((r) => r.cloned === false)
+    .filter((r) => !isCloned(r))
     .sort((a, b) =>
       (a.remote_full_path ?? a.name).localeCompare(
         b.remote_full_path ?? b.name,
       ),
     );
-  const local = repos.filter((r) => r.cloned !== false);
+  const local = repos.filter(isCloned);
   const pinned = local
     .filter((r) => r.pinned)
     .sort((a, b) => (a.pin_order ?? 999) - (b.pin_order ?? 999));

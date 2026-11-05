@@ -10,6 +10,7 @@ pub mod org;
 pub mod path_cmd_template;
 pub mod paths;
 pub mod remote_catalog;
+mod remote_catalog_store;
 pub mod remote_catalog_sync;
 pub mod remote_clone;
 pub mod remote_prune;

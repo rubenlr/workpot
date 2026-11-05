@@ -29,7 +29,7 @@ pub fn run_full(
 }
 
 /// Remote catalog pass only; never fails (errors are folded into the summary).
-pub fn run_remote(
+pub(crate) fn run_remote(
     pool: &DbPool,
     config: &Config,
     api: &dyn RemoteApi,

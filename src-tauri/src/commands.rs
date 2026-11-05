@@ -166,6 +166,13 @@ fn log_emit_err(event: &str, err: tauri::Error) {
     log::warn!("failed to emit {event}: {err}");
 }
 
+/// Emit `payload` on `event`; a failed emit is logged, never propagated.
+fn emit_or_log<S: Serialize + Clone>(app: &AppHandle, event: &str, payload: S) {
+    if let Err(e) = app.emit(event, payload) {
+        log_emit_err(event, e);
+    }
+}
+
 /// Active repo path for the most recent `show_repo_context_menu` popup.
 pub struct ContextMenuRepo(pub Arc<Mutex<Option<String>>>);
 
@@ -407,6 +414,35 @@ pub async fn get_tray_config(state: State<'_, Arc<AppState>>) -> Result<TrayConf
     Ok(cfg)
 }
 
+/// Flag local clones whose upstream repo no longer exists; a lookup failure only drops the flags.
+fn flag_removed_upstream(state: &AppState, dtos: &mut [RepoDto]) {
+    match state.removed_upstream_paths() {
+        Ok(flagged) => {
+            for dto in dtos {
+                dto.removed_upstream = flagged.contains(&dto.path);
+            }
+        }
+        Err(e) => log::warn!("list_repos: removed-upstream flags unavailable: {e}"),
+    }
+}
+
+/// Append indexed-but-not-cloned remote repos; a catalog failure only drops those rows.
+fn append_remote_only(state: &AppState, dtos: &mut Vec<RepoDto>) -> Result<(), String> {
+    match state.list_remote_only() {
+        Ok(remote_only) => {
+            let config = state.config().map_err(|e| e.to_string())?;
+            for record in &remote_only {
+                let policy = config
+                    .remote(&record.source_id)
+                    .map(|s| s.clone_policy.as_str().to_string());
+                dtos.push(remote_record_to_dto(record, policy));
+            }
+        }
+        Err(e) => log::warn!("list_repos: remote catalog unavailable: {e}"),
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn list_repos(state: State<'_, Arc<AppState>>) -> Result<Vec<RepoDto>, String> {
     let started = Instant::now();
@@ -416,27 +452,8 @@ pub async fn list_repos(state: State<'_, Arc<AppState>>) -> Result<Vec<RepoDto>,
         let records = state.list_repos().map_err(|e| e.to_string())?;
         let migration = state.config().map_err(|e| e.to_string())?.migration.clone();
         let mut dtos = repo_records_to_dtos(records, &migration);
-
-        match state.removed_upstream_paths() {
-            Ok(flagged) => {
-                for dto in &mut dtos {
-                    dto.removed_upstream = flagged.contains(&dto.path);
-                }
-            }
-            Err(e) => log::warn!("list_repos: removed-upstream flags unavailable: {e}"),
-        }
-        match state.list_remote_only() {
-            Ok(remote_only) => {
-                let config = state.config().map_err(|e| e.to_string())?;
-                for record in &remote_only {
-                    let policy = config
-                        .remote(&record.source_id)
-                        .map(|s| s.clone_policy.as_str().to_string());
-                    dtos.push(remote_record_to_dto(record, policy));
-                }
-            }
-            Err(e) => log::warn!("list_repos: remote catalog unavailable: {e}"),
-        }
+        flag_removed_upstream(&state, &mut dtos);
+        append_remote_only(&state, &mut dtos)?;
         Ok::<Vec<RepoDto>, String>(dtos)
     })
     .await
@@ -1226,9 +1243,7 @@ pub async fn sync_repo_branch(
 
     log::info!("repo sync: started repo={repo_path} branch={branch} direction={direction}");
 
-    if let Err(e) = app.emit("repo-sync-started", &started_payload) {
-        log_emit_err("repo-sync-started", e);
-    }
+    emit_or_log(&app, "repo-sync-started", &started_payload);
 
     let state_clone = state.inner().clone();
     let guard_clone = guard.inner().clone();
@@ -1255,9 +1270,7 @@ pub async fn sync_repo_branch(
                     direction: direction_str,
                     error: None,
                 };
-                if let Err(e) = app.emit("repo-sync-complete", &complete_payload) {
-                    log_emit_err("repo-sync-complete", e);
-                }
+                emit_or_log(&app, "repo-sync-complete", &complete_payload);
             }
             Ok(Err(e)) => {
                 log::warn!(
@@ -1274,9 +1287,7 @@ pub async fn sync_repo_branch(
                     direction: direction_str.clone(),
                     error: Some(summary),
                 };
-                if let Err(err) = app.emit("repo-sync-failed", &failed_payload) {
-                    log_emit_err("repo-sync-failed", err);
-                }
+                emit_or_log(&app, "repo-sync-failed", &failed_payload);
             }
             Err(join_err) => {
                 let msg = format!("repo sync task panicked or was cancelled: {join_err}");
@@ -1286,9 +1297,7 @@ pub async fn sync_repo_branch(
                     direction: direction_str,
                     error: Some(msg),
                 };
-                if let Err(err) = app.emit("repo-sync-failed", &failed_payload) {
-                    log_emit_err("repo-sync-failed", err);
-                }
+                emit_or_log(&app, "repo-sync-failed", &failed_payload);
             }
         }
     });
@@ -1330,9 +1339,7 @@ pub async fn convert_repo(
         new_path: None,
         error: None,
     };
-    if let Err(e) = app.emit("repo-convert-started", &started_payload) {
-        log_emit_err("repo-convert-started", e);
-    }
+    emit_or_log(&app, "repo-convert-started", &started_payload);
 
     let state_clone = state.inner().clone();
     let guard_clone = guard.inner().clone();
@@ -1358,9 +1365,7 @@ pub async fn convert_repo(
                     new_path: Some(new_path),
                     error: None,
                 };
-                if let Err(e) = app.emit("repo-convert-complete", &complete_payload) {
-                    log_emit_err("repo-convert-complete", e);
-                }
+                emit_or_log(&app, "repo-convert-complete", &complete_payload);
             }
             Ok(Ok(ConvertResult::DryRun { .. })) => {
                 let failed_payload = RepoConvertEventDto {
@@ -1371,9 +1376,7 @@ pub async fn convert_repo(
                 log::warn!(
                     "repo convert: unexpected dry-run result repo={repo_path} target={target_str}"
                 );
-                if let Err(err) = app.emit("repo-convert-failed", &failed_payload) {
-                    log_emit_err("repo-convert-failed", err);
-                }
+                emit_or_log(&app, "repo-convert-failed", &failed_payload);
             }
             Ok(Err(e)) => {
                 let summary = e.to_string();
@@ -1383,9 +1386,7 @@ pub async fn convert_repo(
                     new_path: None,
                     error: Some(summary),
                 };
-                if let Err(err) = app.emit("repo-convert-failed", &failed_payload) {
-                    log_emit_err("repo-convert-failed", err);
-                }
+                emit_or_log(&app, "repo-convert-failed", &failed_payload);
             }
             Err(join_err) => {
                 let msg = format!("repo convert task panicked or was cancelled: {join_err}");
@@ -1395,9 +1396,7 @@ pub async fn convert_repo(
                     new_path: None,
                     error: Some(msg),
                 };
-                if let Err(err) = app.emit("repo-convert-failed", &failed_payload) {
-                    log_emit_err("repo-convert-failed", err);
-                }
+                emit_or_log(&app, "repo-convert-failed", &failed_payload);
             }
         }
     });
@@ -1422,7 +1421,10 @@ impl RepoCloneGuard {
     pub fn try_start(&self, repo_path: &str) -> bool {
         match self.active.lock() {
             Ok(mut active) => active.insert(repo_path.to_string()),
-            Err(_) => false,
+            Err(_) => {
+                log::warn!("clone guard lock poisoned; refusing to start {repo_path}");
+                false
+            }
         }
     }
 
@@ -1436,14 +1438,17 @@ impl RepoCloneGuard {
     }
 
     pub fn status(&self) -> Vec<String> {
-        self.active
-            .lock()
-            .map(|active| {
+        match self.active.lock() {
+            Ok(active) => {
                 let mut paths: Vec<String> = active.iter().cloned().collect();
                 paths.sort();
                 paths
-            })
-            .unwrap_or_default()
+            }
+            Err(_) => {
+                log::warn!("clone guard lock poisoned; active clones unavailable");
+                Vec::new()
+            }
+        }
     }
 }
 
@@ -1494,9 +1499,7 @@ pub async fn clone_repo(
         opened: false,
         error: None,
     };
-    if let Err(e) = app.emit("repo-clone-started", &started) {
-        log_emit_err("repo-clone-started", e);
-    }
+    emit_or_log(&app, "repo-clone-started", &started);
 
     let state_clone = state.inner().clone();
     let guard_clone = guard.inner().clone();
@@ -1504,60 +1507,73 @@ pub async fn clone_repo(
         let _lease = RepoCloneGuardLease(guard_clone, repo_path.clone());
         let task_path = repo_path.clone();
         let blocking = tauri::async_runtime::spawn_blocking(move || {
-            let outcome = state_clone
-                .clone_remote(&task_path)
-                .map_err(|e| e.to_string())?;
-            let new_path = outcome.local_path.display().to_string();
-            let launch_error = if open_after {
-                crate::launch::launch_repo(&state_clone, &new_path).err()
-            } else {
-                None
-            };
-            Ok::<(String, bool, Option<String>), String>((new_path, open_after, launch_error))
+            run_clone_job(&state_clone, &task_path, open_after)
         })
         .await;
 
-        match blocking {
-            Ok(Ok((new_path, opened, launch_error))) => {
-                log::info!("repo clone: complete repo={repo_path} new_path={new_path}");
-                let payload = RepoCloneEventDto {
-                    repo_path,
-                    new_path: Some(new_path),
-                    opened: opened && launch_error.is_none(),
-                    error: launch_error,
-                };
-                if let Err(e) = app.emit("repo-clone-complete", &payload) {
-                    log_emit_err("repo-clone-complete", e);
-                }
-            }
-            Ok(Err(summary)) => {
-                log::warn!("repo clone: failed repo={repo_path}: {summary}");
-                let payload = RepoCloneEventDto {
-                    repo_path,
-                    new_path: None,
-                    opened: false,
-                    error: Some(summary),
-                };
-                if let Err(e) = app.emit("repo-clone-failed", &payload) {
-                    log_emit_err("repo-clone-failed", e);
-                }
-            }
-            Err(join_err) => {
-                let msg = format!("repo clone task panicked or was cancelled: {join_err}");
-                log::error!("repo clone: failed repo={repo_path}: {msg}");
-                let payload = RepoCloneEventDto {
-                    repo_path,
-                    new_path: None,
-                    opened: false,
-                    error: Some(msg),
-                };
-                if let Err(e) = app.emit("repo-clone-failed", &payload) {
-                    log_emit_err("repo-clone-failed", e);
-                }
-            }
-        }
+        let (event, payload) = clone_result_event(repo_path, blocking);
+        emit_or_log(&app, event, &payload);
     });
     Ok(())
+}
+
+/// `(new catalog path, open requested, launch error)` of a finished clone job.
+type CloneJobOutput = (String, bool, Option<String>);
+
+/// Clone `repo_path` (blocking) and optionally open it in the IDE afterwards.
+fn run_clone_job(
+    state: &AppState,
+    repo_path: &str,
+    open_after: bool,
+) -> Result<CloneJobOutput, String> {
+    let outcome = state.clone_remote(repo_path).map_err(|e| e.to_string())?;
+    let new_path = outcome.local_path.display().to_string();
+    let launch_error = if open_after {
+        crate::launch::launch_repo(state, &new_path).err()
+    } else {
+        None
+    };
+    Ok((new_path, open_after, launch_error))
+}
+
+/// Map a finished clone job (or its join failure) to the `repo-clone-*` event to emit.
+fn clone_result_event<E: std::fmt::Display>(
+    repo_path: String,
+    joined: Result<Result<CloneJobOutput, String>, E>,
+) -> (&'static str, RepoCloneEventDto) {
+    match joined {
+        Ok(Ok((new_path, opened, launch_error))) => {
+            log::info!("repo clone: complete repo={repo_path} new_path={new_path}");
+            let payload = RepoCloneEventDto {
+                repo_path,
+                new_path: Some(new_path),
+                opened: opened && launch_error.is_none(),
+                error: launch_error,
+            };
+            ("repo-clone-complete", payload)
+        }
+        Ok(Err(summary)) => {
+            log::warn!("repo clone: failed repo={repo_path}: {summary}");
+            (
+                "repo-clone-failed",
+                clone_failed_payload(repo_path, summary),
+            )
+        }
+        Err(join_err) => {
+            let msg = format!("repo clone task panicked or was cancelled: {join_err}");
+            log::error!("repo clone: failed repo={repo_path}: {msg}");
+            ("repo-clone-failed", clone_failed_payload(repo_path, msg))
+        }
+    }
+}
+
+fn clone_failed_payload(repo_path: String, error: String) -> RepoCloneEventDto {
+    RepoCloneEventDto {
+        repo_path,
+        new_path: None,
+        opened: false,
+        error: Some(error),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

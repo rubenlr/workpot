@@ -29,39 +29,65 @@ pub struct PruneReport {
 }
 
 /// Why `local` may NOT be deleted, or `None` when it is safe.
-pub fn deletion_blocker(local: &Path, clone_root: &Path) -> Result<Option<String>> {
+fn deletion_blocker(local: &Path, clone_root: &Path) -> Result<Option<String>> {
     let canonical = local
         .canonicalize()
         .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", local.display())))?;
     let root = clone_root
         .canonicalize()
         .map_err(|e| WorkpotError::InvalidPath(format!("{}: {e}", clone_root.display())))?;
-    if canonical == root || !canonical.starts_with(&root) {
+    if let Some(reason) = placement_blocker(&canonical, &root)? {
+        return Ok(Some(reason));
+    }
+    repo_state_blocker(&canonical)
+}
+
+/// Layout checks: the clone must be a plain, standalone checkout strictly under `root`.
+fn placement_blocker(canonical: &Path, root: &Path) -> Result<Option<String>> {
+    if canonical == root || !canonical.starts_with(root) {
         return Ok(Some("outside the source clone_root".into()));
     }
-    if catalog::is_bare_repo(&canonical) || !catalog::is_git_worktree(&canonical) {
+    if catalog::is_bare_repo(canonical) || !catalog::is_git_worktree(canonical) {
         return Ok(Some("not a plain checkout (bare layout)".into()));
     }
     if !canonical.join(".git").is_dir() {
         return Ok(Some("linked worktree, not a standalone clone".into()));
     }
-    if !git::list_worktree_paths(&canonical)?.is_empty() {
+    if !git::list_worktree_paths(canonical)?.is_empty() {
         return Ok(Some("has linked worktrees".into()));
     }
+    Ok(None)
+}
 
-    let repo = Repository::open(&canonical)
-        .map_err(|_| WorkpotError::GitUnavailable(canonical.clone()))?;
-    if git::detect_dirty(&repo).unwrap_or(true) {
+/// Content checks: nothing uncommitted, untracked, stashed, or unpushed would be lost.
+fn repo_state_blocker(canonical: &Path) -> Result<Option<String>> {
+    let repo = Repository::open(canonical)
+        .map_err(|_| WorkpotError::GitUnavailable(canonical.to_path_buf()))?;
+    let dirty = git::detect_dirty(&repo).unwrap_or_else(|e| {
+        log::warn!(
+            "prune: dirty check failed for {}: {e}; treating as dirty",
+            canonical.display()
+        );
+        true
+    });
+    if dirty {
         return Ok(Some("uncommitted changes".into()));
     }
-    if git::has_untracked(&repo).unwrap_or(true) {
+    let untracked = git::has_untracked(&repo).unwrap_or_else(|e| {
+        log::warn!(
+            "prune: untracked check failed for {}: {e}; treating as untracked",
+            canonical.display()
+        );
+        true
+    });
+    if untracked {
         return Ok(Some("untracked files".into()));
     }
     drop(repo);
-    if git::has_stash(&canonical)? {
+    if git::has_stash(canonical)? {
         return Ok(Some("stash entries".into()));
     }
-    match git::check_all_branches_synced(&canonical)? {
+    match git::check_all_branches_synced(canonical)? {
         None => Ok(None),
         Some(git::SyncBlocker::NoUpstream { branch }) => {
             Ok(Some(format!("branch {branch} has no upstream")))

@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const HARD_MAX_WATCH_ROOTS: u32 = 5000;
 const HARD_MAX_REPOS: u32 = 20000;
 const HARD_MAX_REMOTE_REPOS: u32 = 50000;
+/// One day; a longer remote listing TTL would hide upstream changes for too long.
+const HARD_MAX_REMOTE_SYNC_TTL_MINUTES: u32 = 1440;
 
 fn default_max_watch_roots() -> u32 {
     100
@@ -181,7 +183,7 @@ impl RemoteProvider {
         }
     }
 
-    pub fn default_host(self) -> &'static str {
+    fn default_host(self) -> &'static str {
         match self {
             Self::Github => "github.com",
             Self::Gitlab => "gitlab.com",
@@ -332,7 +334,24 @@ impl RemoteSource {
     }
 }
 
-fn expand_tilde(path: &std::path::Path) -> PathBuf {
+/// Reject a clone root that nests inside (or contains) the root of an earlier source.
+fn ensure_clone_root_disjoint(
+    name: &str,
+    root: &Path,
+    seen: &[(&str, PathBuf)],
+) -> Result<(), String> {
+    match seen
+        .iter()
+        .find(|(_, other)| root.starts_with(other) || other.starts_with(root))
+    {
+        Some((other_name, _)) => Err(format!(
+            "remotes[{name}].clone_root overlaps remotes[{other_name}].clone_root"
+        )),
+        None => Ok(()),
+    }
+}
+
+fn expand_tilde(path: &Path) -> PathBuf {
     let Ok(rest) = path.strip_prefix("~") else {
         return path.to_path_buf();
     };
@@ -460,7 +479,7 @@ impl Config {
             "remote_sync_ttl_minutes",
             self.remote_sync_ttl_minutes,
             0,
-            1440,
+            HARD_MAX_REMOTE_SYNC_TTL_MINUTES,
         )?;
         let mut roots: Vec<(&str, PathBuf)> = Vec::new();
         for (idx, source) in self.remotes.iter().enumerate() {
@@ -469,14 +488,7 @@ impl Config {
                 return Err(format!("duplicate remotes name {:?}", source.name));
             }
             let root = source.resolved_clone_root();
-            for (other_name, other_root) in &roots {
-                if root.starts_with(other_root) || other_root.starts_with(&root) {
-                    return Err(format!(
-                        "remotes[{}].clone_root overlaps remotes[{other_name}].clone_root",
-                        source.name
-                    ));
-                }
-            }
+            ensure_clone_root_disjoint(&source.name, &root, &roots)?;
             roots.push((source.name.as_str(), root));
         }
         Ok(())

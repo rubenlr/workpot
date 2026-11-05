@@ -9,6 +9,7 @@
     toPinOrderPayload,
   } from "$lib/tray/logic/list/pinOrder";
   import type { SectionedRepos } from "$lib/tray/logic/list/sort";
+  import { isCloned } from "$lib/types";
   import type {
     ActiveConvert,
     ActiveSync,
@@ -73,7 +74,7 @@
 
   function showRepoContextMenu(repo: RepoDto, e: MouseEvent) {
     e.preventDefault();
-    if (repo.cloned === false) {
+    if (!isCloned(repo)) {
       // Not cloned: no catalog row yet, so pin / tag / convert actions do not apply.
       return;
     }

@@ -63,7 +63,7 @@ impl Drop for CloneLease {
 
 /// URL to clone for `record` using the effective protocol (source override, else the CLI's
 /// `git_protocol`, else HTTPS).
-pub fn clone_url(
+fn clone_url(
     api: &dyn RemoteApi,
     source: &RemoteSource,
     record: &RemoteRepoRecord,
@@ -83,7 +83,7 @@ pub fn clone_url(
 }
 
 /// Clone `record` (no-op when already cloned). Works under every clone policy.
-pub fn clone_remote_repo(
+fn clone_remote_repo(
     pool: &DbPool,
     config: &Config,
     api: &dyn RemoteApi,
@@ -96,13 +96,7 @@ pub fn clone_remote_repo(
     let _lease = CloneLease::acquire(record)?;
 
     // Re-check under the lease: a concurrent clone may have just finished.
-    if let Some(local) = pool.with_read(|conn| {
-        if remote_catalog::is_cloned(conn, record)? {
-            remote_catalog::local_path_for(conn, record)
-        } else {
-            Ok(None)
-        }
-    })? {
+    if let Some(local) = cataloged_clone_path(pool, record)? {
         return Ok(CloneOutcome {
             local_path: PathBuf::from(local),
             already_cloned: true,
@@ -110,9 +104,33 @@ pub fn clone_remote_repo(
     }
 
     let url = clone_url(api, source, record)?;
-    let target = record.clone_path.clone();
+    let target = record.clone_path.as_path();
+    let target_existed = prepare_clone_target(target)?;
+    clone_into(&url, target, target_existed, &record.full_path)?;
+
+    let local_path = register_clone(pool, config, target)?;
+    Ok(CloneOutcome {
+        local_path,
+        already_cloned: false,
+    })
+}
+
+/// Catalog path of the local clone of `record`, when one is already registered.
+fn cataloged_clone_path(pool: &DbPool, record: &RemoteRepoRecord) -> Result<Option<String>> {
+    pool.with_read(|conn| {
+        if remote_catalog::is_cloned(conn, record)? {
+            remote_catalog::local_path_for(conn, record)
+        } else {
+            Ok(None)
+        }
+    })
+}
+
+/// Validate and prepare `target` for `git clone`; returns whether it already existed (as an
+/// empty directory).
+fn prepare_clone_target(target: &Path) -> Result<bool> {
     let target_existed = target.exists();
-    if target_existed && !is_empty_dir(&target) {
+    if target_existed && !is_empty_dir(target) {
         return Err(WorkpotError::CloneFailed(format!(
             "target already exists and is not empty: {}",
             target.display()
@@ -121,42 +139,55 @@ pub fn clone_remote_repo(
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    Ok(target_existed)
+}
 
-    log::info!("cloning {} into {}", record.full_path, target.display());
-    if let Err(e) = run_git_clone(&url, &target) {
+/// Run `git clone`, removing a partial checkout we created when it fails.
+fn clone_into(url: &str, target: &Path, target_existed: bool, full_path: &str) -> Result<()> {
+    log::info!("cloning {full_path} into {}", target.display());
+    if let Err(e) = run_git_clone(url, target) {
         if !target_existed
             && target.exists()
-            && let Err(rm) = std::fs::remove_dir_all(&target)
+            && let Err(rm) = std::fs::remove_dir_all(target)
         {
             log::warn!(
                 "failed to clean up partial clone {}: {rm}",
                 target.display()
             );
         }
-        log::warn!("clone of {} failed: {e}", record.full_path);
+        log::warn!("clone of {full_path} failed: {e}");
         return Err(e);
     }
+    Ok(())
+}
 
-    let local = pool.with_write(|conn| {
-        let registered = catalog::register_manual(conn, config, &target)?;
+/// Register the fresh clone in the catalog and persist its location + git state.
+fn register_clone(pool: &DbPool, config: &Config, target: &Path) -> Result<PathBuf> {
+    pool.with_write(|conn| {
+        let registered = catalog::register_manual(conn, config, target)?;
         let path_key = registered.path.display().to_string();
         local_catalog_sync::attach_and_persist_location(conn, &path_key)?;
         if let Err(e) = git_state::refresh_and_persist(conn, &registered.path) {
             log::warn!("git state after clone {}: {e}", registered.path.display());
         }
         Ok(registered.path)
-    })?;
-    Ok(CloneOutcome {
-        local_path: local,
-        already_cloned: false,
     })
 }
 
 fn is_empty_dir(path: &Path) -> bool {
-    path.is_dir()
-        && std::fs::read_dir(path)
-            .map(|mut entries| entries.next().is_none())
-            .unwrap_or(false)
+    if !path.is_dir() {
+        return false;
+    }
+    match std::fs::read_dir(path) {
+        Ok(mut entries) => entries.next().is_none(),
+        Err(e) => {
+            log::warn!(
+                "cannot list {}: {e}; treating it as non-empty",
+                path.display()
+            );
+            false
+        }
+    }
 }
 
 fn run_git_clone(url: &str, target: &Path) -> Result<()> {
@@ -187,7 +218,7 @@ fn run_git_clone(url: &str, target: &Path) -> Result<()> {
 }
 
 /// Resolve `identifier` to a remote record and clone it.
-pub fn clone_by_identifier(
+pub(crate) fn clone_by_identifier(
     pool: &DbPool,
     config: &Config,
     api: &dyn RemoteApi,
@@ -243,38 +274,35 @@ fn canonicalize_lenient(path: &Path) -> PathBuf {
     }
 }
 
-/// `auto` policy: clone every indexed, not-yet-cloned repo of `source`. Returns
-/// `(cloned, errors)` where errors are `"full_path: message"`.
-pub fn auto_clone_source(
+/// Indexed repos of `source` that `auto` policy should clone now: not cloned, allowed by the
+/// archive filter and user excludes, and whose target path is free.
+fn pending_auto_clones(
+    pool: &DbPool,
+    config: &Config,
+    source: &RemoteSource,
+) -> Result<Vec<RemoteRepoRecord>> {
+    let rows =
+        pool.with_read(|conn| remote_catalog::list_present_for_source(conn, &source.name))?;
+    Ok(rows
+        .into_iter()
+        .filter(|(rec, cloned)| {
+            !cloned
+                && (source.include_archived || !rec.archived)
+                && !excluded_by_user(config, &rec.clone_path)
+                && !(rec.clone_path.exists() && !is_empty_dir(&rec.clone_path))
+        })
+        .map(|(rec, _)| rec)
+        .collect())
+}
+
+/// Clone `records` on a bounded thread pool (the global pool if one cannot be built); each
+/// result is `Err("full_path: message")` on failure.
+fn clone_in_parallel(
     pool: &DbPool,
     config: &Config,
     api: &dyn RemoteApi,
-    source: &RemoteSource,
-) -> (u32, Vec<String>) {
-    if source.clone_policy != ClonePolicy::Auto {
-        return (0, Vec::new());
-    }
-    let todo: Vec<RemoteRepoRecord> =
-        match pool.with_read(|conn| remote_catalog::list_present_for_source(conn, &source.name)) {
-            Ok(rows) => rows
-                .into_iter()
-                .filter(|(rec, cloned)| {
-                    !cloned
-                        && (source.include_archived || !rec.archived)
-                        && !excluded_by_user(config, &rec.clone_path)
-                        && !(rec.clone_path.exists() && !is_empty_dir(&rec.clone_path))
-                })
-                .map(|(rec, _)| rec)
-                .collect(),
-            Err(e) => {
-                log::warn!("auto-clone {}: {e}", source.name);
-                return (0, vec![format!("{}: {e}", source.name)]);
-            }
-        };
-    if todo.is_empty() {
-        return (0, Vec::new());
-    }
-
+    records: &[RemoteRepoRecord],
+) -> Vec<std::result::Result<(), String>> {
     let run = |records: &[RemoteRepoRecord]| -> Vec<std::result::Result<(), String>> {
         records
             .par_iter()
@@ -285,16 +313,41 @@ pub fn auto_clone_source(
             })
             .collect()
     };
-    let results = match rayon::ThreadPoolBuilder::new()
+    match rayon::ThreadPoolBuilder::new()
         .num_threads(AUTO_CLONE_THREADS)
         .build()
     {
-        Ok(thread_pool) => thread_pool.install(|| run(&todo)),
+        Ok(thread_pool) => thread_pool.install(|| run(records)),
         Err(e) => {
             log::warn!("auto-clone thread pool: {e}; running on the global pool");
-            run(&todo)
+            run(records)
+        }
+    }
+}
+
+/// `auto` policy: clone every indexed, not-yet-cloned repo of `source`. Returns
+/// `(cloned, errors)` where errors are `"full_path: message"`.
+pub(crate) fn auto_clone_source(
+    pool: &DbPool,
+    config: &Config,
+    api: &dyn RemoteApi,
+    source: &RemoteSource,
+) -> (u32, Vec<String>) {
+    if source.clone_policy != ClonePolicy::Auto {
+        return (0, Vec::new());
+    }
+    let todo = match pending_auto_clones(pool, config, source) {
+        Ok(todo) => todo,
+        Err(e) => {
+            log::warn!("auto-clone {}: {e}", source.name);
+            return (0, vec![format!("{}: {e}", source.name)]);
         }
     };
+    if todo.is_empty() {
+        return (0, Vec::new());
+    }
+
+    let results = clone_in_parallel(pool, config, api, &todo);
     let mut cloned = 0u32;
     let mut errors = Vec::new();
     for result in results {
