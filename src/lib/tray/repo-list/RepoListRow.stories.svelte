@@ -165,6 +165,8 @@
     repo: storyRemoteRepo(),
     selected: false,
     onClone: fn(),
+    onOpen: fn(),
+    onDetail: fn(),
   }}
   play={async ({ canvas, userEvent, args }) => {
     await userEvent.click(

@@ -177,7 +177,7 @@
           </span>
         {:else if repo.removed_upstream}
           <span
-            class="block truncate text-xs leading-tight text-dirty-amber"
+            class="block truncate text-xs leading-tight text-dirty-amber-text"
             title="This repository no longer exists upstream"
           >
             removed upstream{repo.branch ? ` · ${repo.branch}` : ""}

@@ -57,9 +57,9 @@
         <span class="font-mono">{repo.remote_full_path}</span>
       {/if}
       {#if repo.remote_url}
-        <span class="break-all font-mono opacity-80">{repo.remote_url}</span>
+        <span class="break-all font-mono">{repo.remote_url}</span>
       {/if}
-      <span class="break-all font-mono opacity-80"
+      <span class="break-all font-mono"
         >Clones to {repo.parent_dir
           ? `${repo.parent_dir}/${repo.name}`
           : repo.path}</span
