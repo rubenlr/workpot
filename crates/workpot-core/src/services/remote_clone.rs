@@ -354,9 +354,9 @@ fn pending_auto_clones(
         .into_iter()
         .filter(|(rec, cloned)| {
             !cloned
-                && (source.include_archived || !rec.archived)
+                && (!rec.archived || source.include_archived)
                 && !excluded_by_user(&excludes, &rec.clone_path)
-                && !(rec.clone_path.exists() && !is_empty_dir(&rec.clone_path))
+                && (!rec.clone_path.exists() || is_empty_dir(&rec.clone_path))
         })
         .map(|(rec, _)| rec)
         .collect())
