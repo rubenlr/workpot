@@ -1,6 +1,6 @@
 use crate::domain::{BRANCH_UNBORN, GitState};
 use crate::error::{Result, WorkpotError};
-use git2::{ErrorCode, Repository, Status, StatusOptions};
+use git2::{ErrorCode, Repository, RepositoryState, Status, StatusOptions};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -62,8 +62,19 @@ pub fn resolve_git_common_dir(path: &Path) -> Result<PathBuf> {
     std::fs::canonicalize(&resolved).map_err(|_| WorkpotError::GitUnavailable(path.to_path_buf()))
 }
 
-/// Linked worktree paths for a bare repository (D-04). Omits the bare worktree entry itself.
-pub fn list_worktree_paths(repo_path: &Path) -> Result<Vec<PathBuf>> {
+/// Linked worktrees of a repository plus a count of entries that could not be read.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct WorktreeListing {
+    /// Canonical checkout paths of the readable linked worktrees.
+    pub paths: Vec<PathBuf>,
+    /// Entries skipped (non-UTF-8 name, unresolvable worktree, missing checkout directory).
+    /// Callers making destructive decisions must treat a non-zero value as "unknown".
+    pub unreadable: u32,
+}
+
+/// Linked worktrees for a repository, reporting entries that could not be read instead of
+/// silently dropping them. Every skipped entry is logged at `warn`.
+pub fn list_worktrees(repo_path: &Path) -> Result<WorktreeListing> {
     let repo = Repository::open(repo_path)
         .map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
 
@@ -71,27 +82,56 @@ pub fn list_worktree_paths(repo_path: &Path) -> Result<Vec<PathBuf>> {
         .worktrees()
         .map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
 
-    let mut paths = Vec::new();
+    let mut listing = WorktreeListing::default();
     for item in names.iter() {
-        // iter yields Result<Option<&str>, Error>; skip errors and None (non-UTF8)
-        let Some(name) = item.ok().flatten() else {
-            continue;
+        // iter yields Result<Option<&str>, Error>; errors and None (non-UTF8) are unreadable
+        let name = match item {
+            Ok(Some(name)) => name,
+            Ok(None) => {
+                log::warn!(
+                    "skip linked worktree of {}: non-UTF-8 name",
+                    repo_path.display()
+                );
+                listing.unreadable += 1;
+                continue;
+            }
+            Err(e) => {
+                log::warn!(
+                    "skip linked worktree of {}: cannot read name: {e}",
+                    repo_path.display()
+                );
+                listing.unreadable += 1;
+                continue;
+            }
         };
-        let Ok(wt) = repo.find_worktree(name) else {
-            continue;
+        let wt = match repo.find_worktree(name) {
+            Ok(wt) => wt,
+            Err(e) => {
+                log::warn!(
+                    "skip linked worktree {name} of {}: {e}",
+                    repo_path.display()
+                );
+                listing.unreadable += 1;
+                continue;
+            }
         };
         let wt_path = wt.path();
         match std::fs::canonicalize(wt_path) {
-            Ok(canon) => {
-                paths.push(canon);
-            }
+            Ok(canon) => listing.paths.push(canon),
             Err(e) => {
                 log::warn!("skip worktree {}: {e}", wt_path.display());
+                listing.unreadable += 1;
             }
         }
     }
 
-    Ok(paths)
+    Ok(listing)
+}
+
+/// Linked worktree paths for a bare repository (D-04). Omits the bare worktree entry itself.
+/// Unreadable entries are logged and skipped; use [`list_worktrees`] when they matter.
+pub fn list_worktree_paths(repo_path: &Path) -> Result<Vec<PathBuf>> {
+    list_worktrees(repo_path).map(|listing| listing.paths)
 }
 
 /// Open a repository at `path` and query branch, dirty flag, and ahead/behind.
@@ -202,6 +242,48 @@ pub(crate) fn detect_dirty(repo: &Repository) -> std::result::Result<bool, git2:
     Ok(statuses.iter().any(|e| e.status().intersects(dirty_flags)))
 }
 
+/// Why the repo is mid-operation or has unresolved conflicts, or `None` when it is neither.
+///
+/// Separate from [`detect_dirty`] (shared with the UI dirty indicator): libgit2 reports a
+/// conflicted path as `CONFLICTED` only, so an in-progress merge/rebase can look clean there.
+pub(crate) fn unfinished_operation_or_conflicts(
+    repo: &Repository,
+) -> std::result::Result<Option<String>, git2::Error> {
+    let state = repo.state();
+    if state != RepositoryState::Clean {
+        return Ok(Some(format!(
+            "repository is in the middle of an operation ({})",
+            repository_state_name(state)
+        )));
+    }
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(false)
+        .recurse_untracked_dirs(false)
+        .exclude_submodules(true);
+    let statuses = repo.statuses(Some(&mut opts))?;
+    if statuses
+        .iter()
+        .any(|e| e.status().intersects(Status::CONFLICTED))
+    {
+        return Ok(Some("has conflicted files".into()));
+    }
+    Ok(None)
+}
+
+fn repository_state_name(state: RepositoryState) -> &'static str {
+    match state {
+        RepositoryState::Clean => "clean",
+        RepositoryState::Merge => "merge",
+        RepositoryState::Revert | RepositoryState::RevertSequence => "revert",
+        RepositoryState::CherryPick | RepositoryState::CherryPickSequence => "cherry-pick",
+        RepositoryState::Bisect => "bisect",
+        RepositoryState::Rebase
+        | RepositoryState::RebaseInteractive
+        | RepositoryState::RebaseMerge => "rebase",
+        RepositoryState::ApplyMailbox | RepositoryState::ApplyMailboxOrRebase => "apply-mailbox",
+    }
+}
+
 /// Return true when the repo has untracked (non-ignored) files in the working tree.
 pub(crate) fn has_untracked(repo: &Repository) -> std::result::Result<bool, git2::Error> {
     let mut opts = StatusOptions::new();
@@ -250,6 +332,96 @@ pub fn is_detached_head(repo_path: &Path) -> Result<bool> {
         Err(_) => return Err(WorkpotError::GitUnavailable(repo_path.to_path_buf())),
     };
     Ok(!head.is_branch())
+}
+
+/// Oids of every remote-tracking ref tip (`refs/remotes/*`), peeled to commits.
+fn remote_tip_oids(repo: &Repository) -> std::result::Result<Vec<git2::Oid>, git2::Error> {
+    let mut tips = Vec::new();
+    for reference in repo.references_glob("refs/remotes/*")? {
+        let reference = reference?;
+        // Symbolic refs (e.g. `origin/HEAD`) resolve to a branch tip already listed.
+        if let Some(oid) = reference.resolve()?.target() {
+            tips.push(oid);
+        }
+    }
+    Ok(tips)
+}
+
+/// True when `oid` is reachable from (or equal to) any of the `tips`.
+fn reachable_from_any(
+    repo: &Repository,
+    oid: git2::Oid,
+    tips: &[git2::Oid],
+) -> std::result::Result<bool, git2::Error> {
+    for tip in tips {
+        if *tip == oid || repo.graph_descendant_of(*tip, oid)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// True when HEAD is detached at a commit that no remote-tracking ref contains.
+pub fn has_unpushed_detached_head(repo_path: &Path) -> Result<bool> {
+    let repo = Repository::open(repo_path)
+        .map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
+    let git_err = |_: git2::Error| WorkpotError::GitUnavailable(repo_path.to_path_buf());
+    let head = match repo.head() {
+        Ok(h) => h,
+        Err(ref e) if e.code() == ErrorCode::UnbornBranch => return Ok(false),
+        Err(e) => return Err(git_err(e)),
+    };
+    if head.is_branch() {
+        return Ok(false);
+    }
+    let oid = head.peel_to_commit().map_err(git_err)?.id();
+    let tips = remote_tip_oids(&repo).map_err(git_err)?;
+    Ok(!reachable_from_any(&repo, oid, &tips).map_err(git_err)?)
+}
+
+/// Name of the first local tag whose commit no remote-tracking ref contains, if any.
+pub fn find_unpushed_tag(repo_path: &Path) -> Result<Option<String>> {
+    let repo = Repository::open(repo_path)
+        .map_err(|_| WorkpotError::GitUnavailable(repo_path.to_path_buf()))?;
+    let git_err = |_: git2::Error| WorkpotError::GitUnavailable(repo_path.to_path_buf());
+    let tips = remote_tip_oids(&repo).map_err(git_err)?;
+    for reference in repo.references_glob("refs/tags/*").map_err(git_err)? {
+        let reference = reference.map_err(git_err)?;
+        let name = reference.shorthand().unwrap_or("<non-UTF-8>").to_string();
+        let commit = match reference.peel_to_commit() {
+            Ok(commit) => commit,
+            // libgit2 reports a tag of a tree/blob as `InvalidSpec` (direct) or `Peel` (via an
+            // annotated tag); such tags carry no history to lose.
+            Err(e)
+                if e.class() == git2::ErrorClass::Object
+                    && matches!(e.code(), ErrorCode::InvalidSpec | ErrorCode::Peel) =>
+            {
+                log::debug!("tag {name} does not point at a commit: {e}; skipping");
+                continue;
+            }
+            Err(e) => {
+                log::warn!("cannot resolve tag {name} in {}: {e}", repo_path.display());
+                return Err(git_err(e));
+            }
+        };
+        if !reachable_from_any(&repo, commit.id(), &tips).map_err(git_err)? {
+            return Ok(Some(name));
+        }
+    }
+    Ok(None)
+}
+
+/// Conservative submodule check: `.gitmodules` present or a non-empty `.git/modules`.
+pub fn has_submodules(repo_path: &Path) -> Result<bool> {
+    if repo_path.join(".gitmodules").exists() {
+        return Ok(true);
+    }
+    let modules = repo_path.join(".git").join("modules");
+    match std::fs::read_dir(&modules) {
+        Ok(mut entries) => Ok(entries.next().is_some()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Return (ahead, behind) counts relative to the configured upstream branch.

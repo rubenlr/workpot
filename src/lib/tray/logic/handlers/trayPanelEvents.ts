@@ -1,6 +1,11 @@
 import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import type { SyncSummary, RepoConvertEvent, RepoSyncEvent } from "$lib/types";
+import type {
+  RepoCloneEvent,
+  RepoConvertEvent,
+  RepoSyncEvent,
+  SyncSummary,
+} from "$lib/types";
 import { trayTrace } from "./trayTrace";
 
 export type ListenFn = <T>(
@@ -8,7 +13,7 @@ export type ListenFn = <T>(
   handler: (event: { payload: T }) => void,
 ) => Promise<UnlistenFn>;
 
-export interface TrayPanelEventHandlers {
+interface TrayPanelEventHandlers {
   onPanelOpened: () => void;
   onPanelClosed: () => void;
   onSyncStarted: () => void;
@@ -20,6 +25,9 @@ export interface TrayPanelEventHandlers {
   onRepoConvertStarted: (payload: RepoConvertEvent) => void;
   onRepoConvertComplete: (payload: RepoConvertEvent) => void;
   onRepoConvertFailed: (payload: RepoConvertEvent) => void;
+  onRepoCloneStarted: (payload: RepoCloneEvent) => void;
+  onRepoCloneComplete: (payload: RepoCloneEvent) => void;
+  onRepoCloneFailed: (payload: RepoCloneEvent) => void;
   onRepoContextAction: (payload: { action: string; repo_path: string }) => void;
 }
 
@@ -56,6 +64,15 @@ export async function subscribeTrayPanelEvents(
     ),
     listenFn<RepoConvertEvent>("repo-convert-failed", (event) =>
       handlers.onRepoConvertFailed(event.payload),
+    ),
+    listenFn<RepoCloneEvent>("repo-clone-started", (event) =>
+      handlers.onRepoCloneStarted(event.payload),
+    ),
+    listenFn<RepoCloneEvent>("repo-clone-complete", (event) =>
+      handlers.onRepoCloneComplete(event.payload),
+    ),
+    listenFn<RepoCloneEvent>("repo-clone-failed", (event) =>
+      handlers.onRepoCloneFailed(event.payload),
     ),
     listenFn<{ action: string; repo_path: string }>(
       "repo-context-action",

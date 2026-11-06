@@ -69,3 +69,18 @@ commands.allow = ["get_repo_convert_status"]
 identifier = "allow-convert-repo"
 description = "Allows convert_repo IPC."
 commands.allow = ["convert_repo"]
+
+[[permission]]
+identifier = "allow-get-repo-clone-status"
+description = "Allows get_repo_clone_status IPC."
+commands.allow = ["get_repo_clone_status"]
+
+[[permission]]
+identifier = "allow-clone-repo"
+description = "Allows clone_repo IPC."
+commands.allow = ["clone_repo"]
+
+[[permission]]
+identifier = "allow-get-remote-sources"
+description = "Allows get_remote_sources IPC."
+commands.allow = ["get_remote_sources"]

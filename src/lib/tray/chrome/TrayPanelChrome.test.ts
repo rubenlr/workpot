@@ -1,4 +1,4 @@
-import { cleanup, render } from "@testing-library/svelte";
+import { cleanup, fireEvent, render } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import TrayPanelChrome from "./TrayPanelChrome.svelte";
 import type { SectionedRepos } from "$lib/tray/logic/list/sort";
@@ -13,6 +13,7 @@ const emptySections: SectionedRepos = {
   dirty: [],
   recent: [],
   rest: [],
+  remote: [],
 };
 
 const baseRepo: RepoDto = {
@@ -47,6 +48,8 @@ function renderChrome(
     detailRepo?: RepoDto | null;
     sectionedRepos?: SectionedRepos;
     flatIndexByPath?: Map<string, number>;
+    cloningPaths?: string[];
+    onClone?: (repo: RepoDto) => void;
   } = {},
 ) {
   const sections = opts.sectionedRepos ?? emptySections;
@@ -84,6 +87,8 @@ function renderChrome(
       onOpen: vi.fn(),
       onDetail: vi.fn() as (repo: RepoDto, index: number) => void,
       detailRepo: opts.detailRepo ?? null,
+      cloningPaths: opts.cloningPaths,
+      onClone: opts.onClone,
       onCloseDetail: vi.fn(),
       onDetailMutated: vi.fn(),
     },
@@ -171,5 +176,63 @@ describe("TrayPanelChrome", () => {
     expect(getByRole("alert")).toBeTruthy();
     expect(getByText("git push failed: rejected")).toBeTruthy();
     expect(getAllByRole("list").length).toBeGreaterThan(0);
+  });
+
+  describe("detail pane routing", () => {
+    const notCloned: RepoDto = {
+      ...baseRepo,
+      name: "api",
+      path: "/code/acme/api",
+      branch: null,
+      is_dirty: null,
+      cloned: false,
+      remote_full_path: "acme/platform/api",
+    };
+
+    it("routes_a_not_cloned_detailRepo_to_RemoteDetailPane", () => {
+      const { getByTestId, getByRole, queryByRole } = renderChrome({
+        detailRepo: notCloned,
+      });
+      expect(getByTestId("remote-detail-pane")).toBeTruthy();
+      expect(getByRole("button", { name: "Clone" })).toBeTruthy();
+      expect(queryByRole("button", { name: /Close detail pane/ })).toBeTruthy();
+    });
+
+    it("routes_a_cloned_detailRepo_to_DetailPane_not_RemoteDetailPane", () => {
+      const { queryByTestId, queryByRole } = renderChrome({
+        detailRepo: baseRepo,
+      });
+      expect(queryByTestId("remote-detail-pane")).toBeNull();
+      expect(queryByRole("button", { name: "Clone" })).toBeNull();
+      expect(queryByRole("heading", { level: 2 })).toBeTruthy();
+    });
+
+    it("passes_cloning_state_and_onClone_to_RemoteDetailPane", async () => {
+      const onClone = vi.fn();
+      const idle = renderChrome({ detailRepo: notCloned, onClone });
+      await fireEvent.click(idle.getByRole("button", { name: "Clone" }));
+      expect(onClone).toHaveBeenCalledExactlyOnceWith(notCloned);
+      idle.unmount();
+
+      const busy = renderChrome({
+        detailRepo: notCloned,
+        onClone,
+        cloningPaths: [notCloned.path],
+      });
+      const button = busy.getByRole("button", { name: /Cloning/ });
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("forwards_cloningPaths_and_onClone_to_the_list_body", async () => {
+      const onClone = vi.fn();
+      const { getByRole } = renderChrome({
+        listView: { kind: "list" },
+        sectionedRepos: { ...emptySections, remote: [notCloned] },
+        flatIndexByPath: new Map([[notCloned.path, 0]]),
+        onClone,
+      });
+      await fireEvent.click(getByRole("button", { name: "Clone api" }));
+      expect(onClone).toHaveBeenCalledExactlyOnceWith(notCloned);
+    });
   });
 });

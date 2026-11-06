@@ -12,6 +12,12 @@ export interface SyncSummary {
   skipped: number;
   git_refreshed: number;
   git_errors: number;
+  remote_indexed?: number;
+  remote_added?: number;
+  remote_cloned?: number;
+  remote_pruned?: number;
+  /** Soft per-source errors from the remote catalog pass. */
+  remote_errors?: string[];
 }
 
 export interface GitRefreshSummary {
@@ -37,6 +43,31 @@ export interface ActiveSync {
 
 export interface ActiveConvert {
   repoPath: string;
+}
+
+export interface RepoCloneEvent {
+  repo_path: string;
+  new_path?: string;
+  opened?: boolean;
+  error?: string;
+}
+
+export type ClonePolicy = "manual" | "on_open" | "auto";
+
+export interface RemoteSourceDto {
+  name: string;
+  provider: "github" | "gitlab";
+  host: string;
+  path: string;
+  clone_root: string;
+  clone_policy: ClonePolicy;
+  prune_removed: boolean;
+  repo_count: number;
+  cloned_count: number;
+  removed_upstream_count: number;
+  last_sync_status: "ok" | "error" | null;
+  last_sync_at: number | null;
+  last_sync_message: string | null;
 }
 
 export interface RepoConvertEvent {
@@ -75,4 +106,21 @@ export interface RepoDto {
   is_bare: boolean;
   convert_to: "bare" | "local" | null;
   convert_block_reason: string | null;
+  /**
+   * `false` for an indexed remote repo with no local clone (`path` is then the planned clone
+   * path). Absent/`true` for ordinary catalog repos.
+   */
+  cloned?: boolean;
+  remote_url?: string | null;
+  /** Full path on the host, e.g. `acme/platform/api`. */
+  remote_full_path?: string | null;
+  remote_source?: string | null;
+  clone_policy?: ClonePolicy | null;
+  /** Local clone whose upstream repo no longer exists. */
+  removed_upstream?: boolean;
+}
+
+/** True unless the repo is an indexed remote entry that has not been cloned yet. */
+export function isCloned(repo: RepoDto): boolean {
+  return repo.cloned !== false;
 }

@@ -4,23 +4,24 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::AppState;
+use crate::domain::config::ClonePolicy;
+
+/// Location of the bundled CLI inside an `Applications` directory.
+#[cfg(target_os = "macos")]
+const CURSOR_BUNDLED_CLI: &str = "Applications/Cursor.app/Contents/Resources/app/bin/cursor";
 
 /// macOS Cursor.app bundled CLI locations (bare `cursor` is often missing from GUI PATH).
 #[cfg(target_os = "macos")]
 fn cursor_bundled_candidates() -> Vec<PathBuf> {
-    let mut paths = vec![PathBuf::from(
-        "/Applications/Cursor.app/Contents/Resources/app/bin/cursor",
-    )];
+    let mut paths = vec![PathBuf::from("/").join(CURSOR_BUNDLED_CLI)];
     if let Some(home) = std::env::var_os("HOME") {
-        paths.push(
-            PathBuf::from(home).join("Applications/Cursor.app/Contents/Resources/app/bin/cursor"),
-        );
+        paths.push(PathBuf::from(home).join(CURSOR_BUNDLED_CLI));
     }
     paths
 }
 
 /// Resolve bare `cursor` to an installed Cursor.app binary on macOS; honor absolute paths and other programs.
-pub fn resolve_launch_program(program: &str) -> String {
+fn resolve_launch_program(program: &str) -> String {
     if program != "cursor" {
         return program.to_string();
     }
@@ -36,13 +37,14 @@ pub fn resolve_launch_program(program: &str) -> String {
 }
 
 /// Split `launch_cmd` template into program + args after substituting `{path}`.
-pub fn build_command(template: &str, repo_path: &Path) -> Result<(String, Vec<String>), String> {
+fn build_command(template: &str, repo_path: &Path) -> Result<(String, Vec<String>), String> {
     crate::services::path_cmd_template::build_path_cmd_template(template, repo_path, "launch_cmd")
 }
 
 /// Launch an indexed repo via configured `launch_cmd` and record `last_opened_at` on success.
 pub fn launch_repo(ctx: &AppState, path: &str) -> Result<(), String> {
-    let catalog_path = Path::new(path);
+    let cloned_path = ensure_cloned_for_open(ctx, path)?;
+    let catalog_path = cloned_path.as_deref().unwrap_or_else(|| Path::new(path));
     let launch_path = ctx
         .catalog_launch_path(catalog_path)
         .map_err(|e| e.to_string())?;
@@ -54,11 +56,47 @@ pub fn launch_repo(ctx: &AppState, path: &str) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("failed to launch {program}: {e}"))?;
     std::thread::spawn(move || {
-        let _ = child.wait();
+        if let Err(e) = child.wait() {
+            log::warn!("waiting for the launched IDE process failed: {e}");
+        }
     });
     ctx.touch_last_opened_at(catalog_path)
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// When `path` is an indexed-but-not-cloned remote repo, clone it first if its source policy
+/// allows (`on_open` / `auto`). Returns the catalog path of the fresh clone, or `None` when
+/// `path` is not a remote-only entry.
+pub fn ensure_cloned_for_open(
+    ctx: &AppState,
+    path: &str,
+) -> Result<Option<std::path::PathBuf>, String> {
+    let Some(record) = ctx
+        .remote_only_record(Path::new(path))
+        .map_err(|e| e.to_string())?
+    else {
+        return Ok(None);
+    };
+    let policy = ctx
+        .config()
+        .map_err(|e| e.to_string())?
+        .remote(&record.source_id)
+        .map(|s| s.clone_policy)
+        .ok_or_else(|| {
+            format!(
+                "remote source {:?} is no longer configured",
+                record.source_id
+            )
+        })?;
+    if policy == ClonePolicy::Manual {
+        return Err(format!(
+            "{} is not cloned; clone it first (`workpot clone {}`)",
+            record.full_path, record.full_path
+        ));
+    }
+    let outcome = ctx.clone_remote(path).map_err(|e| e.to_string())?;
+    Ok(Some(outcome.local_path))
 }
 
 #[cfg(test)]

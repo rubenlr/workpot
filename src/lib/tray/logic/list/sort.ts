@@ -1,18 +1,25 @@
+import { isCloned } from "$lib/types";
 import type { RepoDto } from "$lib/types";
 
-export type Section = "pinned" | "dirty" | "recent" | "rest";
+export type Section = "pinned" | "dirty" | "recent" | "rest" | "remote";
 
 export interface SectionedRepos {
   pinned: RepoDto[];
   dirty: RepoDto[];
   recent: RepoDto[];
   rest: RepoDto[];
+  /** Indexed remote repos that are not cloned yet. */
+  remote: RepoDto[];
 }
 
 export interface SectionConfig {
   maxRecentDays: number;
   minRecentCount: number;
 }
+
+/** `pin_order` fallback that sorts an unordered pinned repo after every ordered one. */
+const UNORDERED_PIN_ORDER = 999;
+const SECS_PER_DAY = 86400;
 
 function dirtyTier(repo: RepoDto): number {
   if (repo.is_dirty === true) {
@@ -48,48 +55,68 @@ export function traySort(a: RepoDto, b: RepoDto): number {
   return byLastOpenedDesc(a, b);
 }
 
-export function sectionSort(
-  repos: RepoDto[],
+/** Recent section: opened within the window, padded up to `minRecentCount` with the next most recent. */
+function pickRecent(
+  nonDirty: RepoDto[],
   config: SectionConfig,
   nowSeconds: number,
-): SectionedRepos {
-  const pinned = repos
-    .filter((r) => r.pinned)
-    .sort((a, b) => (a.pin_order ?? 999) - (b.pin_order ?? 999));
-
-  const nonPinned = repos.filter((r) => !r.pinned);
-  const dirty = nonPinned
-    .filter((r) => r.is_dirty === true)
-    .sort(byLastOpenedDesc);
-
-  const nonDirty = nonPinned.filter((r) => r.is_dirty !== true);
-  const windowSecs = config.maxRecentDays * 86400;
-
-  const recentByTime = nonDirty
+): RepoDto[] {
+  const windowSecs = config.maxRecentDays * SECS_PER_DAY;
+  const recent = nonDirty
     .filter(
       (r) =>
         r.last_opened_at != null && nowSeconds - r.last_opened_at < windowSecs,
     )
     .sort(byLastOpenedDesc);
-
-  const recent = [...recentByTime];
-  if (recent.length < config.minRecentCount) {
-    const inRecent = new Set(recent);
-    const candidates = nonDirty
-      .filter((r) => !inRecent.has(r) && r.last_opened_at != null)
-      .sort(byLastOpenedDesc);
-    for (const r of candidates) {
-      if (recent.length >= config.minRecentCount) {
-        break;
-      }
-      recent.push(r);
-    }
+  if (recent.length >= config.minRecentCount) {
+    return recent;
   }
+  const inRecent = new Set(recent);
+  const candidates = nonDirty
+    .filter((r) => !inRecent.has(r) && r.last_opened_at != null)
+    .sort(byLastOpenedDesc);
+  for (const r of candidates) {
+    if (recent.length >= config.minRecentCount) {
+      break;
+    }
+    recent.push(r);
+  }
+  return recent;
+}
+
+export function sectionSort(
+  repos: RepoDto[],
+  config: SectionConfig,
+  nowSeconds: number,
+): SectionedRepos {
+  const remote = repos
+    .filter((r) => !isCloned(r))
+    .sort((a, b) =>
+      (a.remote_full_path ?? a.name).localeCompare(
+        b.remote_full_path ?? b.name,
+      ),
+    );
+  const local = repos.filter(isCloned);
+  const pinned = local
+    .filter((r) => r.pinned)
+    .sort(
+      (a, b) =>
+        (a.pin_order ?? UNORDERED_PIN_ORDER) -
+        (b.pin_order ?? UNORDERED_PIN_ORDER),
+    );
+
+  const nonPinned = local.filter((r) => !r.pinned);
+  const dirty = nonPinned
+    .filter((r) => r.is_dirty === true)
+    .sort(byLastOpenedDesc);
+
+  const nonDirty = nonPinned.filter((r) => r.is_dirty !== true);
+  const recent = pickRecent(nonDirty, config, nowSeconds);
 
   const recentSet = new Set(recent);
   const rest = nonDirty
     .filter((r) => !recentSet.has(r))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  return { pinned, dirty, recent, rest };
+  return { pinned, dirty, recent, rest, remote };
 }

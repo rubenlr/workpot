@@ -22,9 +22,12 @@ Inline comments in generated `config.toml` files are sourced from [`crates/workp
 watch_roots = []
 excludes = []
 
+remote_sync_ttl_minutes = 15
+
 [limits]
 max_watch_roots = 100
 max_repos = 1000
+max_remote_repos = 2000
 
 launch_cmd = "cursor --new-window {path}"
 push_cmd = "git -C {path} push origin {branch}"
@@ -54,6 +57,36 @@ project_name_source = "folder_name"
 | `limits.max_repos`       | `1000`  | Maximum number of cataloged repositories.                                                                           |
 
 See also [docs/sync.md](docs/sync.md) for sync scopes (`sync`, `sync local`, fetch-repo) and how panel open / tray Sync / Cmd+R run the full pipeline (locations merge, project attach, git refresh, worktrees/branches persist).
+
+## Remote catalog (`[[remotes]]`)
+
+Each `[[remotes]]` table indexes one GitHub org/user or GitLab group. Manage them with `workpot remotes add|list|set|remove`, or edit `config.toml`. Behaviour is described in [docs/sync.md](docs/sync.md#remote-catalog-sync-sync-remote-catalog).
+
+```toml
+[[remotes]]
+name = "acme"
+provider = "gitlab"
+host = "gitlab.example.com"
+path = "acme/platform"
+clone_root = "~/code/acme"
+clone_policy = "manual"
+prune_removed = false
+include_archived = true
+```
+
+| Key                       | Default              | Description                                                                                                      |
+| ------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `name`                    | —                    | Unique label (letters, digits, `.`, `_`, `-`).                                                                   |
+| `provider`                | —                    | `github` or `gitlab`.                                                                                            |
+| `host`                    | provider public host | `github.com` / `gitlab.com`. Set for GitHub Enterprise or self-hosted GitLab.                                    |
+| `path`                    | —                    | GitHub org/user (single segment), or GitLab group path; subgroups are included.                                  |
+| `clone_root`              | —                    | Directory clones go under (`~` allowed). Must not overlap another source's `clone_root`.                         |
+| `clone_policy`            | `"manual"`           | `manual`, `on_open` (clone when opened) or `auto` (clone during sync). The Clone button works in every mode.     |
+| `prune_removed`           | `false`              | Safe-only deletion of clean, fully pushed clones whose repo was removed upstream.                                |
+| `include_archived`        | `true`               | Show archived repos. They are always indexed, so archiving is never treated as removal.                          |
+| `protocol`                | CLI `git_protocol`   | Optional `ssh` / `https` override. By default Workpot follows `gh                                                | glab config get git_protocol --host <host>`. |
+| `remote_sync_ttl_minutes` | `15`                 | Minimum minutes between remote listings triggered by opening the panel (0 = always). Explicit sync always lists. |
+| `limits.max_remote_repos` | `2000`               | Per-source cap (hard max 50000). A larger listing is rejected and the existing index is kept.                    |
 
 ## Tray settings
 

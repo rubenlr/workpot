@@ -7,9 +7,12 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use workpot_core::domain::config::{ClonePolicy, GitProtocol, RemoteProvider, RemoteSource};
 use workpot_core::infra::paths;
 use workpot_core::infra::store;
 use workpot_core::services::launch::launch_repo;
+use workpot_core::services::remote_catalog::{RemoteRepoRecord, RemoteSourceStatus};
+use workpot_core::services::remotes::RemotePatch;
 use workpot_core::services::repo_convert::{ConvertResult, ConvertTarget};
 use workpot_core::services::repo_fuzzy::fuzzy_match;
 use workpot_core::{
@@ -34,9 +37,10 @@ struct Cli {
 enum Commands {
     /// Print resolved config and database paths (creates defaults on first run).
     Paths,
-    /// Sync catalog from watch roots (and later remotes).
+    /// Sync catalog from remote sources and watch roots.
     ///
-    /// `workpot sync` runs the full orchestrator. `workpot sync local` syncs the local catalog only.
+    /// `workpot sync` runs the full orchestrator (remotes, then local). `workpot sync local` syncs
+    /// the local catalog only; `workpot sync remote` indexes remote sources only.
     /// To scan a single new root immediately, use `workpot roots add` instead.
     Sync {
         #[command(subcommand)]
@@ -50,6 +54,16 @@ enum Commands {
     /// Add, list, or remove filesystem watch roots for automatic discovery.
     #[command(subcommand)]
     Roots(RootsCommands),
+    /// Index GitHub orgs / GitLab groups into the catalog (uses the `gh` / `glab` CLIs).
+    #[command(subcommand)]
+    Remotes(RemotesCommands),
+    /// Clone an indexed remote repo (works under every clone policy).
+    ///
+    /// Accepts the planned clone path, `source:full/path`, the full remote path, or a unique repo name.
+    Clone {
+        /// Remote repo identifier.
+        repo: String,
+    },
     /// List or remove path-exclusion globs applied during local catalog sync scans.
     #[command(subcommand)]
     Excludes(ExcludesCommands),
@@ -109,6 +123,120 @@ struct SettingsArgs {
 enum SyncCommands {
     /// Sync local catalog only (watch-root rescan + git refresh).
     Local,
+    /// Index remote sources only (list, auto-clone, prune per source policy).
+    Remote,
+}
+
+#[derive(Subcommand)]
+enum RemotesCommands {
+    /// Add a remote source: every repo under a GitHub org/user or GitLab group (subgroups included).
+    Add(RemoteAddArgs),
+    /// List configured remote sources with index status.
+    List,
+    /// Remove a source and its index (local clones stay as ordinary repos).
+    Remove {
+        /// Source name.
+        name: String,
+    },
+    /// Change settings of a source.
+    Set(RemoteSetArgs),
+}
+
+#[derive(clap::Args)]
+struct RemoteAddArgs {
+    /// GitHub org/user, or GitLab group path (e.g. `acme/platform`).
+    path: String,
+    /// Hosting provider.
+    #[arg(long, value_enum)]
+    provider: CliProvider,
+    /// Directory clones are placed under (`~` allowed).
+    #[arg(long)]
+    clone_root: PathBuf,
+    /// Source label (default: last segment of PATH).
+    #[arg(long)]
+    name: Option<String>,
+    /// Host for GitHub Enterprise / self-hosted GitLab (default: provider's public host).
+    #[arg(long)]
+    host: Option<String>,
+    /// What happens automatically to repos that are not cloned.
+    #[arg(long, value_enum, default_value = "manual")]
+    policy: CliClonePolicy,
+    /// Safe-only delete of clean, fully pushed clones whose upstream repo was removed.
+    #[arg(long)]
+    prune_removed: bool,
+    /// Hide archived repos.
+    #[arg(long)]
+    exclude_archived: bool,
+    /// Override the CLI's configured `git_protocol` for this source.
+    #[arg(long, value_enum)]
+    protocol: Option<CliProtocol>,
+    /// Do not index right after adding.
+    #[arg(long)]
+    no_sync: bool,
+}
+
+#[derive(clap::Args)]
+struct RemoteSetArgs {
+    /// Source name.
+    name: String,
+    #[arg(long, value_enum)]
+    policy: Option<CliClonePolicy>,
+    #[arg(long)]
+    prune_removed: Option<bool>,
+    #[arg(long)]
+    include_archived: Option<bool>,
+    #[arg(long)]
+    clone_root: Option<PathBuf>,
+    /// `ssh`, `https`, or `default` to follow the CLI's `git_protocol`.
+    #[arg(long)]
+    protocol: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum CliProvider {
+    Github,
+    Gitlab,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum CliClonePolicy {
+    Manual,
+    OnOpen,
+    Auto,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum CliProtocol {
+    Ssh,
+    Https,
+}
+
+impl From<CliProvider> for RemoteProvider {
+    fn from(p: CliProvider) -> Self {
+        match p {
+            CliProvider::Github => Self::Github,
+            CliProvider::Gitlab => Self::Gitlab,
+        }
+    }
+}
+
+impl From<CliClonePolicy> for ClonePolicy {
+    fn from(p: CliClonePolicy) -> Self {
+        match p {
+            CliClonePolicy::Manual => Self::Manual,
+            CliClonePolicy::OnOpen => Self::OnOpen,
+            CliClonePolicy::Auto => Self::Auto,
+        }
+    }
+}
+
+impl From<CliProtocol> for GitProtocol {
+    fn from(p: CliProtocol) -> Self {
+        match p {
+            CliProtocol::Ssh => Self::Ssh,
+            CliProtocol::Https => Self::Https,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -215,8 +343,13 @@ impl fmt::Display for LaunchFailed {
 impl std::error::Error for LaunchFailed {}
 
 fn main() -> ExitCode {
-    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
-        .try_init();
+    // Fails only when a logger is already installed; the logger itself is not usable to say so.
+    if let Err(e) =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+            .try_init()
+    {
+        eprintln!("warning: logger not initialised: {e}");
+    }
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e)
@@ -237,6 +370,10 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn open_context() -> anyhow::Result<AppContext> {
+    AppContext::open().context("failed to open workpot")
 }
 
 fn unix_now_secs() -> i64 {
@@ -264,6 +401,8 @@ fn run() -> anyhow::Result<()> {
         Commands::Repo(sub) => run_repo(sub),
         Commands::Excludes(sub) => run_excludes(sub),
         Commands::Roots(sub) => run_roots(sub),
+        Commands::Remotes(sub) => run_remotes(sub),
+        Commands::Clone { repo } => run_clone(&repo),
         Commands::Tag(action) => run_tag(action),
         Commands::Search { query } => run_search(&query),
         Commands::Open { repo } => run_open(&repo),
@@ -298,9 +437,7 @@ fn run_db_reset() -> anyhow::Result<()> {
 
 fn run_settings(args: SettingsArgs) -> anyhow::Result<()> {
     if args.add_comments && args.command.is_some() {
-        return Err(anyhow::anyhow!(
-            "settings: use either a subcommand or --add-comments, not both"
-        ));
+        anyhow::bail!("settings: use either a subcommand or --add-comments, not both");
     }
     match args.command {
         Some(SettingsCommands::Init { force }) => run_settings_init(force),
@@ -339,7 +476,7 @@ fn run_settings_add_comments() -> anyhow::Result<()> {
 }
 
 fn run_paths() -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     println!("config: {}", ctx.config_path().display());
     println!("database: {}", ctx.database_path().display());
     let roots = ctx.roots_list()?;
@@ -354,11 +491,49 @@ fn run_paths() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn print_remote_summary(summary: &workpot_core::services::remote_catalog_sync::RemoteSyncSummary) {
+    if summary.sources == 0 {
+        return;
+    }
+    println!(
+        "remote: {} indexed, +{} new, {} gone, {} cloned, {} pruned, {} errors{}",
+        summary.indexed,
+        summary.added,
+        summary.gone,
+        summary.cloned,
+        summary.pruned,
+        summary.errors,
+        if summary.skipped_ttl > 0 {
+            format!(
+                " ({} source(s) skipped: synced recently)",
+                summary.skipped_ttl
+            )
+        } else {
+            String::new()
+        }
+    );
+    for err in &summary.source_errors {
+        eprintln!("warning: remote {}: {}", err.source, err.message);
+    }
+}
+
 fn run_sync_cmd(scope: Option<SyncCommands>) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     let (label, summary) = match scope {
-        None => ("sync", ctx.run_sync()?),
+        None => {
+            let full = ctx.run_sync_full(true)?;
+            print_remote_summary(&full.remote);
+            ("sync", full.local)
+        }
         Some(SyncCommands::Local) => ("sync local", ctx.run_local_catalog_sync()?),
+        Some(SyncCommands::Remote) => {
+            let remote = ctx.run_remote_catalog_sync(true)?;
+            if remote.sources == 0 {
+                println!("sync remote: no remote sources configured (see `workpot remotes add`)");
+            }
+            print_remote_summary(&remote);
+            return Ok(());
+        }
     };
     println!(
         "{label}: +{} -{} skipped {} / git: {} refreshed, {} errors",
@@ -367,80 +542,281 @@ fn run_sync_cmd(scope: Option<SyncCommands>) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn run_remotes(sub: RemotesCommands) -> anyhow::Result<()> {
+    let ctx = open_context()?;
+    match sub {
+        RemotesCommands::Add(args) => run_remotes_add(&ctx, args),
+        RemotesCommands::List => run_remotes_list(&ctx),
+        RemotesCommands::Remove { name } => run_remotes_remove(&ctx, &name),
+        RemotesCommands::Set(args) => run_remotes_set(&ctx, args),
+    }
+}
+
+fn run_remotes_add(ctx: &AppContext, args: RemoteAddArgs) -> anyhow::Result<()> {
+    let trimmed = args.path.trim().trim_matches('/').to_string();
+    let name = args
+        .name
+        .unwrap_or_else(|| trimmed.rsplit('/').next().unwrap_or(&trimmed).to_string());
+    let source = RemoteSource {
+        name: name.clone(),
+        provider: args.provider.into(),
+        host: args.host,
+        path: trimmed,
+        clone_root: args.clone_root,
+        clone_policy: args.policy.into(),
+        prune_removed: args.prune_removed,
+        include_archived: !args.exclude_archived,
+        protocol: args.protocol.map(Into::into),
+    };
+    ctx.remotes_add(source).map_err(map_remote_error)?;
+    println!("added remote source {name}");
+    if !args.no_sync {
+        let summary = ctx.run_remote_catalog_sync(true)?;
+        print_remote_summary(&summary);
+    }
+    Ok(())
+}
+
+fn run_remotes_list(ctx: &AppContext) -> anyhow::Result<()> {
+    let statuses = ctx.remote_source_statuses()?;
+    if statuses.is_empty() {
+        println!("no remote sources configured (see `workpot remotes add`)");
+    }
+    let now = unix_now_secs();
+    for status in &statuses {
+        println!("{}", format_remote_source_line(status));
+        println!("{}", format_last_sync_line(status, now));
+    }
+    Ok(())
+}
+
+fn format_remote_source_line(s: &RemoteSourceStatus) -> String {
+    let removed_upstream = if s.gone_count > 0 {
+        format!(" removed-upstream={}", s.gone_count)
+    } else {
+        String::new()
+    };
+    format!(
+        "{} {}:{}/{} -> {} policy={} prune={} repos={} cloned={}{}",
+        s.name,
+        s.provider.as_str(),
+        s.host,
+        s.path,
+        s.clone_root.display(),
+        s.clone_policy.as_str(),
+        if s.prune_removed { "on" } else { "off" },
+        s.repo_count,
+        s.cloned_count,
+        removed_upstream,
+    )
+}
+
+fn format_last_sync_line(s: &RemoteSourceStatus, now: i64) -> String {
+    match (s.last_run_status.as_deref(), s.last_run_at) {
+        (Some(status), Some(at)) => {
+            let ago = format_ago(now.saturating_sub(at));
+            match s.last_run_message.as_deref() {
+                Some(msg) if status == "error" => format!("  last sync: error {ago} ago: {msg}"),
+                _ => format!("  last sync: {status} {ago} ago"),
+            }
+        }
+        _ => "  last sync: never (run `workpot sync remote`)".to_string(),
+    }
+}
+
+fn run_remotes_remove(ctx: &AppContext, name: &str) -> anyhow::Result<()> {
+    ctx.remotes_remove(name).map_err(map_remote_error)?;
+    println!("removed remote source {name}");
+    Ok(())
+}
+
+/// `None` = leave unchanged, `Some(None)` = follow the CLI's `git_protocol`, `Some(Some(p))` = pin `p`.
+fn parse_protocol_override(raw: Option<&str>) -> anyhow::Result<Option<Option<GitProtocol>>> {
+    match raw {
+        None => Ok(None),
+        Some("default") => Ok(Some(None)),
+        Some(raw) => GitProtocol::parse(raw)
+            .map(|protocol| Some(Some(protocol)))
+            .ok_or_else(|| anyhow::anyhow!("invalid protocol {raw:?}: use ssh, https, or default")),
+    }
+}
+
+fn run_remotes_set(ctx: &AppContext, args: RemoteSetArgs) -> anyhow::Result<()> {
+    let protocol = parse_protocol_override(args.protocol.as_deref())?;
+    ctx.remotes_set(
+        &args.name,
+        RemotePatch {
+            clone_policy: args.policy.map(Into::into),
+            prune_removed: args.prune_removed,
+            include_archived: args.include_archived,
+            clone_root: args.clone_root,
+            protocol,
+        },
+    )
+    .map_err(map_remote_error)?;
+    println!("updated remote source {}", args.name);
+    Ok(())
+}
+
+const SECS_PER_MINUTE: i64 = 60;
+const SECS_PER_HOUR: i64 = 60 * SECS_PER_MINUTE;
+const SECS_PER_DAY: i64 = 24 * SECS_PER_HOUR;
+
+fn format_ago(secs: i64) -> String {
+    match secs {
+        s if s < SECS_PER_MINUTE => format!("{s}s"),
+        s if s < SECS_PER_HOUR => format!("{}m", s / SECS_PER_MINUTE),
+        s if s < SECS_PER_DAY => format!("{}h", s / SECS_PER_HOUR),
+        s => format!("{}d", s / SECS_PER_DAY),
+    }
+}
+
+fn map_remote_error(err: WorkpotError) -> anyhow::Error {
+    match err {
+        WorkpotError::Config(msg) | WorkpotError::InvalidInput(msg) => {
+            anyhow::anyhow!("error: {msg}")
+        }
+        WorkpotError::NotFound(what) => anyhow::anyhow!("error: not found: {what}"),
+        other => anyhow::Error::new(other),
+    }
+}
+
+fn run_clone(identifier: &str) -> anyhow::Result<()> {
+    let ctx = open_context()?;
+    let outcome = ctx.clone_remote(identifier).map_err(|e| match e {
+        WorkpotError::NotFound(_) => anyhow::anyhow!(
+            "remote repo not found: {identifier} (run `workpot sync remote` to refresh the index)"
+        ),
+        other => anyhow::Error::new(other),
+    })?;
+    if outcome.already_cloned {
+        println!("already cloned: {}", outcome.local_path.display());
+    } else {
+        println!("cloned: {}", outcome.local_path.display());
+    }
+    Ok(())
+}
+
+/// Row-compatible stand-in so remote-only repos reuse the local fuzzy matcher and row format.
+fn remote_as_repo_record(record: &RemoteRepoRecord) -> RepoRecord {
+    RepoRecord {
+        path: record.clone_path.clone(),
+        name: record.name.clone(),
+        registered_at: record.first_seen_at,
+        source: "remote".to_string(),
+        git_common_dir: String::new(),
+        branch: None,
+        is_dirty: None,
+        ahead: None,
+        behind: None,
+        git_refreshed_at: None,
+        git_state_error: None,
+        last_opened_at: None,
+        pinned: false,
+        pin_order: None,
+        notes: None,
+        tags: vec![record.full_path.clone()],
+        alias: None,
+        convert_block_reason: None,
+    }
+}
+
+fn print_remote_only(ctx: &AppContext, query: &str) -> anyhow::Result<()> {
+    for record in ctx.list_remote_only()? {
+        let stand_in = remote_as_repo_record(&record);
+        if !query.is_empty() && !fuzzy_match(query, &stand_in) {
+            continue;
+        }
+        println!(
+            "☁️ {} {} (not cloned)",
+            list_display::shorten_parent_dir(&record.clone_path),
+            record.name
+        );
+    }
+    Ok(())
+}
+
 fn run_list() -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     let repos = ctx.list_repos().context("list failed")?;
-    print_ordered_repos(&ctx, repos)
+    print_ordered_repos(&ctx, repos)?;
+    print_remote_only(&ctx, "")
 }
 
 fn run_search(query: &str) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     let mut repos = ctx.list_repos().context("list failed")?;
-    // Trim query; empty (or whitespace-only) → retain all (D-05, RESEARCH pitfall 6).
-    // fuzzy_match already handles empty query as "match all", but retaining explicitly
-    // keeps the intent clear and avoids the filter allocation on the common no-query path.
+    // An empty (or whitespace-only) query keeps every repo; skipping the filter also avoids
+    // an allocation on the common no-query path.
     let trimmed = query.trim();
     if !trimmed.is_empty() {
         repos.retain(|r| fuzzy_match(trimmed, r));
     }
-    print_ordered_repos(&ctx, repos)
+    print_ordered_repos(&ctx, repos)?;
+    print_remote_only(&ctx, trimmed)
 }
 
 fn run_repo(sub: RepoCommands) -> anyhow::Result<()> {
     match sub {
         RepoCommands::Add { path } => {
-            let ctx = AppContext::open().context("failed to open workpot")?;
+            let ctx = open_context()?;
             let record = ctx.register_manual(&path).context("repo add failed")?;
             println!("registered: {}", record.path.display());
         }
-        RepoCommands::List => {
-            let ctx = AppContext::open().context("failed to open workpot")?;
-            let repos = ctx.list_repos().context("repo list failed")?;
-            for repo in repos {
-                let display_name = repo.alias.as_deref().unwrap_or(&repo.name);
-                println!(
-                    "{}  {}  {}",
-                    display_name,
-                    repo.path.display(),
-                    format_git_state(&repo)
-                );
-            }
-        }
+        RepoCommands::List => run_repo_list()?,
         RepoCommands::Remove { path } => {
-            let ctx = AppContext::open().context("failed to open workpot")?;
+            let ctx = open_context()?;
             ctx.remove_repo(&path).context("repo remove failed")?;
             println!("removed: {}", path.display());
         }
-        RepoCommands::Convert { path, to, dry_run } => {
-            let ctx = AppContext::open().context("failed to open workpot")?;
-            let core_target = match to {
-                CliConvertTarget::Bare => ConvertTarget::Bare,
-                CliConvertTarget::Local => ConvertTarget::Local,
-            };
-            match ctx
-                .convert_repo(&path, core_target, dry_run)
-                .map_err(map_convert_error)?
-            {
-                ConvertResult::Converted { from, to } => {
-                    println!("converted: {} -> {}", from.display(), to.display());
-                }
-                ConvertResult::DryRun {
-                    preflight,
-                    resolved_paths,
-                } => {
-                    for (label, resolved) in resolved_paths {
-                        println!("  {}: {}", label, resolved.display());
-                    }
-                    println!("preflight: {preflight:?}");
-                }
+        RepoCommands::Convert { path, to, dry_run } => run_repo_convert(&path, to, dry_run)?,
+    }
+    Ok(())
+}
+
+fn run_repo_list() -> anyhow::Result<()> {
+    let ctx = open_context()?;
+    let repos = ctx.list_repos().context("repo list failed")?;
+    for repo in repos {
+        let display_name = repo.alias.as_deref().unwrap_or(&repo.name);
+        println!(
+            "{}  {}  {}",
+            display_name,
+            repo.path.display(),
+            format_git_state(&repo)
+        );
+    }
+    Ok(())
+}
+
+fn run_repo_convert(path: &Path, to: CliConvertTarget, dry_run: bool) -> anyhow::Result<()> {
+    let ctx = open_context()?;
+    let core_target = match to {
+        CliConvertTarget::Bare => ConvertTarget::Bare,
+        CliConvertTarget::Local => ConvertTarget::Local,
+    };
+    match ctx
+        .convert_repo(path, core_target, dry_run)
+        .map_err(map_convert_error)?
+    {
+        ConvertResult::Converted { from, to } => {
+            println!("converted: {} -> {}", from.display(), to.display());
+        }
+        ConvertResult::DryRun {
+            preflight,
+            resolved_paths,
+        } => {
+            for (label, resolved) in resolved_paths {
+                println!("  {}: {}", label, resolved.display());
             }
+            println!("preflight: {preflight:?}");
         }
     }
     Ok(())
 }
 
 fn run_excludes(sub: ExcludesCommands) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     match sub {
         ExcludesCommands::List => {
             for glob in ctx.excludes_list()? {
@@ -457,7 +833,7 @@ fn run_excludes(sub: ExcludesCommands) -> anyhow::Result<()> {
 }
 
 fn run_roots(sub: RootsCommands) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     match sub {
         RootsCommands::Add { path } => {
             ctx.roots_add(&path).map_err(map_roots_error)?;
@@ -478,7 +854,7 @@ fn run_roots(sub: RootsCommands) -> anyhow::Result<()> {
 }
 
 fn run_tag(action: TagAction) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
+    let ctx = open_context()?;
     match action {
         TagAction::Add { repo, tag } => {
             let path_key = resolve_repo_identifier(&ctx, &repo)?;
@@ -504,10 +880,10 @@ fn run_tag(action: TagAction) -> anyhow::Result<()> {
 }
 
 fn run_open(identifier: &str) -> anyhow::Result<()> {
-    let ctx = AppContext::open().context("failed to open workpot")?;
-    // resolve_repo_identifier handles D-09 (ambiguous) and D-11 (not found) exits via Err
+    let ctx = open_context()?;
+    // Ambiguous and not-found identifiers come back as errors.
     let path_key = resolve_repo_identifier(&ctx, identifier)?;
-    // D-10: print full canonical path before launch
+    // Print the full canonical path before launch.
     println!("opening: {path_key}");
     launch_repo(&ctx, &path_key).map_err(LaunchFailed)?;
     Ok(())
@@ -517,21 +893,12 @@ fn run_open(identifier: &str) -> anyhow::Result<()> {
 fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result<String> {
     let identifier = identifier.trim();
     if identifier.is_empty() {
-        return Err(anyhow::anyhow!("repo not found: (empty identifier)"));
+        anyhow::bail!("repo not found: (empty identifier)");
     }
     let repos = ctx.list_repos().context("failed to list repos")?;
 
-    if let Some(path_key) = match_repo_path_key(&repos, identifier) {
-        return Ok(path_key);
-    }
-
-    let path = Path::new(identifier);
-    if (path.is_absolute() || identifier.contains(std::path::MAIN_SEPARATOR))
-        && let Ok(canon) = path.canonicalize()
-        && let Some(path_key) = repos
-            .iter()
-            .find(|r| r.path == canon)
-            .map(|r| r.path.display().to_string())
+    if let Some(path_key) = match_repo_path_key(&repos, identifier)
+        .or_else(|| match_canonical_path_key(&repos, identifier))
     {
         return Ok(path_key);
     }
@@ -540,32 +907,54 @@ fn resolve_repo_identifier(ctx: &AppContext, identifier: &str) -> anyhow::Result
         .iter()
         .filter(|r| r.alias.as_deref() == Some(identifier))
         .collect();
-    match alias_matches.len() {
-        0 => {}
-        1 => return Ok(alias_matches[0].path.display().to_string()),
-        _ => {
-            let mut msg = format!("error: ambiguous repo alias '{identifier}'; matches:\n");
-            for (i, r) in alias_matches.iter().enumerate() {
-                msg.push_str(&format!("{}. {}\n", i + 1, r.path.display()));
-            }
-            msg.push_str("use the full path from 'workpot list'");
-            return Err(anyhow::anyhow!("{msg}"));
-        }
+    if let Some(path_key) = unique_match("alias", identifier, &alias_matches)? {
+        return Ok(path_key);
     }
 
-    let matches: Vec<&RepoRecord> = repos.iter().filter(|r| r.name == identifier).collect();
-    match matches.len() {
-        0 => Err(anyhow::anyhow!("repo not found: {identifier}")),
-        1 => Ok(matches[0].path.display().to_string()),
-        _ => {
-            let mut msg = format!("error: ambiguous repo name '{identifier}'; matches:\n");
-            for (i, r) in matches.iter().enumerate() {
+    let name_matches: Vec<&RepoRecord> = repos.iter().filter(|r| r.name == identifier).collect();
+    if let Some(path_key) = unique_match("name", identifier, &name_matches)? {
+        return Ok(path_key);
+    }
+
+    // Not cloned yet: `launch_repo` clones first when the source policy allows it.
+    match ctx.resolve_remote_only(identifier)? {
+        Some(record) => Ok(record.clone_path.display().to_string()),
+        None => Err(anyhow::anyhow!("repo not found: {identifier}")),
+    }
+}
+
+/// Path key of the single repo in `matches`: `None` when empty, an error listing every
+/// candidate when ambiguous. `kind` names the matched field in the message.
+fn unique_match(
+    kind: &str,
+    identifier: &str,
+    matches: &[&RepoRecord],
+) -> anyhow::Result<Option<String>> {
+    match matches {
+        [] => Ok(None),
+        [only] => Ok(Some(only.path.display().to_string())),
+        many => {
+            let mut msg = format!("error: ambiguous repo {kind} '{identifier}'; matches:\n");
+            for (i, r) in many.iter().enumerate() {
                 msg.push_str(&format!("{}. {}\n", i + 1, r.path.display()));
             }
             msg.push_str("use the full path from 'workpot list'");
             Err(anyhow::anyhow!("{msg}"))
         }
     }
+}
+
+/// Path key of the repo whose canonical path is `identifier` (absolute, or relative with a separator).
+fn match_canonical_path_key(repos: &[RepoRecord], identifier: &str) -> Option<String> {
+    let path = Path::new(identifier);
+    if !(path.is_absolute() || identifier.contains(std::path::MAIN_SEPARATOR)) {
+        return None;
+    }
+    let canon = path.canonicalize().ok()?;
+    repos
+        .iter()
+        .find(|r| r.path == canon)
+        .map(|r| r.path.display().to_string())
 }
 
 fn match_repo_path_key(repos: &[RepoRecord], identifier: &str) -> Option<String> {
@@ -766,5 +1155,118 @@ mod cli_parse_tests {
                 },
             }
         ));
+    }
+}
+
+#[cfg(test)]
+mod remote_format_tests {
+    use super::*;
+
+    fn status(gone_count: u32) -> RemoteSourceStatus {
+        RemoteSourceStatus {
+            name: "platform".to_string(),
+            provider: RemoteProvider::Gitlab,
+            host: "git.example.com".to_string(),
+            path: "acme/platform".to_string(),
+            clone_root: PathBuf::from("/tmp/clones"),
+            clone_policy: ClonePolicy::Manual,
+            prune_removed: false,
+            repo_count: 3,
+            cloned_count: 1,
+            gone_count,
+            last_run_status: None,
+            last_run_at: None,
+            last_run_message: None,
+        }
+    }
+
+    #[test]
+    fn parse_protocol_override_distinguishes_unchanged_default_and_pinned() {
+        assert_eq!(parse_protocol_override(None).unwrap(), None);
+        assert_eq!(
+            parse_protocol_override(Some("default")).unwrap(),
+            Some(None)
+        );
+        assert_eq!(
+            parse_protocol_override(Some("ssh")).unwrap(),
+            Some(Some(GitProtocol::Ssh))
+        );
+        assert_eq!(
+            parse_protocol_override(Some("https")).unwrap(),
+            Some(Some(GitProtocol::Https))
+        );
+        let err = parse_protocol_override(Some("bogus")).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "invalid protocol \"bogus\": use ssh, https, or default"
+        );
+    }
+
+    #[test]
+    fn source_line_omits_removed_upstream_when_none_gone() {
+        assert_eq!(
+            format_remote_source_line(&status(0)),
+            "platform gitlab:git.example.com/acme/platform -> /tmp/clones \
+             policy=manual prune=off repos=3 cloned=1"
+        );
+    }
+
+    #[test]
+    fn source_line_appends_removed_upstream_count_and_prune_state() {
+        let mut s = status(2);
+        s.prune_removed = true;
+        assert_eq!(
+            format_remote_source_line(&s),
+            "platform gitlab:git.example.com/acme/platform -> /tmp/clones \
+             policy=manual prune=on repos=3 cloned=1 removed-upstream=2"
+        );
+    }
+
+    #[test]
+    fn last_sync_line_covers_never_ok_and_error() {
+        let now = 10_000;
+        assert_eq!(
+            format_last_sync_line(&status(0), now),
+            "  last sync: never (run `workpot sync remote`)"
+        );
+
+        let mut ok = status(0);
+        ok.last_run_status = Some("ok".to_string());
+        ok.last_run_at = Some(now - 120);
+        assert_eq!(format_last_sync_line(&ok, now), "  last sync: ok 2m ago");
+        // A message on a non-error run is not shown.
+        ok.last_run_message = Some("ignored".to_string());
+        assert_eq!(format_last_sync_line(&ok, now), "  last sync: ok 2m ago");
+
+        let mut err = status(0);
+        err.last_run_status = Some("error".to_string());
+        err.last_run_at = Some(now - 30);
+        err.last_run_message = Some("glab failed".to_string());
+        assert_eq!(
+            format_last_sync_line(&err, now),
+            "  last sync: error 30s ago: glab failed"
+        );
+        // Error without a message falls back to the plain form.
+        err.last_run_message = None;
+        assert_eq!(
+            format_last_sync_line(&err, now),
+            "  last sync: error 30s ago"
+        );
+    }
+
+    #[test]
+    fn format_ago_switches_unit_at_each_boundary() {
+        for (secs, expected) in [
+            (0, "0s"),
+            (59, "59s"),
+            (60, "1m"),
+            (3599, "59m"),
+            (3600, "1h"),
+            (86_399, "23h"),
+            (86_400, "1d"),
+            (172_800, "2d"),
+        ] {
+            assert_eq!(format_ago(secs), expected, "secs={secs}");
+        }
     }
 }

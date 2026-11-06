@@ -172,3 +172,151 @@ describe("RepoListRow", () => {
     expect(onOpen).not.toHaveBeenCalled();
   });
 });
+
+describe("RepoListRow not cloned", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  const remoteRepo: RepoDto = {
+    ...mockRepo,
+    path: "/code/acme/api",
+    name: "api",
+    branch: null,
+    is_dirty: null,
+    cloned: false,
+    remote_full_path: "acme/platform/api",
+    remote_source: "acme",
+    clone_policy: "manual",
+  };
+
+  it("shows the remote path, a Clone button, and no sync badge", () => {
+    // ahead/behind/branch set so a stray SyncBadge would render push/pull controls
+    const { getByRole, getByText, queryByLabelText } = render(RepoListRow, {
+      props: {
+        repo: { ...remoteRepo, ahead: 2, behind: 1, branch: "main" },
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+      },
+    });
+    expect(getByText("acme/platform/api")).toBeTruthy();
+    expect(getByRole("button", { name: "Clone api" })).toBeTruthy();
+    expect(queryByLabelText(/push|pull/i)).toBeNull();
+  });
+
+  it("clicking Clone calls onClone and neither onOpen nor onDetail", async () => {
+    const onOpen = vi.fn();
+    const onDetail = vi.fn();
+    const onClone = vi.fn();
+    const { getByRole } = render(RepoListRow, {
+      props: { repo: remoteRepo, onOpen, onDetail, onClone },
+    });
+    await fireEvent.click(getByRole("button", { name: "Clone api" }));
+    expect(onClone).toHaveBeenCalledOnce();
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(onDetail).not.toHaveBeenCalled();
+  });
+
+  it.each(["manual", "on_open", "auto"] as const)(
+    "Clone is enabled under the %s clone policy",
+    (policy) => {
+      const { getByRole } = render(RepoListRow, {
+        props: {
+          repo: { ...remoteRepo, clone_policy: policy },
+          onOpen: vi.fn(),
+          onDetail: vi.fn(),
+          onClone: vi.fn(),
+        },
+      });
+      expect(
+        (getByRole("button", { name: "Clone api" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    },
+  );
+
+  it("falls back to a Not cloned label when remote_full_path is missing", () => {
+    const { getByText } = render(RepoListRow, {
+      props: {
+        repo: { ...remoteRepo, remote_full_path: null },
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+      },
+    });
+    expect(getByText("Not cloned")).toBeTruthy();
+  });
+
+  it("shows a cloud icon instead of a dirty dot on a not-cloned row", () => {
+    const { container } = render(RepoListRow, {
+      props: {
+        repo: { ...remoteRepo, is_dirty: true },
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+      },
+    });
+    expect(container.querySelector(".h-2.w-2.rounded-full")).toBeNull();
+    expect(container.querySelector(".bg-dirty-amber")).toBeNull();
+  });
+
+  it("shows the dirty dot on a cloned dirty row (contrast case)", () => {
+    const { container } = render(RepoListRow, {
+      props: {
+        repo: { ...mockRepo, is_dirty: true },
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+      },
+    });
+    expect(
+      container.querySelector(".h-2.w-2.rounded-full.bg-dirty-amber"),
+    ).toBeTruthy();
+  });
+
+  it("disables Clone when no onClone handler is provided", () => {
+    const { getByRole } = render(RepoListRow, {
+      props: { repo: remoteRepo, onOpen: vi.fn(), onDetail: vi.fn() },
+    });
+    expect(
+      (getByRole("button", { name: "Clone api" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("disables the button while cloning", () => {
+    const { getByRole } = render(RepoListRow, {
+      props: {
+        repo: remoteRepo,
+        cloning: true,
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+        onClone: vi.fn(),
+      },
+    });
+    const button = getByRole("button", {
+      name: "Clone api",
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain("Cloning");
+  });
+
+  it("flags a local clone that was removed upstream with its branch", () => {
+    const { getByText } = render(RepoListRow, {
+      props: {
+        repo: { ...mockRepo, branch: "main", removed_upstream: true },
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+      },
+    });
+    expect(getByText("removed upstream · main")).toBeTruthy();
+  });
+
+  it("drops the branch suffix from removed upstream when branch is null", () => {
+    const { getByText } = render(RepoListRow, {
+      props: {
+        repo: { ...mockRepo, branch: null, removed_upstream: true },
+        onOpen: vi.fn(),
+        onDetail: vi.fn(),
+      },
+    });
+    expect(getByText("removed upstream")).toBeTruthy();
+  });
+});

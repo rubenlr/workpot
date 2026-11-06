@@ -7,6 +7,8 @@
     selected?: boolean;
     rowIndex?: number;
     listRowDraggable?: boolean;
+    cloning?: boolean;
+    onClone?: () => void;
     onOpen: () => void;
     onDetail: () => void;
     onRowDragStart?: (e: DragEvent) => void;

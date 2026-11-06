@@ -2,21 +2,69 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, LogicalPosition, Manager, State, Window};
 use workpot_core::domain::config::MigrationConfig;
 use workpot_core::infra::git::{BranchKind, BranchRef};
+use workpot_core::services::remote_catalog::RemoteRepoRecord;
 use workpot_core::services::repo_convert::{
     ConvertResult, ConvertTarget, PreflightResult, convert_target_for_record, preflight_message,
     run_volatile_preflight,
 };
-use workpot_core::{AppState, RepoRecord, SyncDirection, run_repo_sync};
+use workpot_core::{AppState, RepoRecord, SyncDirection, SyncFailure, run_repo_sync};
+
+/// Longest accepted tag (mirrors the `workpot tag add` limit in the CLI).
+const MAX_TAG_CHARS: usize = 64;
+const MAX_ALIAS_CHARS: usize = 64;
+const MAX_NOTES_CHARS: usize = 500;
+/// Widest convert-block reason shown in the "Convert to …" context-menu label.
+const MENU_REASON_MAX_CHARS: usize = 48;
+const SECS_PER_DAY: i64 = 86_400;
+/// Labels naming the mutex in `lock_or_warn` poisoned-lock warnings.
+const LOCK_REPO_SYNC: &str = "repo sync state";
+const LOCK_REPO_CONVERT: &str = "repo convert state";
+const LOCK_REPO_CLONE: &str = "repo clone state";
+const LOCK_CONTEXT_MENU: &str = "context menu repo";
+/// `convert_to` / convert-target wire values shared with the frontend.
+const CONVERT_TO_BARE: &str = "bare";
+const CONVERT_TO_LOCAL: &str = "local";
+/// Branch tip time used when a branch has no readable commit (sorts last).
+const NO_TIP_TIME: i64 = i64::MIN;
+/// Id of the tray icon created in `tray::setup_tray`.
+pub(crate) const TRAY_ID: &str = "main";
+/// Context-menu item ids; `lib.rs` matches them in the menu-event handler.
+pub(crate) const MENU_ID_PIN: &str = "pin";
+pub(crate) const MENU_ID_ADD_TAG: &str = "add_tag";
+pub(crate) const MENU_ID_REMOVE_TAG: &str = "remove_tag";
+pub(crate) const MENU_ID_CONVERT: &str = "convert";
+const EVENT_REPO_SYNC_FAILED: &str = "repo-sync-failed";
+const EVENT_REPO_CONVERT_FAILED: &str = "repo-convert-failed";
+const EVENT_REPO_CLONE_FAILED: &str = "repo-clone-failed";
+/// Pause between the two tray "syncing" icon frames.
+const TRAY_SYNC_FRAME_INTERVAL: Duration = Duration::from_millis(350);
+
+/// Lock `mutex`; a poisoned lock is logged (never silently ignored) and yields `None`.
+pub(crate) fn lock_or_warn<'a, T>(mutex: &'a Mutex<T>, what: &str) -> Option<MutexGuard<'a, T>> {
+    match mutex.lock() {
+        Ok(guard) => Some(guard),
+        Err(_) => {
+            log::warn!("{what} lock poisoned");
+            None
+        }
+    }
+}
+
+/// Atomically claim `flag`; true when this call flipped it from free to busy.
+fn try_acquire(flag: &AtomicBool) -> bool {
+    flag.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
+}
 
 /// Prevents overlapping catalog sync jobs (panel open + Cmd+R / menu Sync).
 #[derive(Clone)]
-pub struct CatalogSyncGuard(pub Arc<AtomicBool>);
+pub(crate) struct CatalogSyncGuard(Arc<AtomicBool>);
 
 impl CatalogSyncGuard {
     pub fn new() -> Self {
@@ -25,9 +73,7 @@ impl CatalogSyncGuard {
 
     /// Returns true when this call acquired the sync slot.
     pub fn try_start(&self) -> bool {
-        self.0
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+        try_acquire(&self.0)
     }
 
     pub fn finish(&self) {
@@ -37,7 +83,7 @@ impl CatalogSyncGuard {
 
 /// Prevents overlapping per-branch push/pull sync jobs and tracks the active payload.
 #[derive(Clone)]
-pub struct RepoSyncGuard {
+pub(crate) struct RepoSyncGuard {
     busy: Arc<AtomicBool>,
     active: Arc<Mutex<Option<RepoSyncEventDto>>>,
 }
@@ -50,29 +96,25 @@ impl RepoSyncGuard {
         }
     }
 
-    pub fn try_start(&self, payload: RepoSyncEventDto) -> bool {
-        if self
-            .busy
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+    fn try_start(&self, payload: RepoSyncEventDto) -> bool {
+        if !try_acquire(&self.busy) {
             return false;
         }
-        if let Ok(mut active) = self.active.lock() {
+        if let Some(mut active) = lock_or_warn(&self.active, LOCK_REPO_SYNC) {
             *active = Some(payload);
         }
         true
     }
 
-    pub fn finish(&self) {
-        if let Ok(mut active) = self.active.lock() {
+    fn finish(&self) {
+        if let Some(mut active) = lock_or_warn(&self.active, LOCK_REPO_SYNC) {
             *active = None;
         }
         self.busy.store(false, Ordering::Release);
     }
 
-    pub fn status(&self) -> Option<RepoSyncEventDto> {
-        self.active.lock().ok().and_then(|active| active.clone())
+    fn status(&self) -> Option<RepoSyncEventDto> {
+        lock_or_warn(&self.active, LOCK_REPO_SYNC).and_then(|active| active.clone())
     }
 }
 
@@ -86,7 +128,7 @@ impl Drop for RepoSyncGuardLease {
 
 /// Prevents overlapping per-repo layout conversion jobs and tracks the active path.
 #[derive(Clone)]
-pub struct RepoConvertGuard {
+pub(crate) struct RepoConvertGuard {
     busy: Arc<AtomicBool>,
     active_path: Arc<Mutex<Option<String>>>,
 }
@@ -99,31 +141,25 @@ impl RepoConvertGuard {
         }
     }
 
-    pub fn try_start(&self, repo_path: String) -> bool {
-        if self
-            .busy
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+    fn try_start(&self, repo_path: String) -> bool {
+        if !try_acquire(&self.busy) {
             return false;
         }
-        if let Ok(mut active) = self.active_path.lock() {
+        if let Some(mut active) = lock_or_warn(&self.active_path, LOCK_REPO_CONVERT) {
             *active = Some(repo_path);
         }
         true
     }
 
-    pub fn finish(&self) {
-        if let Ok(mut active) = self.active_path.lock() {
+    fn finish(&self) {
+        if let Some(mut active) = lock_or_warn(&self.active_path, LOCK_REPO_CONVERT) {
             *active = None;
         }
         self.busy.store(false, Ordering::Release);
     }
 
-    pub fn status(&self) -> Option<RepoConvertEventDto> {
-        self.active_path
-            .lock()
-            .ok()
+    fn status(&self) -> Option<RepoConvertEventDto> {
+        lock_or_warn(&self.active_path, LOCK_REPO_CONVERT)
             .and_then(|active| active.clone())
             .map(|repo_path| RepoConvertEventDto {
                 repo_path,
@@ -142,21 +178,21 @@ impl Drop for RepoConvertGuardLease {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct RepoConvertEventDto {
-    pub repo_path: String,
+pub(crate) struct RepoConvertEventDto {
+    repo_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub new_path: Option<String>,
+    new_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
+    error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct RepoSyncEventDto {
-    pub repo_path: String,
-    pub branch: String,
-    pub direction: String,
+pub(crate) struct RepoSyncEventDto {
+    repo_path: String,
+    branch: String,
+    direction: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
+    error: Option<String>,
 }
 
 pub(crate) struct TraySyncAnimationCancel(Arc<AtomicBool>);
@@ -165,8 +201,32 @@ fn log_emit_err(event: &str, err: tauri::Error) {
     log::warn!("failed to emit {event}: {err}");
 }
 
+/// Emit `payload` on `event`; a failed emit is logged, never propagated.
+pub(crate) fn emit_or_log<S: Serialize + Clone>(app: &AppHandle, event: &str, payload: S) {
+    if let Err(e) = app.emit(event, payload) {
+        log_emit_err(event, e);
+    }
+}
+
 /// Active repo path for the most recent `show_repo_context_menu` popup.
-pub struct ContextMenuRepo(pub Arc<Mutex<Option<String>>>);
+pub(crate) struct ContextMenuRepo(pub(crate) Arc<Mutex<Option<String>>>);
+
+impl ContextMenuRepo {
+    /// Repo the open context menu belongs to, if any.
+    pub(crate) fn current(&self) -> Option<String> {
+        lock_or_warn(&self.0, LOCK_CONTEXT_MENU).and_then(|repo| repo.clone())
+    }
+
+    pub(crate) fn clear(&self) {
+        if let Some(mut repo) = lock_or_warn(&self.0, LOCK_CONTEXT_MENU) {
+            *repo = None;
+        }
+    }
+
+    pub(crate) fn is_active(&self) -> bool {
+        lock_or_warn(&self.0, LOCK_CONTEXT_MENU).is_some_and(|repo| repo.is_some())
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -185,46 +245,58 @@ pub(crate) struct ShowRepoContextMenuParams {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct RepoDto {
-    pub path: String,
-    pub name: String,
-    pub alias: Option<String>,
-    pub branch: Option<String>,
-    pub ahead: Option<i64>,
-    pub behind: Option<i64>,
-    pub is_dirty: Option<bool>,
-    pub parent_dir: String,
-    pub last_opened_at: Option<i64>,
-    pub git_state_error: Option<String>,
-    pub pinned: bool,
-    pub pin_order: Option<i64>,
-    pub notes: Option<String>,
-    pub tags: Vec<String>,
-    pub branches: Vec<String>,
-    pub is_bare: bool,
-    pub convert_to: Option<String>,
-    pub convert_block_reason: Option<String>,
+pub(crate) struct RepoDto {
+    path: String,
+    name: String,
+    alias: Option<String>,
+    branch: Option<String>,
+    ahead: Option<i64>,
+    behind: Option<i64>,
+    is_dirty: Option<bool>,
+    parent_dir: String,
+    last_opened_at: Option<i64>,
+    git_state_error: Option<String>,
+    pinned: bool,
+    pin_order: Option<i64>,
+    notes: Option<String>,
+    tags: Vec<String>,
+    branches: Vec<String>,
+    is_bare: bool,
+    convert_to: Option<String>,
+    convert_block_reason: Option<String>,
+    /// `false` for indexed remote repos that have no local clone yet.
+    cloned: bool,
+    /// Web URL of the remote repo (remote catalog entries only).
+    remote_url: Option<String>,
+    /// Full path on the host, e.g. `acme/platform/api` (remote catalog entries only).
+    remote_full_path: Option<String>,
+    /// Configured `[[remotes]]` source name (remote catalog entries only).
+    remote_source: Option<String>,
+    /// `manual` | `on_open` | `auto` (remote catalog entries only).
+    clone_policy: Option<String>,
+    /// Local clone whose upstream repo no longer exists.
+    removed_upstream: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum BranchTrackingDto {
+pub(crate) enum BranchTrackingDto {
     LocalOnly,
     RemoteOnly,
     LocalRemote,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct BranchListItemDto {
-    pub name: String,
-    pub checked_out: bool,
-    pub tracking: BranchTrackingDto,
-    pub ahead: Option<i64>,
-    pub behind: Option<i64>,
-    pub hidden: bool,
+pub(crate) struct BranchListItemDto {
+    name: String,
+    checked_out: bool,
+    tracking: BranchTrackingDto,
+    ahead: Option<i64>,
+    behind: Option<i64>,
+    hidden: bool,
 }
 
-pub fn repo_records_to_dtos(records: Vec<RepoRecord>, migration: &MigrationConfig) -> Vec<RepoDto> {
+fn repo_records_to_dtos(records: Vec<RepoRecord>, migration: &MigrationConfig) -> Vec<RepoDto> {
     records
         .into_iter()
         .map(|record| record_to_dto(record, migration))
@@ -235,21 +307,16 @@ fn path_is_bare(path: &Path) -> bool {
     path.join("HEAD").is_file() && path.join("objects").is_dir()
 }
 
-fn convert_to_for_record(
-    record: &RepoRecord,
-    migration: &MigrationConfig,
-    is_bare: bool,
-) -> Option<String> {
-    let _ = record;
+fn convert_to_for_record(migration: &MigrationConfig, is_bare: bool) -> Option<String> {
     convert_target_for_record(migration, is_bare).map(|target| match target {
-        ConvertTarget::Bare => "bare".to_string(),
-        ConvertTarget::Local => "local".to_string(),
+        ConvertTarget::Bare => CONVERT_TO_BARE.to_string(),
+        ConvertTarget::Local => CONVERT_TO_LOCAL.to_string(),
     })
 }
 
 fn record_to_dto(record: RepoRecord, migration: &MigrationConfig) -> RepoDto {
     let is_bare = path_is_bare(&record.path);
-    let convert_to = convert_to_for_record(&record, migration, is_bare);
+    let convert_to = convert_to_for_record(migration, is_bare);
     RepoDto {
         path: record.path.display().to_string(),
         name: record.name,
@@ -269,6 +336,43 @@ fn record_to_dto(record: RepoRecord, migration: &MigrationConfig) -> RepoDto {
         is_bare,
         convert_to,
         convert_block_reason: record.convert_block_reason,
+        cloned: true,
+        remote_url: None,
+        remote_full_path: None,
+        remote_source: None,
+        clone_policy: None,
+        removed_upstream: false,
+    }
+}
+
+/// Row for an indexed remote repo that is not cloned. `path` is the planned clone path, so it
+/// doubles as the stable row key and is where a clone will land.
+fn remote_record_to_dto(record: &RemoteRepoRecord, clone_policy: Option<String>) -> RepoDto {
+    RepoDto {
+        path: record.clone_path.display().to_string(),
+        name: record.name.clone(),
+        alias: None,
+        branch: None,
+        ahead: None,
+        behind: None,
+        is_dirty: None,
+        parent_dir: parent_dir_display(&record.clone_path),
+        last_opened_at: None,
+        git_state_error: None,
+        pinned: false,
+        pin_order: None,
+        notes: None,
+        tags: vec![],
+        branches: vec![],
+        is_bare: false,
+        convert_to: None,
+        convert_block_reason: None,
+        cloned: false,
+        remote_url: record.web_url.clone(),
+        remote_full_path: Some(record.full_path.clone()),
+        remote_source: Some(record.source_id.clone()),
+        clone_policy,
+        removed_upstream: false,
     }
 }
 
@@ -299,7 +403,7 @@ fn validate_tag(tag: &str) -> Result<(), String> {
     if trimmed.contains('#') {
         return Err("tag may not contain '#'".to_string());
     }
-    if trimmed.chars().count() > 64 {
+    if trimmed.chars().count() > MAX_TAG_CHARS {
         return Err("tag too long".to_string());
     }
     Ok(())
@@ -323,15 +427,15 @@ fn normalize_notes(notes: Option<String>) -> Option<String> {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct TrayConfigDto {
-    pub max_visible_rows: u32,
-    pub max_recent_days: u32,
-    pub min_recent_count: u32,
-    pub max_pinned: u32,
-    pub stale_dirty_days: u32,
+pub(crate) struct TrayConfigDto {
+    max_visible_rows: u32,
+    max_recent_days: u32,
+    min_recent_count: u32,
+    max_pinned: u32,
+    stale_dirty_days: u32,
 }
 
-pub fn tray_config_from(state: &AppState) -> Result<TrayConfigDto, String> {
+fn tray_config_from(state: &AppState) -> Result<TrayConfigDto, String> {
     let config = state.config().map_err(|e| e.to_string())?;
     Ok(TrayConfigDto {
         max_visible_rows: config.max_visible_rows,
@@ -343,7 +447,9 @@ pub fn tray_config_from(state: &AppState) -> Result<TrayConfigDto, String> {
 }
 
 #[tauri::command]
-pub async fn get_tray_config(state: State<'_, Arc<AppState>>) -> Result<TrayConfigDto, String> {
+pub(crate) async fn get_tray_config(
+    state: State<'_, Arc<AppState>>,
+) -> Result<TrayConfigDto, String> {
     let started = Instant::now();
     log::debug!("get_tray_config: start");
     let state = state.inner().clone();
@@ -357,15 +463,47 @@ pub async fn get_tray_config(state: State<'_, Arc<AppState>>) -> Result<TrayConf
     Ok(cfg)
 }
 
+/// Flag local clones whose upstream repo no longer exists; a lookup failure only drops the flags.
+fn flag_removed_upstream(state: &AppState, dtos: &mut [RepoDto]) {
+    match state.removed_upstream_paths() {
+        Ok(flagged) => {
+            for dto in dtos {
+                dto.removed_upstream = flagged.contains(&dto.path);
+            }
+        }
+        Err(e) => log::warn!("list_repos: removed-upstream flags unavailable: {e}"),
+    }
+}
+
+/// Append indexed-but-not-cloned remote repos; a catalog failure only drops those rows.
+fn append_remote_only(state: &AppState, dtos: &mut Vec<RepoDto>) -> Result<(), String> {
+    match state.list_remote_only() {
+        Ok(remote_only) => {
+            let config = state.config().map_err(|e| e.to_string())?;
+            for record in &remote_only {
+                let policy = config
+                    .remote(&record.source_id)
+                    .map(|s| s.clone_policy.as_str().to_string());
+                dtos.push(remote_record_to_dto(record, policy));
+            }
+        }
+        Err(e) => log::warn!("list_repos: remote catalog unavailable: {e}"),
+    }
+    Ok(())
+}
+
 #[tauri::command]
-pub async fn list_repos(state: State<'_, Arc<AppState>>) -> Result<Vec<RepoDto>, String> {
+pub(crate) async fn list_repos(state: State<'_, Arc<AppState>>) -> Result<Vec<RepoDto>, String> {
     let started = Instant::now();
     log::debug!("list_repos: start");
     let state = state.inner().clone();
     let repos = tauri::async_runtime::spawn_blocking(move || {
         let records = state.list_repos().map_err(|e| e.to_string())?;
         let migration = state.config().map_err(|e| e.to_string())?.migration.clone();
-        Ok::<Vec<RepoDto>, String>(repo_records_to_dtos(records, &migration))
+        let mut dtos = repo_records_to_dtos(records, &migration);
+        flag_removed_upstream(&state, &mut dtos);
+        append_remote_only(&state, &mut dtos)?;
+        Ok::<Vec<RepoDto>, String>(dtos)
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -378,7 +516,7 @@ pub async fn list_repos(state: State<'_, Arc<AppState>>) -> Result<Vec<RepoDto>,
 }
 
 #[tauri::command]
-pub fn set_tags(
+pub(crate) fn set_tags(
     repo_path: String,
     tags: Vec<String>,
     state: State<'_, Arc<AppState>>,
@@ -392,7 +530,7 @@ pub fn set_tags(
 }
 
 #[tauri::command]
-pub fn add_tag(
+pub(crate) fn add_tag(
     repo_path: String,
     tag: String,
     state: State<'_, Arc<AppState>>,
@@ -405,7 +543,7 @@ pub fn add_tag(
 }
 
 #[tauri::command]
-pub fn remove_tag(
+pub(crate) fn remove_tag(
     repo_path: String,
     tag: String,
     state: State<'_, Arc<AppState>>,
@@ -417,7 +555,7 @@ pub fn remove_tag(
 }
 
 #[tauri::command]
-pub async fn list_all_tags(state: State<'_, Arc<AppState>>) -> Result<Vec<String>, String> {
+pub(crate) async fn list_all_tags(state: State<'_, Arc<AppState>>) -> Result<Vec<String>, String> {
     let started = Instant::now();
     log::debug!("list_all_tags: start");
     let state = state.inner().clone();
@@ -439,7 +577,7 @@ fn validate_alias(alias: &str) -> Result<(), String> {
     if trimmed.is_empty() {
         return Err("alias must not be empty".to_string());
     }
-    if trimmed.chars().count() > 64 {
+    if trimmed.chars().count() > MAX_ALIAS_CHARS {
         return Err("alias too long".to_string());
     }
     Ok(())
@@ -447,15 +585,15 @@ fn validate_alias(alias: &str) -> Result<(), String> {
 
 fn validate_notes(notes: &Option<String>) -> Result<(), String> {
     if let Some(n) = notes
-        && n.chars().count() > 500
+        && n.chars().count() > MAX_NOTES_CHARS
     {
-        return Err("notes exceed 500 characters".to_string());
+        return Err(format!("notes exceed {MAX_NOTES_CHARS} characters"));
     }
     Ok(())
 }
 
 #[tauri::command]
-pub fn set_alias(
+pub(crate) fn set_alias(
     repo_path: String,
     alias: Option<String>,
     state: State<'_, Arc<AppState>>,
@@ -470,7 +608,7 @@ pub fn set_alias(
 }
 
 #[tauri::command]
-pub fn set_notes(
+pub(crate) fn set_notes(
     repo_path: String,
     notes: Option<String>,
     state: State<'_, Arc<AppState>>,
@@ -484,7 +622,7 @@ pub fn set_notes(
 }
 
 #[tauri::command]
-pub fn set_pin(
+pub(crate) fn set_pin(
     repo_path: String,
     pinned: bool,
     state: State<'_, Arc<AppState>>,
@@ -496,7 +634,7 @@ pub fn set_pin(
 }
 
 #[tauri::command]
-pub fn set_pin_order(
+pub(crate) fn set_pin_order(
     items: Vec<(String, i64)>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
@@ -508,16 +646,14 @@ pub fn set_pin_order(
 }
 
 #[tauri::command]
-pub async fn list_branches(
+pub(crate) async fn list_branches(
     repo_path: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<BranchListItemDto>, String> {
-    {
-        state
-            .inner()
-            .catalog_launch_path(Path::new(&repo_path))
-            .map_err(|e| e.to_string())?;
-    }
+    state
+        .inner()
+        .catalog_launch_path(Path::new(&repo_path))
+        .map_err(|e| e.to_string())?;
     let catalog_refs = state
         .inner()
         .list_location_branches(&repo_path)
@@ -539,7 +675,7 @@ pub async fn list_branches(
 }
 
 #[tauri::command]
-pub fn set_branch_hidden(
+pub(crate) fn set_branch_hidden(
     repo_path: String,
     branch: String,
     hidden: bool,
@@ -592,11 +728,7 @@ struct LocalBranchNames {
 }
 
 fn collect_local_branch_names(repo: &git2::Repository) -> Result<LocalBranchNames, String> {
-    let current = repo
-        .head()
-        .ok()
-        .filter(|head| head.is_branch())
-        .and_then(|head| head.shorthand().ok().map(str::to_string));
+    let current = current_branch_name(repo);
 
     let mut names = Vec::new();
     let mut with_upstream = HashSet::new();
@@ -686,25 +818,25 @@ fn commit_tip_time(repo: &git2::Repository, oid: git2::Oid) -> i64 {
     repo.find_commit(oid)
         .ok()
         .map(|commit| commit.time().seconds())
-        .unwrap_or(i64::MIN)
+        .unwrap_or(NO_TIP_TIME)
 }
 
 fn local_branch_tip_time(repo: &git2::Repository, name: &str) -> i64 {
     let Ok(branch) = repo.find_branch(name, git2::BranchType::Local) else {
-        return i64::MIN;
+        return NO_TIP_TIME;
     };
     branch
         .get()
         .target()
         .map(|oid| commit_tip_time(repo, oid))
-        .unwrap_or(i64::MIN)
+        .unwrap_or(NO_TIP_TIME)
 }
 
 fn remote_only_branch_tip_time(repo: &git2::Repository, short_name: &str) -> i64 {
     let Ok(remotes) = repo.branches(Some(git2::BranchType::Remote)) else {
-        return i64::MIN;
+        return NO_TIP_TIME;
     };
-    let mut max_time = i64::MIN;
+    let mut max_time = NO_TIP_TIME;
     for branch in remotes {
         let Ok((branch, _)) = branch else {
             continue;
@@ -760,29 +892,13 @@ fn list_branches_from_catalog(
     repo_path: &str,
     refs: &[BranchRef],
 ) -> Result<Vec<BranchListItemDto>, String> {
-    let mut local_names = HashSet::new();
-    let mut remote_names = HashSet::new();
-    for branch in refs {
-        match branch.kind {
-            BranchKind::Local => {
-                local_names.insert(branch.name.clone());
-            }
-            BranchKind::Remote => {
-                remote_names.insert(branch.name.clone());
-            }
-        }
-    }
+    let (local_names, remote_names) = partition_catalog_names(refs);
 
     let mut all_names: HashSet<String> = local_names.clone();
     all_names.extend(remote_names.iter().cloned());
 
     let repo = git2::Repository::open(repo_path).ok();
-    let current = repo.as_ref().and_then(|r| {
-        r.head()
-            .ok()
-            .filter(|head| head.is_branch())
-            .and_then(|head| head.shorthand().ok().map(str::to_string))
-    });
+    let current = repo.as_ref().and_then(current_branch_name);
 
     let mut items: Vec<BranchListItemDto> = all_names
         .into_iter()
@@ -808,18 +924,50 @@ fn list_branches_from_catalog(
         })
         .collect();
 
-    items.sort_by(|a, b| {
-        tracking_sort_order(a.tracking)
-            .cmp(&tracking_sort_order(b.tracking))
-            .then_with(|| match &repo {
-                Some(repo) => branch_tip_time(repo, &b.name, b.tracking)
-                    .cmp(&branch_tip_time(repo, &a.name, a.tracking)),
-                None => std::cmp::Ordering::Equal,
-            })
-            .then_with(|| a.name.cmp(&b.name))
-    });
+    items.sort_by(|a, b| compare_branch_items(repo.as_ref(), a, b));
 
     Ok(items)
+}
+
+/// Local and remote branch names of persisted catalog rows.
+fn partition_catalog_names(refs: &[BranchRef]) -> (HashSet<String>, HashSet<String>) {
+    let mut local_names = HashSet::new();
+    let mut remote_names = HashSet::new();
+    for branch in refs {
+        match branch.kind {
+            BranchKind::Local => {
+                local_names.insert(branch.name.clone());
+            }
+            BranchKind::Remote => {
+                remote_names.insert(branch.name.clone());
+            }
+        }
+    }
+    (local_names, remote_names)
+}
+
+/// Short name of the checked-out branch; `None` on a detached HEAD.
+fn current_branch_name(repo: &git2::Repository) -> Option<String> {
+    repo.head()
+        .ok()
+        .filter(|head| head.is_branch())
+        .and_then(|head| head.shorthand().ok().map(str::to_string))
+}
+
+/// Category first, then newest tip first (when `repo` is readable), then name.
+fn compare_branch_items(
+    repo: Option<&git2::Repository>,
+    a: &BranchListItemDto,
+    b: &BranchListItemDto,
+) -> std::cmp::Ordering {
+    tracking_sort_order(a.tracking)
+        .cmp(&tracking_sort_order(b.tracking))
+        .then_with(|| match repo {
+            Some(repo) => branch_tip_time(repo, &b.name, b.tracking)
+                .cmp(&branch_tip_time(repo, &a.name, a.tracking)),
+            None => std::cmp::Ordering::Equal,
+        })
+        .then_with(|| a.name.cmp(&b.name))
 }
 
 fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String> {
@@ -827,8 +975,7 @@ fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String>
     let local = collect_local_branch_names(&repo)?;
     let remote_short_names = collect_remote_branch_short_names(&repo);
 
-    let local_set: HashSet<_> = local.names.iter().cloned().collect();
-    let mut all_names: HashSet<String> = local_set;
+    let mut all_names: HashSet<String> = local.names.iter().cloned().collect();
     all_names.extend(remote_short_names.iter().cloned());
 
     let mut items: Vec<BranchListItemDto> = all_names
@@ -836,15 +983,7 @@ fn list_branches_sync(repo_path: &str) -> Result<Vec<BranchListItemDto>, String>
         .map(|name| branch_list_item(&repo, name, &local, &remote_short_names))
         .collect();
 
-    items.sort_by(|a, b| {
-        tracking_sort_order(a.tracking)
-            .cmp(&tracking_sort_order(b.tracking))
-            .then_with(|| {
-                branch_tip_time(&repo, &b.name, b.tracking)
-                    .cmp(&branch_tip_time(&repo, &a.name, a.tracking))
-            })
-            .then_with(|| a.name.cmp(&b.name))
-    });
+    items.sort_by(|a, b| compare_branch_items(Some(&repo), a, b));
 
     Ok(items)
 }
@@ -859,18 +998,21 @@ fn truncate_menu_reason(reason: &str, max_chars: usize) -> String {
 
 fn convert_menu_label(target: &str, block_reason: Option<&str>) -> String {
     let base = match target {
-        "bare" => "Convert to bare",
-        "local" => "Convert to local",
+        CONVERT_TO_BARE => "Convert to bare",
+        CONVERT_TO_LOCAL => "Convert to local",
         _ => "Convert",
     };
     match block_reason {
-        Some(reason) => format!("{base} — {}", truncate_menu_reason(reason, 48)),
+        Some(reason) => format!(
+            "{base} — {}",
+            truncate_menu_reason(reason, MENU_REASON_MAX_CHARS)
+        ),
         None => base.to_string(),
     }
 }
 
 #[tauri::command]
-pub async fn show_repo_context_menu(
+pub(crate) async fn show_repo_context_menu(
     window: Window,
     app: AppHandle,
     params: ShowRepoContextMenuParams,
@@ -901,35 +1043,72 @@ pub async fn show_repo_context_menu(
         *guard = Some(repo_path.clone());
     }
 
-    let convert_menu_block = if convert_to.is_some() {
-        let repo_path_for_check = repo_path.clone();
-        let volatile_result = tauri::async_runtime::spawn_blocking(move || {
-            run_volatile_preflight(Path::new(&repo_path_for_check))
-        })
-        .await
-        .map_err(|e| format!("volatile preflight task failed: {e}"))?
-        .map_err(|e| e.to_string())?;
+    let convert_menu_block =
+        convert_menu_block_reason(&repo_path, convert_to.is_some(), convert_block_reason).await?;
+    let convert_entry = convert_to.map(|target| {
+        let enabled = convert_menu_block.is_none() && convert_guard.status().is_none();
+        (
+            convert_menu_label(&target, convert_menu_block.as_deref()),
+            enabled,
+        )
+    });
+    let menu = build_repo_context_menu(&app, is_pinned, !tags.is_empty(), convert_entry)?;
 
-        let volatile_reason = match volatile_result {
-            PreflightResult::Ready => None,
-            other => Some(preflight_message(&other)),
-        };
-        volatile_reason.or(convert_block_reason)
-    } else {
-        None
+    let popup_result = match (client_x, client_y) {
+        (Some(x), Some(y)) => menu.popup_at(window, LogicalPosition::new(x, y)),
+        _ => menu.popup(window),
     };
+    if let Err(e) = popup_result {
+        log::warn!("show_repo_context_menu: menu.popup failed: {e}");
+        menu_repo.clear();
+        return Err(e.to_string());
+    }
+    Ok(())
+}
 
+/// Reason the "Convert" menu item is blocked: a fresh volatile preflight wins over the reason
+/// cached in the catalog. `None` when there is no convert entry or nothing blocks it.
+async fn convert_menu_block_reason(
+    repo_path: &str,
+    has_convert_entry: bool,
+    cached_reason: Option<String>,
+) -> Result<Option<String>, String> {
+    if !has_convert_entry {
+        return Ok(None);
+    }
+    let repo_path_for_check = repo_path.to_string();
+    let volatile_result = tauri::async_runtime::spawn_blocking(move || {
+        run_volatile_preflight(Path::new(&repo_path_for_check))
+    })
+    .await
+    .map_err(|e| format!("volatile preflight task failed: {e}"))?
+    .map_err(|e| e.to_string())?;
+
+    let volatile_reason = match volatile_result {
+        PreflightResult::Ready => None,
+        other => Some(preflight_message(&other)),
+    };
+    Ok(volatile_reason.or(cached_reason))
+}
+
+/// Repo context menu: Pin/Unpin, tag actions and, when `convert` is `Some((label, enabled))`,
+/// a separator plus the convert entry.
+fn build_repo_context_menu(
+    app: &AppHandle,
+    is_pinned: bool,
+    has_tags: bool,
+    convert: Option<(String, bool)>,
+) -> Result<Menu<tauri::Wry>, String> {
     let pin_label = if is_pinned { "Unpin" } else { "Pin" };
-    let pin_item =
-        MenuItem::with_id(&app, "pin", pin_label, true, None::<&str>).map_err(|e| e.to_string())?;
-    let add_tag_item = MenuItem::with_id(&app, "add_tag", "Add tag…", true, None::<&str>)
+    let pin_item = MenuItem::with_id(app, MENU_ID_PIN, pin_label, true, None::<&str>)
         .map_err(|e| e.to_string())?;
-    let remove_tag_enabled = !tags.is_empty();
+    let add_tag_item = MenuItem::with_id(app, MENU_ID_ADD_TAG, "Add tag…", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
     let remove_tag_item = MenuItem::with_id(
-        &app,
-        "remove_tag",
+        app,
+        MENU_ID_REMOVE_TAG,
         "Remove tag…",
-        remove_tag_enabled,
+        has_tags,
         None::<&str>,
     )
     .map_err(|e| e.to_string())?;
@@ -937,23 +1116,15 @@ pub async fn show_repo_context_menu(
     let mut menu_items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
         vec![&pin_item, &add_tag_item, &remove_tag_item];
 
-    let separator = if convert_to.is_some() {
-        Some(PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?)
+    let separator = if convert.is_some() {
+        Some(PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?)
     } else {
         None
     };
-
-    let convert_item = convert_to
-        .map(|target| {
-            let enabled = convert_menu_block.is_none() && convert_guard.status().is_none();
-            MenuItem::with_id(
-                &app,
-                "convert",
-                convert_menu_label(&target, convert_menu_block.as_deref()),
-                enabled,
-                None::<&str>,
-            )
-            .map_err(|e| e.to_string())
+    let convert_item = convert
+        .map(|(label, enabled)| {
+            MenuItem::with_id(app, MENU_ID_CONVERT, label, enabled, None::<&str>)
+                .map_err(|e| e.to_string())
         })
         .transpose()?;
 
@@ -963,24 +1134,11 @@ pub async fn show_repo_context_menu(
     if let Some(ref item) = convert_item {
         menu_items.push(item);
     }
-
-    let menu = Menu::with_items(&app, &menu_items).map_err(|e| e.to_string())?;
-    let popup_result = match (client_x, client_y) {
-        (Some(x), Some(y)) => menu.popup_at(window, LogicalPosition::new(x, y)),
-        _ => menu.popup(window),
-    };
-    if let Err(e) = popup_result {
-        log::warn!("show_repo_context_menu: menu.popup failed: {e}");
-        if let Ok(mut guard) = menu_repo.0.lock() {
-            *guard = None;
-        }
-        return Err(e.to_string());
-    }
-    Ok(())
+    Menu::with_items(app, &menu_items).map_err(|e| e.to_string())
 }
 
 fn has_stale_dirty_dto(repos: &[RepoDto], stale_dirty_days: u32) -> bool {
-    let threshold_secs = stale_dirty_days as i64 * 86_400;
+    let threshold_secs = stale_dirty_days as i64 * SECS_PER_DAY;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -997,7 +1155,7 @@ fn has_stale_dirty_dto(repos: &[RepoDto], stale_dirty_days: u32) -> bool {
 }
 
 fn set_tray_syncing_frame(app: &AppHandle, frame_idx: usize) {
-    let Some(tray) = app.tray_by_id("main") else {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
     };
     let Some(icons) = app.try_state::<crate::tray::TrayIcons>() else {
@@ -1020,11 +1178,13 @@ pub(crate) fn start_tray_sync_animation(app: &AppHandle) -> TraySyncAnimationCan
         while !cancel_flag.load(Ordering::Relaxed) {
             let app_for_main = app.clone();
             let idx = frame;
-            let _ = app.run_on_main_thread(move || {
+            if let Err(e) = app.run_on_main_thread(move || {
                 set_tray_syncing_frame(&app_for_main, idx);
-            });
+            }) {
+                log::warn!("tray sync animation: run_on_main_thread failed: {e}");
+            }
             frame = 1 - frame;
-            std::thread::sleep(Duration::from_millis(350));
+            std::thread::sleep(TRAY_SYNC_FRAME_INTERVAL);
         }
     });
     TraySyncAnimationCancel(cancel)
@@ -1040,25 +1200,18 @@ pub(crate) fn update_tray_icon_state(
     stale_dirty_days: u32,
     syncing: bool,
 ) {
-    let Some(tray) = app.tray_by_id("main") else {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
     };
     let Some(icons) = app.try_state::<crate::tray::TrayIcons>() else {
         return;
     };
-    let mode = if syncing {
-        "syncing"
+    let (mode, icon) = if syncing {
+        ("syncing", icons.syncing_frame(0).clone())
     } else if has_stale_dirty_dto(repos, stale_dirty_days) {
-        "stale_dirty"
+        ("stale_dirty", icons.stale_dirty.clone())
     } else {
-        "default"
-    };
-    let icon = if syncing {
-        icons.syncing_frame(0).clone()
-    } else if has_stale_dirty_dto(repos, stale_dirty_days) {
-        icons.stale_dirty.clone()
-    } else {
-        icons.default.clone()
+        ("default", icons.default.clone())
     };
     if let Err(e) = tray.set_icon(Some(icon)) {
         log::warn!("tray set_icon ({mode}) failed: {e}");
@@ -1073,14 +1226,13 @@ pub(crate) fn reset_tray_icon_after_sync(
     stale_dirty_days: u32,
 ) {
     if let Ok(records) = state.list_repos() {
-        let stale_days = state
-            .config()
-            .map(|c| c.stale_dirty_days)
-            .unwrap_or(stale_dirty_days);
-        let migration = state
-            .config()
-            .map(|c| c.migration.clone())
-            .unwrap_or_default();
+        let (stale_days, migration) = match state.config() {
+            Ok(config) => (config.stale_dirty_days, config.migration.clone()),
+            Err(e) => {
+                log::warn!("tray icon reset: config unavailable, using defaults: {e}");
+                (stale_dirty_days, MigrationConfig::default())
+            }
+        };
         let dtos = repo_records_to_dtos(records, &migration);
         update_tray_icon_state(app, &dtos, stale_days, false);
         return;
@@ -1089,7 +1241,7 @@ pub(crate) fn reset_tray_icon_after_sync(
 }
 
 #[tauri::command]
-pub async fn checkout_repo_branch(
+pub(crate) async fn checkout_repo_branch(
     repo_path: String,
     branch: String,
     state: State<'_, Arc<AppState>>,
@@ -1108,28 +1260,39 @@ pub async fn checkout_repo_branch(
 }
 
 #[tauri::command]
-pub async fn refresh_sync(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    crate::tray::spawn_background_sync(app, state.inner().clone());
+pub(crate) async fn refresh_sync(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::tray::spawn_background_sync(
+        app,
+        state.inner().clone(),
+        crate::tray::SyncTrigger::Explicit,
+    );
     Ok(())
 }
 
 /// Thin-wrap legacy IPC onto the shared catalog sync pipeline.
 #[tauri::command]
-pub async fn refresh_all_git_state(
+pub(crate) async fn refresh_all_git_state(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::tray::spawn_background_sync(app, state.inner().clone());
+    crate::tray::spawn_background_sync(
+        app,
+        state.inner().clone(),
+        crate::tray::SyncTrigger::Explicit,
+    );
     Ok(())
 }
 
 #[tauri::command]
-pub fn get_repo_sync_status(guard: State<'_, RepoSyncGuard>) -> Option<RepoSyncEventDto> {
+pub(crate) fn get_repo_sync_status(guard: State<'_, RepoSyncGuard>) -> Option<RepoSyncEventDto> {
     guard.status()
 }
 
 #[tauri::command]
-pub async fn sync_repo_branch(
+pub(crate) async fn sync_repo_branch(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
     guard: State<'_, RepoSyncGuard>,
@@ -1154,91 +1317,91 @@ pub async fn sync_repo_branch(
 
     log::info!("repo sync: started repo={repo_path} branch={branch} direction={direction}");
 
-    if let Err(e) = app.emit("repo-sync-started", &started_payload) {
-        log_emit_err("repo-sync-started", e);
-    }
+    emit_or_log(&app, "repo-sync-started", &started_payload);
 
     let state_clone = state.inner().clone();
     let guard_clone = guard.inner().clone();
-    let repo_path_task = repo_path.clone();
-    let branch_task = branch.clone();
-    let direction_str = direction.clone();
 
     tauri::async_runtime::spawn(async move {
         let _lease = RepoSyncGuardLease(guard_clone);
 
         let blocking_result = tauri::async_runtime::spawn_blocking(move || {
-            run_repo_sync(&state_clone, &repo_path_task, &branch_task, sync_direction)
+            run_repo_sync(&state_clone, &repo_path, &branch, sync_direction)
         })
         .await;
 
-        match blocking_result {
-            Ok(Ok(())) => {
-                log::info!(
-                    "repo sync: complete repo={repo_path} branch={branch} direction={direction_str}"
-                );
-                let complete_payload = RepoSyncEventDto {
-                    repo_path,
-                    branch,
-                    direction: direction_str,
-                    error: None,
-                };
-                if let Err(e) = app.emit("repo-sync-complete", &complete_payload) {
-                    log_emit_err("repo-sync-complete", e);
-                }
-            }
-            Ok(Err(e)) => {
-                log::warn!(
-                    "repo sync: failed repo={repo_path} branch={branch} direction={direction_str}: {}",
-                    e.summary
-                );
-                if !e.full_detail.is_empty() {
-                    log::warn!("repo sync: stderr/stdout:\n{}", e.full_detail);
-                }
-                let summary = e.summary.clone();
-                let failed_payload = RepoSyncEventDto {
-                    repo_path: repo_path.clone(),
-                    branch: branch.clone(),
-                    direction: direction_str.clone(),
-                    error: Some(summary),
-                };
-                if let Err(err) = app.emit("repo-sync-failed", &failed_payload) {
-                    log_emit_err("repo-sync-failed", err);
-                }
-            }
-            Err(join_err) => {
-                let msg = format!("repo sync task panicked or was cancelled: {join_err}");
-                let failed_payload = RepoSyncEventDto {
-                    repo_path,
-                    branch,
-                    direction: direction_str,
-                    error: Some(msg),
-                };
-                if let Err(err) = app.emit("repo-sync-failed", &failed_payload) {
-                    log_emit_err("repo-sync-failed", err);
-                }
-            }
-        }
+        let (event, payload) = repo_sync_result_event(started_payload, blocking_result);
+        emit_or_log(&app, event, &payload);
     });
 
     Ok(())
 }
 
+/// Map a finished repo sync job (or its join failure) to the `repo-sync-*` event to emit;
+/// `payload` carries the repo/branch/direction the job was started with.
+fn repo_sync_result_event<E: std::fmt::Display>(
+    payload: RepoSyncEventDto,
+    joined: Result<Result<(), SyncFailure>, E>,
+) -> (&'static str, RepoSyncEventDto) {
+    let job = format!(
+        "repo={} branch={} direction={}",
+        payload.repo_path, payload.branch, payload.direction
+    );
+    match joined {
+        Ok(Ok(())) => {
+            log::info!("repo sync: complete {job}");
+            (
+                "repo-sync-complete",
+                RepoSyncEventDto {
+                    error: None,
+                    ..payload
+                },
+            )
+        }
+        Ok(Err(e)) => {
+            log::warn!("repo sync: failed {job}: {}", e.summary);
+            if !e.full_detail.is_empty() {
+                log::warn!("repo sync: stderr/stdout:\n{}", e.full_detail);
+            }
+            (
+                EVENT_REPO_SYNC_FAILED,
+                RepoSyncEventDto {
+                    error: Some(e.summary),
+                    ..payload
+                },
+            )
+        }
+        Err(join_err) => {
+            let msg = format!("repo sync task panicked or was cancelled: {join_err}");
+            log::error!("repo sync: failed {job}: {msg}");
+            (
+                EVENT_REPO_SYNC_FAILED,
+                RepoSyncEventDto {
+                    error: Some(msg),
+                    ..payload
+                },
+            )
+        }
+    }
+}
+
 fn parse_convert_target(s: &str) -> Result<ConvertTarget, String> {
     match s {
-        "bare" => Ok(ConvertTarget::Bare),
-        "local" => Ok(ConvertTarget::Local),
+        CONVERT_TO_BARE => Ok(ConvertTarget::Bare),
+        CONVERT_TO_LOCAL => Ok(ConvertTarget::Local),
         other => Err(format!("invalid convert target: {other}")),
     }
 }
 
 #[tauri::command]
-pub fn get_repo_convert_status(guard: State<'_, RepoConvertGuard>) -> Option<RepoConvertEventDto> {
+pub(crate) fn get_repo_convert_status(
+    guard: State<'_, RepoConvertGuard>,
+) -> Option<RepoConvertEventDto> {
     guard.status()
 }
 
 #[tauri::command]
-pub async fn convert_repo(
+pub(crate) async fn convert_repo(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
     guard: State<'_, RepoConvertGuard>,
@@ -1258,14 +1421,11 @@ pub async fn convert_repo(
         new_path: None,
         error: None,
     };
-    if let Err(e) = app.emit("repo-convert-started", &started_payload) {
-        log_emit_err("repo-convert-started", e);
-    }
+    emit_or_log(&app, "repo-convert-started", &started_payload);
 
     let state_clone = state.inner().clone();
     let guard_clone = guard.inner().clone();
     let repo_path_task = repo_path.clone();
-    let target_str = target.clone();
 
     tauri::async_runtime::spawn(async move {
         let _lease = RepoConvertGuardLease(guard_clone);
@@ -1275,66 +1435,291 @@ pub async fn convert_repo(
         })
         .await;
 
-        match blocking_result {
-            Ok(Ok(ConvertResult::Converted { from: _, to })) => {
-                let new_path = to.display().to_string();
-                log::info!(
-                    "repo convert: complete repo={repo_path} target={target_str} new_path={new_path}"
-                );
-                let complete_payload = RepoConvertEventDto {
-                    repo_path,
-                    new_path: Some(new_path),
-                    error: None,
-                };
-                if let Err(e) = app.emit("repo-convert-complete", &complete_payload) {
-                    log_emit_err("repo-convert-complete", e);
-                }
-            }
-            Ok(Ok(ConvertResult::DryRun { .. })) => {
-                let failed_payload = RepoConvertEventDto {
-                    repo_path: repo_path.clone(),
-                    new_path: None,
-                    error: Some("unexpected dry-run result".to_string()),
-                };
-                log::warn!(
-                    "repo convert: unexpected dry-run result repo={repo_path} target={target_str}"
-                );
-                if let Err(err) = app.emit("repo-convert-failed", &failed_payload) {
-                    log_emit_err("repo-convert-failed", err);
-                }
-            }
-            Ok(Err(e)) => {
-                let summary = e.to_string();
-                log::warn!("repo convert: failed repo={repo_path} target={target_str}: {summary}");
-                let failed_payload = RepoConvertEventDto {
-                    repo_path: repo_path.clone(),
-                    new_path: None,
-                    error: Some(summary),
-                };
-                if let Err(err) = app.emit("repo-convert-failed", &failed_payload) {
-                    log_emit_err("repo-convert-failed", err);
-                }
-            }
-            Err(join_err) => {
-                let msg = format!("repo convert task panicked or was cancelled: {join_err}");
-                log::error!("repo convert: failed repo={repo_path} target={target_str}: {msg}");
-                let failed_payload = RepoConvertEventDto {
-                    repo_path,
-                    new_path: None,
-                    error: Some(msg),
-                };
-                if let Err(err) = app.emit("repo-convert-failed", &failed_payload) {
-                    log_emit_err("repo-convert-failed", err);
-                }
-            }
-        }
+        let (event, payload) = repo_convert_result_event(repo_path, &target, blocking_result);
+        emit_or_log(&app, event, &payload);
     });
 
     Ok(())
 }
 
+/// Map a finished repo convert job (or its join failure) to the `repo-convert-*` event to emit.
+fn repo_convert_result_event<E: std::fmt::Display>(
+    repo_path: String,
+    target: &str,
+    joined: Result<workpot_core::Result<ConvertResult>, E>,
+) -> (&'static str, RepoConvertEventDto) {
+    match joined {
+        Ok(Ok(ConvertResult::Converted { from: _, to })) => {
+            let new_path = to.display().to_string();
+            log::info!(
+                "repo convert: complete repo={repo_path} target={target} new_path={new_path}"
+            );
+            (
+                "repo-convert-complete",
+                RepoConvertEventDto {
+                    repo_path,
+                    new_path: Some(new_path),
+                    error: None,
+                },
+            )
+        }
+        Ok(Ok(ConvertResult::DryRun { .. })) => {
+            log::warn!("repo convert: unexpected dry-run result repo={repo_path} target={target}");
+            (
+                EVENT_REPO_CONVERT_FAILED,
+                convert_failed_payload(repo_path, "unexpected dry-run result".to_string()),
+            )
+        }
+        Ok(Err(e)) => {
+            let summary = e.to_string();
+            log::warn!("repo convert: failed repo={repo_path} target={target}: {summary}");
+            (
+                EVENT_REPO_CONVERT_FAILED,
+                convert_failed_payload(repo_path, summary),
+            )
+        }
+        Err(join_err) => {
+            let msg = format!("repo convert task panicked or was cancelled: {join_err}");
+            log::error!("repo convert: failed repo={repo_path} target={target}: {msg}");
+            (
+                EVENT_REPO_CONVERT_FAILED,
+                convert_failed_payload(repo_path, msg),
+            )
+        }
+    }
+}
+
+fn convert_failed_payload(repo_path: String, error: String) -> RepoConvertEventDto {
+    RepoConvertEventDto {
+        repo_path,
+        new_path: None,
+        error: Some(error),
+    }
+}
+
+/// Tracks in-flight clones (several may run at once; one per repo path).
+///
+/// Deliberately not folded into `RepoSyncGuard` / `RepoConvertGuard`: those are single-slot
+/// guards (one job at a time, one payload), while clones are a set keyed by path.
+#[derive(Clone)]
+pub(crate) struct RepoCloneGuard {
+    active: Arc<Mutex<HashSet<String>>>,
+}
+
+impl RepoCloneGuard {
+    pub fn new() -> Self {
+        Self {
+            active: Arc::new(Mutex::new(HashSet::new())),
+        }
+    }
+
+    /// Returns false when `repo_path` is already being cloned (or the state lock is poisoned,
+    /// in which case starting is refused rather than risking a duplicate clone).
+    fn try_start(&self, repo_path: &str) -> bool {
+        lock_or_warn(&self.active, LOCK_REPO_CLONE)
+            .is_some_and(|mut active| active.insert(repo_path.to_string()))
+    }
+
+    fn finish(&self, repo_path: &str) {
+        if let Some(mut active) = lock_or_warn(&self.active, LOCK_REPO_CLONE) {
+            active.remove(repo_path);
+        }
+    }
+
+    fn status(&self) -> Vec<String> {
+        lock_or_warn(&self.active, LOCK_REPO_CLONE)
+            .map(|active| {
+                let mut paths: Vec<String> = active.iter().cloned().collect();
+                paths.sort();
+                paths
+            })
+            .unwrap_or_default()
+    }
+}
+
+struct RepoCloneGuardLease(RepoCloneGuard, String);
+
+impl Drop for RepoCloneGuardLease {
+    fn drop(&mut self) {
+        self.0.finish(&self.1);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub(crate) struct RepoCloneEventDto {
+    /// Planned clone path (the row key of the not-cloned entry).
+    repo_path: String,
+    /// Catalog path of the fresh clone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    new_path: Option<String>,
+    /// `true` when the repo was opened in the IDE after cloning.
+    opened: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+/// Repo paths with a clone currently running (restores UI state after a webview reload).
 #[tauri::command]
-pub fn open_in_cursor(
+pub(crate) fn get_repo_clone_status(guard: State<'_, RepoCloneGuard>) -> Vec<String> {
+    guard.status()
+}
+
+/// Clone an indexed remote repo; allowed under every clone policy. Fire-and-forget with
+/// `repo-clone-started|complete|failed` events.
+#[tauri::command]
+pub(crate) async fn clone_repo(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    guard: State<'_, RepoCloneGuard>,
+    repo_path: String,
+    open_after: bool,
+) -> Result<(), String> {
+    if !guard.try_start(&repo_path) {
+        return Err("this repo is already being cloned".to_string());
+    }
+    log::info!("repo clone: started repo={repo_path} open_after={open_after}");
+    let started = RepoCloneEventDto {
+        repo_path: repo_path.clone(),
+        new_path: None,
+        opened: false,
+        error: None,
+    };
+    emit_or_log(&app, "repo-clone-started", &started);
+
+    let state_clone = state.inner().clone();
+    let guard_clone = guard.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        let _lease = RepoCloneGuardLease(guard_clone, repo_path.clone());
+        let task_path = repo_path.clone();
+        let blocking = tauri::async_runtime::spawn_blocking(move || {
+            run_clone_job(&state_clone, &task_path, open_after)
+        })
+        .await;
+
+        let (event, payload) = clone_result_event(repo_path, blocking);
+        emit_or_log(&app, event, &payload);
+    });
+    Ok(())
+}
+
+/// `(new catalog path, open requested, launch error)` of a finished clone job.
+type CloneJobOutput = (String, bool, Option<String>);
+
+/// Clone `repo_path` (blocking) and optionally open it in the IDE afterwards.
+fn run_clone_job(
+    state: &AppState,
+    repo_path: &str,
+    open_after: bool,
+) -> Result<CloneJobOutput, String> {
+    let outcome = state.clone_remote(repo_path).map_err(|e| e.to_string())?;
+    let new_path = outcome.local_path.display().to_string();
+    let launch_error = if open_after {
+        let err = crate::launch::launch_repo(state, &new_path).err();
+        if let Some(e) = &err {
+            log::warn!("repo clone: launch after clone failed path={new_path}: {e}");
+        }
+        err
+    } else {
+        None
+    };
+    Ok((new_path, open_after, launch_error))
+}
+
+/// Map a finished clone job (or its join failure) to the `repo-clone-*` event to emit.
+fn clone_result_event<E: std::fmt::Display>(
+    repo_path: String,
+    joined: Result<Result<CloneJobOutput, String>, E>,
+) -> (&'static str, RepoCloneEventDto) {
+    match joined {
+        Ok(Ok((new_path, opened, launch_error))) => {
+            log::info!("repo clone: complete repo={repo_path} new_path={new_path}");
+            let payload = RepoCloneEventDto {
+                repo_path,
+                new_path: Some(new_path),
+                opened: opened && launch_error.is_none(),
+                error: launch_error,
+            };
+            ("repo-clone-complete", payload)
+        }
+        Ok(Err(summary)) => {
+            log::warn!("repo clone: failed repo={repo_path}: {summary}");
+            (
+                EVENT_REPO_CLONE_FAILED,
+                clone_failed_payload(repo_path, summary),
+            )
+        }
+        Err(join_err) => {
+            let msg = format!("repo clone task panicked or was cancelled: {join_err}");
+            log::error!("repo clone: failed repo={repo_path}: {msg}");
+            (
+                EVENT_REPO_CLONE_FAILED,
+                clone_failed_payload(repo_path, msg),
+            )
+        }
+    }
+}
+
+fn clone_failed_payload(repo_path: String, error: String) -> RepoCloneEventDto {
+    RepoCloneEventDto {
+        repo_path,
+        new_path: None,
+        opened: false,
+        error: Some(error),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub(crate) struct RemoteSourceDto {
+    name: String,
+    provider: String,
+    host: String,
+    path: String,
+    clone_root: String,
+    clone_policy: String,
+    prune_removed: bool,
+    repo_count: u32,
+    cloned_count: u32,
+    removed_upstream_count: u32,
+    last_sync_status: Option<String>,
+    last_sync_at: Option<i64>,
+    last_sync_message: Option<String>,
+}
+
+/// Read-only status of configured remote sources (edit via CLI or config.toml).
+#[tauri::command]
+pub(crate) async fn get_remote_sources(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<RemoteSourceDto>, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let statuses = state.remote_source_statuses().map_err(|e| e.to_string())?;
+        Ok::<Vec<RemoteSourceDto>, String>(
+            statuses
+                .into_iter()
+                .map(|s| RemoteSourceDto {
+                    name: s.name,
+                    provider: s.provider.as_str().to_string(),
+                    host: s.host,
+                    path: s.path,
+                    clone_root: s.clone_root.display().to_string(),
+                    clone_policy: s.clone_policy.as_str().to_string(),
+                    prune_removed: s.prune_removed,
+                    repo_count: s.repo_count,
+                    cloned_count: s.cloned_count,
+                    removed_upstream_count: s.gone_count,
+                    last_sync_status: s.last_run_status,
+                    last_sync_at: s.last_run_at,
+                    last_sync_message: s.last_run_message,
+                })
+                .collect(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub(crate) fn open_in_cursor(
     path: String,
     _background: bool,
     state: State<'_, Arc<AppState>>,
@@ -1343,7 +1728,7 @@ pub fn open_in_cursor(
 }
 
 #[tauri::command]
-pub fn open_in_finder(path: String) -> Result<(), String> {
+pub(crate) fn open_in_finder(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
@@ -1521,6 +1906,12 @@ mod tests {
             is_bare: false,
             convert_to: None,
             convert_block_reason: None,
+            cloned: true,
+            remote_url: None,
+            remote_full_path: None,
+            remote_source: None,
+            clone_policy: None,
+            removed_upstream: false,
         }
     }
 
@@ -2023,7 +2414,7 @@ mod tests {
     }
 
     #[test]
-    fn list_repos_dto_pipeline_from_registered_repo() {
+    fn repo_records_to_dtos_maps_registered_local_repo() {
         let dir = tempfile::tempdir().expect("tempdir");
         let config_path = dir.path().join("config.toml");
         let db_path = dir.path().join("workpot.db");
@@ -2038,5 +2429,470 @@ mod tests {
         assert_eq!(dtos.len(), 1);
         assert_eq!(dtos[0].name, "sample");
         assert!(dtos[0].path.ends_with("/sample"));
+        assert!(dtos[0].cloned);
+        assert!(!dtos[0].removed_upstream);
+        assert_eq!(dtos[0].remote_url, None);
+        assert_eq!(dtos[0].remote_full_path, None);
+        assert_eq!(dtos[0].remote_source, None);
+        assert_eq!(dtos[0].clone_policy, None);
+    }
+
+    // ---- remote catalog / clone fixtures ------------------------------------------------
+
+    use std::collections::HashSet as StdHashSet;
+    use std::sync::Mutex as StdMutex;
+    use workpot_core::domain::config::{ClonePolicy, GitProtocol, RemoteProvider, RemoteSource};
+    use workpot_core::infra::remote_provider::{RemoteApi, RemoteError, RemoteRepoInfo};
+    use workpot_core::services::remote_catalog::RemoteState;
+    use workpot_core::services::remotes::RemotePatch;
+
+    /// Scripted provider: a fixed listing plus the `full_path`s the host reports as 404.
+    struct FakeRemoteApi {
+        listing: StdMutex<Vec<RemoteRepoInfo>>,
+        missing: StdMutex<StdHashSet<String>>,
+    }
+
+    impl RemoteApi for FakeRemoteApi {
+        fn list_repos(&self, _source: &RemoteSource) -> Result<Vec<RemoteRepoInfo>, RemoteError> {
+            Ok(self.listing.lock().expect("listing").clone())
+        }
+
+        fn repo_exists(
+            &self,
+            _source: &RemoteSource,
+            full_path: &str,
+        ) -> Result<bool, RemoteError> {
+            Ok(!self.missing.lock().expect("missing").contains(full_path))
+        }
+
+        fn cli_git_protocol(&self, _source: &RemoteSource) -> Option<GitProtocol> {
+            None
+        }
+    }
+
+    struct RemoteEnv {
+        _dir: tempfile::TempDir,
+        state: AppState,
+        api: Arc<FakeRemoteApi>,
+    }
+
+    fn init_upstream(path: &Path) {
+        std::fs::create_dir_all(path).expect("mkdir upstream");
+        let repo = git2::Repository::init(path).expect("init upstream");
+        let sig = git2::Signature::now("test", "test@example.com").expect("sig");
+        let tree_id = repo.index().expect("index").write_tree().expect("tree");
+        let tree = repo.find_tree(tree_id).expect("tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .expect("commit");
+    }
+
+    fn remote_info(full_path: &str, url: &Path) -> RemoteRepoInfo {
+        let url = url.display().to_string();
+        RemoteRepoInfo {
+            full_path: full_path.to_string(),
+            name: full_path.rsplit('/').next().expect("name").to_string(),
+            web_url: Some(format!("https://git.example.com/{full_path}")),
+            ssh_url: Some(url.clone()),
+            https_url: Some(url),
+            default_branch: Some("main".to_string()),
+            archived: false,
+            description: None,
+        }
+    }
+
+    /// Indexed (not cloned) remote source `acme` listing `names`, cloned from local upstreams.
+    fn remote_env(names: &[&str], launch_cmd: &str) -> RemoteEnv {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let upstreams: Vec<PathBuf> = names
+            .iter()
+            .map(|n| {
+                let path = dir.path().join("upstreams").join(n);
+                init_upstream(&path);
+                path
+            })
+            .collect();
+        let listing = names
+            .iter()
+            .zip(&upstreams)
+            .map(|(n, u)| remote_info(&format!("acme/platform/{n}"), u))
+            .collect();
+        let api = Arc::new(FakeRemoteApi {
+            listing: StdMutex::new(listing),
+            missing: StdMutex::new(StdHashSet::new()),
+        });
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            format!("watch_roots = []\nexcludes = []\nlaunch_cmd = \"{launch_cmd}\"\n"),
+        )
+        .expect("config");
+        let state = AppState::open_with_paths(config_path, dir.path().join("workpot.db"))
+            .expect("open")
+            .with_remote_api(api.clone());
+        let clone_root = dir.path().join("clones");
+        state
+            .remotes_add(RemoteSource {
+                name: "acme".to_string(),
+                provider: RemoteProvider::Gitlab,
+                host: Some("git.example.com".to_string()),
+                path: "acme/platform".to_string(),
+                clone_root,
+                clone_policy: ClonePolicy::Manual,
+                prune_removed: false,
+                include_archived: true,
+                protocol: None,
+            })
+            .expect("add remote");
+        state.run_remote_catalog_sync(true).expect("index");
+        RemoteEnv {
+            _dir: dir,
+            state,
+            api,
+        }
+    }
+
+    fn planned_clone_path(env: &RemoteEnv, name: &str) -> String {
+        env.state
+            .list_remote_only()
+            .expect("remote only")
+            .into_iter()
+            .find(|r| r.name == name)
+            .unwrap_or_else(|| panic!("{name} not indexed"))
+            .clone_path
+            .display()
+            .to_string()
+    }
+
+    // ---- clone_result_event --------------------------------------------------------------
+
+    fn clone_event(
+        joined: Result<Result<CloneJobOutput, String>, String>,
+    ) -> (&'static str, RepoCloneEventDto) {
+        clone_result_event("/clones/api".to_string(), joined)
+    }
+
+    #[test]
+    fn clone_result_event_maps_each_outcome() {
+        let new_path = "/catalog/api".to_string();
+
+        let (event, payload) = clone_event(Ok(Ok((new_path.clone(), true, None))));
+        assert_eq!(event, "repo-clone-complete");
+        assert_eq!(
+            payload,
+            RepoCloneEventDto {
+                repo_path: "/clones/api".to_string(),
+                new_path: Some(new_path.clone()),
+                opened: true,
+                error: None,
+            }
+        );
+
+        let (event, payload) = clone_event(Ok(Ok((new_path.clone(), false, None))));
+        assert_eq!(event, "repo-clone-complete");
+        assert!(!payload.opened);
+        assert_eq!(payload.error, None);
+
+        // Clone kept, IDE launch failed: still a completion, but not "opened" and the error shows.
+        let (event, payload) = clone_event(Ok(Ok((
+            new_path.clone(),
+            true,
+            Some("failed to launch cursor".to_string()),
+        ))));
+        assert_eq!(event, "repo-clone-complete");
+        assert_eq!(payload.new_path, Some(new_path));
+        assert!(!payload.opened);
+        assert_eq!(payload.error.as_deref(), Some("failed to launch cursor"));
+
+        let (event, payload) = clone_event(Ok(Err("target not empty".to_string())));
+        assert_eq!(event, EVENT_REPO_CLONE_FAILED);
+        assert_eq!(
+            payload,
+            RepoCloneEventDto {
+                repo_path: "/clones/api".to_string(),
+                new_path: None,
+                opened: false,
+                error: Some("target not empty".to_string()),
+            }
+        );
+
+        let (event, payload) = clone_event(Err("task aborted".to_string()));
+        assert_eq!(event, EVENT_REPO_CLONE_FAILED);
+        assert_eq!(payload.new_path, None);
+        assert!(!payload.opened);
+        let error = payload.error.expect("join error surfaced");
+        assert!(error.contains("task aborted"), "got: {error}");
+    }
+
+    // ---- RepoCloneGuard ------------------------------------------------------------------
+
+    #[test]
+    fn repo_clone_guard_refuses_duplicate_path_and_releases_on_finish() {
+        let guard = RepoCloneGuard::new();
+        assert!(guard.try_start("/clones/a"));
+        assert!(!guard.try_start("/clones/a"));
+        guard.finish("/clones/a");
+        assert!(guard.try_start("/clones/a"));
+    }
+
+    #[test]
+    fn repo_clone_guard_allows_different_paths_and_reports_them_sorted() {
+        let guard = RepoCloneGuard::new();
+        assert!(guard.status().is_empty());
+        assert!(guard.try_start("/clones/b"));
+        assert!(guard.try_start("/clones/a"));
+        assert_eq!(guard.status(), vec!["/clones/a", "/clones/b"]);
+        guard.finish("/clones/a");
+        assert_eq!(guard.status(), vec!["/clones/b"]);
+        // Finishing an unknown path is harmless.
+        guard.finish("/clones/never-started");
+        assert_eq!(guard.status(), vec!["/clones/b"]);
+    }
+
+    #[test]
+    fn repo_clone_guard_lease_releases_path_on_drop() {
+        let guard = RepoCloneGuard::new();
+        assert!(guard.try_start("/clones/a"));
+        {
+            let _lease = RepoCloneGuardLease(guard.clone(), "/clones/a".to_string());
+            assert_eq!(guard.status(), vec!["/clones/a"]);
+        }
+        assert!(guard.status().is_empty());
+        assert!(guard.try_start("/clones/a"));
+    }
+
+    #[test]
+    fn repo_clone_guard_lease_releases_path_when_task_panics() {
+        let guard = RepoCloneGuard::new();
+        assert!(guard.try_start("/clones/a"));
+        let guard_for_task = guard.clone();
+        let result = std::panic::catch_unwind(move || {
+            let _lease = RepoCloneGuardLease(guard_for_task, "/clones/a".to_string());
+            panic!("clone job blew up");
+        });
+        assert!(result.is_err());
+        assert!(guard.status().is_empty());
+    }
+
+    // ---- remote-only rows ----------------------------------------------------------------
+
+    #[test]
+    fn remote_record_to_dto_builds_not_cloned_row() {
+        let record = RemoteRepoRecord {
+            source_id: "acme".to_string(),
+            full_path: "acme/platform/api".to_string(),
+            name: "api".to_string(),
+            web_url: Some("https://git.example.com/acme/platform/api".to_string()),
+            ssh_url: None,
+            https_url: None,
+            url_normalized: "git.example.com/acme/platform/api".to_string(),
+            default_branch: Some("main".to_string()),
+            archived: false,
+            description: None,
+            clone_path: PathBuf::from("/var/tmp/clones/api"),
+            state: RemoteState::Present,
+            first_seen_at: 1,
+            last_seen_at: 2,
+        };
+
+        let dto = remote_record_to_dto(&record, Some("on_open".to_string()));
+        assert!(!dto.cloned);
+        assert_eq!(dto.path, "/var/tmp/clones/api");
+        assert_eq!(dto.parent_dir, "/var/tmp/clones");
+        assert_eq!(dto.name, "api");
+        assert_eq!(dto.remote_full_path.as_deref(), Some("acme/platform/api"));
+        assert_eq!(dto.remote_source.as_deref(), Some("acme"));
+        assert_eq!(
+            dto.remote_url.as_deref(),
+            Some("https://git.example.com/acme/platform/api")
+        );
+        assert_eq!(dto.clone_policy.as_deref(), Some("on_open"));
+        assert!(dto.tags.is_empty());
+        assert!(!dto.removed_upstream);
+        assert!(!dto.pinned);
+
+        // Source no longer configured: no policy.
+        assert_eq!(remote_record_to_dto(&record, None).clone_policy, None);
+    }
+
+    #[test]
+    fn append_remote_only_adds_not_cloned_rows_with_policy_from_config() {
+        let env = remote_env(&["api", "web"], "/usr/bin/true {path}");
+        env.state
+            .remotes_set(
+                "acme",
+                RemotePatch {
+                    clone_policy: Some(ClonePolicy::OnOpen),
+                    ..RemotePatch::default()
+                },
+            )
+            .expect("set policy");
+
+        let mut dtos = Vec::new();
+        append_remote_only(&env.state, &mut dtos).expect("append");
+
+        assert_eq!(dtos.len(), 2);
+        let api = dtos.iter().find(|d| d.name == "api").expect("api row");
+        assert!(!api.cloned);
+        assert_eq!(api.path, planned_clone_path(&env, "api"));
+        assert!(api.path.ends_with("/api"), "got: {}", api.path);
+        assert!(api.path.contains("clones"), "got: {}", api.path);
+        assert_eq!(api.remote_source.as_deref(), Some("acme"));
+        assert_eq!(api.remote_full_path.as_deref(), Some("acme/platform/api"));
+        assert_eq!(
+            api.remote_url.as_deref(),
+            Some("https://git.example.com/acme/platform/api")
+        );
+        assert_eq!(api.clone_policy.as_deref(), Some("on_open"));
+        assert!(api.tags.is_empty());
+    }
+
+    #[test]
+    fn append_remote_only_skips_cloned_repos_and_keeps_existing_rows() {
+        let env = remote_env(&["api", "web"], "/usr/bin/true {path}");
+        let api_path = planned_clone_path(&env, "api");
+        env.state.clone_remote(&api_path).expect("clone api");
+
+        let mut dtos =
+            repo_records_to_dtos(env.state.list_repos().expect("list"), &default_migration());
+        assert_eq!(dtos.len(), 1);
+        append_remote_only(&env.state, &mut dtos).expect("append");
+
+        assert_eq!(dtos.len(), 2);
+        assert!(dtos[0].cloned);
+        assert_eq!(dtos[0].name, "api");
+        assert!(!dtos[1].cloned);
+        assert_eq!(dtos[1].name, "web");
+        assert_eq!(dtos[1].clone_policy.as_deref(), Some("manual"));
+    }
+
+    // ---- flag_removed_upstream -----------------------------------------------------------
+
+    #[test]
+    fn flag_removed_upstream_flags_only_clones_gone_upstream_and_resets_others() {
+        let env = remote_env(&["api", "web"], "/usr/bin/true {path}");
+        for name in ["api", "web"] {
+            env.state
+                .clone_remote(&planned_clone_path(&env, name))
+                .expect("clone");
+        }
+        env.state
+            .remotes_set(
+                "acme",
+                RemotePatch {
+                    prune_removed: Some(true),
+                    ..RemotePatch::default()
+                },
+            )
+            .expect("enable prune");
+        // `web` disappears upstream; an untracked file makes prune keep (and flag) the clone.
+        env.api
+            .listing
+            .lock()
+            .expect("listing")
+            .retain(|r| r.name != "web");
+        env.api
+            .missing
+            .lock()
+            .expect("missing")
+            .insert("acme/platform/web".to_string());
+        let web_path = env
+            .state
+            .list_repos()
+            .expect("list")
+            .into_iter()
+            .find(|r| r.name == "web")
+            .expect("web registered")
+            .path;
+        std::fs::write(web_path.join("local.txt"), "wip").expect("write");
+        env.state.run_remote_catalog_sync(true).expect("sync");
+
+        let mut dtos =
+            repo_records_to_dtos(env.state.list_repos().expect("list"), &default_migration());
+        assert_eq!(dtos.len(), 2);
+        // Stale `true` everywhere: the flag must be recomputed per row, not only ever set.
+        for dto in &mut dtos {
+            dto.removed_upstream = true;
+        }
+        flag_removed_upstream(&env.state, &mut dtos);
+
+        let web = dtos.iter().find(|d| d.name == "web").expect("web");
+        let api = dtos.iter().find(|d| d.name == "api").expect("api");
+        assert!(web.removed_upstream, "web upstream is gone");
+        assert!(!api.removed_upstream, "api upstream still exists");
+    }
+
+    #[test]
+    fn flag_removed_upstream_leaves_all_rows_unflagged_when_nothing_removed() {
+        let env = remote_env(&["api"], "/usr/bin/true {path}");
+        env.state
+            .clone_remote(&planned_clone_path(&env, "api"))
+            .expect("clone");
+        let mut dtos =
+            repo_records_to_dtos(env.state.list_repos().expect("list"), &default_migration());
+        flag_removed_upstream(&env.state, &mut dtos);
+        assert!(dtos.iter().all(|d| !d.removed_upstream));
+    }
+
+    // ---- run_clone_job -------------------------------------------------------------------
+
+    const MISSING_LAUNCHER: &str = "/nonexistent/workpot-test-launcher {path}";
+
+    #[test]
+    fn run_clone_job_keeps_clone_and_reports_launch_error_when_open_fails() {
+        let env = remote_env(&["api"], MISSING_LAUNCHER);
+        let planned = planned_clone_path(&env, "api");
+
+        let (new_path, open_requested, launch_error) =
+            run_clone_job(&env.state, &planned, true).expect("clone itself succeeds");
+
+        assert!(open_requested);
+        let err = launch_error.expect("launch failure surfaced");
+        assert!(err.contains("failed to launch"), "got: {err}");
+        assert!(Path::new(&new_path).join(".git").exists(), "clone kept");
+        let repos = env.state.list_repos().expect("list");
+        assert_eq!(repos.len(), 1, "clone is registered despite launch failure");
+        assert_eq!(repos[0].last_opened_at, None);
+    }
+
+    #[test]
+    fn run_clone_job_does_not_launch_when_open_after_is_false() {
+        // A launcher that cannot start would surface an error if it were (wrongly) invoked.
+        let env = remote_env(&["api"], MISSING_LAUNCHER);
+        let planned = planned_clone_path(&env, "api");
+
+        let (new_path, open_requested, launch_error) =
+            run_clone_job(&env.state, &planned, false).expect("clone");
+
+        assert!(!open_requested);
+        assert_eq!(launch_error, None);
+        assert!(Path::new(&new_path).join(".git").exists());
+        assert_eq!(
+            env.state.list_repos().expect("list")[0].last_opened_at,
+            None
+        );
+    }
+
+    #[test]
+    fn run_clone_job_launches_and_marks_opened_when_open_after_succeeds() {
+        let env = remote_env(&["api"], "/usr/bin/true {path}");
+        let planned = planned_clone_path(&env, "api");
+
+        let (_, open_requested, launch_error) =
+            run_clone_job(&env.state, &planned, true).expect("clone");
+
+        assert!(open_requested);
+        assert_eq!(launch_error, None);
+        assert!(
+            env.state.list_repos().expect("list")[0]
+                .last_opened_at
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn run_clone_job_returns_clone_error_for_unknown_repo() {
+        let env = remote_env(&["api"], "/usr/bin/true {path}");
+        let err = run_clone_job(&env.state, "/nowhere/unknown", true).expect_err("unknown");
+        assert!(!err.is_empty());
     }
 }

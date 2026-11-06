@@ -65,7 +65,7 @@ export function storySectionedRepos(repos = storyTrayRepos()): SectionedRepos {
 }
 
 export function emptySectionedRepos(): SectionedRepos {
-  return { pinned: [], dirty: [], recent: [], rest: [] };
+  return { pinned: [], dirty: [], recent: [], rest: [], remote: [] };
 }
 
 export function storyFlatIndexByPath(
@@ -76,6 +76,7 @@ export function storyFlatIndexByPath(
     ...sectioned.dirty,
     ...sectioned.recent,
     ...sectioned.rest,
+    ...sectioned.remote,
   ];
   return new Map(flat.map((r, i) => [r.path, i] as const));
 }
