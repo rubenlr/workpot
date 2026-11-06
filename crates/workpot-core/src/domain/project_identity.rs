@@ -389,10 +389,9 @@ fn normalize_scheme_url(raw: &str) -> Option<String> {
         ("https", a.len())
     } else if let Some(a) = lower.strip_prefix("http://") {
         ("http", a.len())
-    } else if let Some(a) = lower.strip_prefix("ssh://") {
-        ("ssh", a.len())
     } else {
-        return None;
+        let a = lower.strip_prefix("ssh://")?;
+        ("ssh", a.len())
     };
 
     let after_orig = &raw[raw.len() - after_len..];
