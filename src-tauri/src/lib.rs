@@ -61,7 +61,7 @@ fn handle_panel_window_event(window: &tauri::Window, event: &WindowEvent) {
                 log::debug!("panel Focused(false) -> skip hide (context menu active)");
                 return;
             }
-            tray::hide_panel_on_window(app, window);
+            tray::hide_panel_on_blur(app, window);
         }
         _ => {}
     }

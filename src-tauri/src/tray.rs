@@ -1,5 +1,5 @@
-use std::sync::Arc;
-use std::time::Instant;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::{
     Manager, PhysicalPosition,
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -138,6 +138,46 @@ fn hide_and_notify(app: &tauri::AppHandle, hide: tauri::Result<()>) {
 
 pub(crate) fn hide_panel_on_window(app: &tauri::AppHandle, window: &tauri::Window) {
     hide_and_notify(app, window.hide());
+}
+
+/// A tray click this soon after a focus-loss hide is the click that caused the focus loss.
+const BLUR_HIDE_CLICK_WINDOW: Duration = Duration::from_millis(300);
+
+/// When the panel last hid because it lost focus (see `hide_panel_on_blur`).
+#[derive(Default)]
+pub(crate) struct PanelBlurHide(Mutex<Option<Instant>>);
+
+impl PanelBlurHide {
+    fn slot(&self) -> std::sync::MutexGuard<'_, Option<Instant>> {
+        self.0.lock().unwrap_or_else(|poisoned| {
+            log::warn!("panel blur-hide state lock poisoned; recovering");
+            poisoned.into_inner()
+        })
+    }
+
+    fn record(&self, at: Instant) {
+        *self.slot() = Some(at);
+    }
+
+    /// Consume the recorded blur hide; true when it happened within the click window.
+    fn take_recent(&self, now: Instant) -> bool {
+        blur_hide_is_recent(self.slot().take(), now)
+    }
+}
+
+fn blur_hide_is_recent(last_blur_hide: Option<Instant>, now: Instant) -> bool {
+    last_blur_hide.is_some_and(|at| now.saturating_duration_since(at) <= BLUR_HIDE_CLICK_WINDOW)
+}
+
+/// Hide the panel on focus loss, remembering when, so that a tray click which caused the
+/// focus loss closes the panel instead of reopening it (see `toggle_panel_on_tray_click`).
+pub(crate) fn hide_panel_on_blur(app: &tauri::AppHandle, window: &tauri::Window) {
+    if let Some(state) = app.try_state::<PanelBlurHide>() {
+        state.record(Instant::now());
+    } else {
+        log::warn!("panel blur-hide state not registered");
+    }
+    hide_panel_on_window(app, window);
 }
 
 fn hide_panel(app: &tauri::AppHandle, panel: &tauri::WebviewWindow) {
@@ -302,8 +342,15 @@ fn toggle_panel_on_tray_click(app: &tauri::AppHandle, rect: tauri::Rect) {
         log::warn!("toggle_panel_on_tray_click: panel window not found");
         return;
     };
+    // Clicking the tray icon blurs an open panel first, which hides it just before this click
+    // is delivered; without this check the click would immediately reopen it.
+    let just_hid_on_blur = app
+        .try_state::<PanelBlurHide>()
+        .is_some_and(|state| state.take_recent(Instant::now()));
     if panel.is_visible().unwrap_or(false) {
         hide_panel(app, &panel);
+    } else if just_hid_on_blur {
+        log::debug!("tray click: panel just hid on focus loss; leaving it closed");
     } else {
         show_panel(app, Some(rect));
     }
@@ -340,6 +387,7 @@ pub(crate) fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     });
 
     let menu = build_tray_menu(app)?;
+    app.manage(PanelBlurHide::default());
 
     let builder = TrayIconBuilder::with_id(crate::commands::TRAY_ID).icon(tray_icon);
     // macOS: never attach the menu to the status item permanently. With an NSStatusItem menu
@@ -481,6 +529,36 @@ mod tests {
                 "{button:?} {state:?}"
             );
         }
+    }
+
+    #[test]
+    fn blur_hide_within_click_window_is_recent() {
+        let at = Instant::now();
+        assert!(blur_hide_is_recent(Some(at), at));
+        assert!(blur_hide_is_recent(
+            Some(at),
+            at + Duration::from_millis(20)
+        ));
+        assert!(blur_hide_is_recent(Some(at), at + BLUR_HIDE_CLICK_WINDOW));
+    }
+
+    #[test]
+    fn blur_hide_outside_click_window_or_absent_is_not_recent() {
+        let at = Instant::now();
+        assert!(!blur_hide_is_recent(
+            Some(at),
+            at + BLUR_HIDE_CLICK_WINDOW + Duration::from_millis(1)
+        ));
+        assert!(!blur_hide_is_recent(None, at));
+    }
+
+    #[test]
+    fn panel_blur_hide_is_consumed_by_first_click() {
+        let state = PanelBlurHide::default();
+        let at = Instant::now();
+        state.record(at);
+        assert!(state.take_recent(at + Duration::from_millis(10)));
+        assert!(!state.take_recent(at + Duration::from_millis(20)));
     }
 
     #[test]
