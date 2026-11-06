@@ -12,8 +12,8 @@ pub enum WorkpotError {
     #[error("migration error: {0}")]
     Migration(#[from] rusqlite_migration::Error),
 
-    /// Local catalog was created by a different schema generation (e.g. pre-`locations`
-    /// `repos` chain). Callers should point users at `workpot db reset`.
+    /// Local catalog was written by a newer build and cannot be used (older-schema catalogs
+    /// are rebuilt automatically). Callers should point users at upgrading or `workpot db reset`.
     #[error("incompatible catalog database: {0}")]
     IncompatibleDatabase(String),
 
