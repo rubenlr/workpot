@@ -299,6 +299,7 @@ fn handle_tray_menu_event(app: &tauri::AppHandle, menu_id: &str) {
 
 fn toggle_panel_on_tray_click(app: &tauri::AppHandle, rect: tauri::Rect) {
     let Some(panel) = app.get_webview_window(PANEL_LABEL) else {
+        log::warn!("toggle_panel_on_tray_click: panel window not found");
         return;
     };
     if panel.is_visible().unwrap_or(false) {
@@ -340,26 +341,109 @@ pub(crate) fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 
     let menu = build_tray_menu(app)?;
 
-    let _tray = TrayIconBuilder::with_id(crate::commands::TRAY_ID)
-        .icon(tray_icon)
-        .menu(&menu)
-        .show_menu_on_left_click(false)
+    let builder = TrayIconBuilder::with_id(crate::commands::TRAY_ID).icon(tray_icon);
+    // macOS: never attach the menu to the status item permanently. With an NSStatusItem menu
+    // set, macOS 27 opens it on left-click as well and the click never reaches
+    // `on_tray_icon_event`, so the panel cannot open. Right-click pops it up on demand instead.
+    #[cfg(target_os = "macos")]
+    app.manage(TrayContextMenu(menu));
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.menu(&menu).show_menu_on_left_click(false);
+
+    let _tray = builder
         .on_menu_event(|app, event| handle_tray_menu_event(app, event.id.as_ref()))
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
+            let TrayIconEvent::Click {
+                button,
+                button_state,
                 rect,
                 ..
             } = event
-            {
-                toggle_panel_on_tray_click(tray.app_handle(), rect);
+            else {
+                return;
+            };
+            log::debug!("tray icon click: button={button:?} state={button_state:?}");
+            match tray_click_action(button, button_state) {
+                Some(TrayClickAction::TogglePanel) => {
+                    toggle_panel_on_tray_click(tray.app_handle(), rect);
+                }
+                Some(TrayClickAction::ShowMenu) => show_tray_context_menu(tray),
+                None => {}
             }
         })
         .build(app)?;
 
     Ok(())
 }
+
+/// What a tray icon click should do; only button releases act.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrayClickAction {
+    TogglePanel,
+    ShowMenu,
+}
+
+fn tray_click_action(button: MouseButton, state: MouseButtonState) -> Option<TrayClickAction> {
+    match (button, state) {
+        (MouseButton::Left, MouseButtonState::Up) => Some(TrayClickAction::TogglePanel),
+        (MouseButton::Right, MouseButtonState::Up) => Some(TrayClickAction::ShowMenu),
+        _ => None,
+    }
+}
+
+/// Tray context menu, popped up on right-click (see `setup_tray`).
+#[cfg(target_os = "macos")]
+struct TrayContextMenu(Menu<tauri::Wry>);
+
+/// Gap between the status bar button and the popped-up menu, in points.
+#[cfg(target_os = "macos")]
+const TRAY_MENU_GAP: f64 = 4.0;
+
+/// Pop the tray menu up under the status bar button. The menu is attached only to obtain its
+/// `NSMenu`, then detached before popping up, so left-clicks keep reaching `on_tray_icon_event`.
+/// (`performClick:` on the button does not open the menu on macOS 27 outside a real mouse-down.)
+/// `popUpMenuPositioningItem:atLocation:inView:` blocks until the menu closes.
+#[cfg(target_os = "macos")]
+fn show_tray_context_menu(tray: &tauri::tray::TrayIcon) {
+    let Some(menu) = tray.app_handle().try_state::<TrayContextMenu>() else {
+        log::warn!("tray context menu: menu state not registered");
+        return;
+    };
+    if let Err(e) = tray.set_menu(Some(menu.0.clone())) {
+        log::warn!("tray context menu: attach failed: {e}");
+        return;
+    }
+    match tray.with_inner_tray_icon(|inner| {
+        use objc2::MainThreadMarker;
+        use objc2_foundation::NSPoint;
+        let mtm = MainThreadMarker::new().ok_or("not on the main thread")?;
+        let item = inner.ns_status_item().ok_or("status item unavailable")?;
+        let button = item.button(mtm).ok_or("status bar button unavailable")?;
+        let ns_menu = item.menu(mtm).ok_or("menu not attached to status item")?;
+        item.setMenu(None);
+        // Screen coordinates (origin bottom-left): the status item's window spans the button,
+        // so its frame origin is the button's bottom-left corner. Avoids relying on the
+        // button's `isFlipped`, which put the menu above the screen edge on macOS 27.
+        let window = button.window().ok_or("status bar window unavailable")?;
+        let frame = window.frame();
+        let location = NSPoint::new(frame.origin.x, frame.origin.y - TRAY_MENU_GAP);
+        button.highlight(true);
+        ns_menu.popUpMenuPositioningItem_atLocation_inView(None, location, None);
+        button.highlight(false);
+        Ok::<(), &'static str>(())
+    }) {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => log::warn!("tray context menu: {e}"),
+        Err(e) => log::warn!("tray context menu: main-thread dispatch failed: {e}"),
+    }
+    if let Err(e) = tray.set_menu(None::<Menu<tauri::Wry>>) {
+        log::warn!("tray context menu: detach failed: {e}");
+    }
+}
+
+/// Non-macOS: the menu is attached natively in `setup_tray`, so right-click needs no handling.
+#[cfg(not(target_os = "macos"))]
+fn show_tray_context_menu(_tray: &tauri::tray::TrayIcon) {}
 
 #[cfg(test)]
 mod tests {
@@ -369,6 +453,34 @@ mod tests {
     fn tray_icon_from_embedded() -> tauri::image::Image<'static> {
         tauri::image::Image::from_bytes(include_bytes!("../icons/tray-default.png"))
             .expect("tray icon bytes")
+    }
+
+    #[test]
+    fn left_release_toggles_panel_and_right_release_shows_menu() {
+        assert_eq!(
+            tray_click_action(MouseButton::Left, MouseButtonState::Up),
+            Some(TrayClickAction::TogglePanel)
+        );
+        assert_eq!(
+            tray_click_action(MouseButton::Right, MouseButtonState::Up),
+            Some(TrayClickAction::ShowMenu)
+        );
+    }
+
+    #[test]
+    fn button_presses_and_middle_clicks_do_nothing() {
+        for (button, state) in [
+            (MouseButton::Left, MouseButtonState::Down),
+            (MouseButton::Right, MouseButtonState::Down),
+            (MouseButton::Middle, MouseButtonState::Up),
+            (MouseButton::Middle, MouseButtonState::Down),
+        ] {
+            assert_eq!(
+                tray_click_action(button, state),
+                None,
+                "{button:?} {state:?}"
+            );
+        }
     }
 
     #[test]

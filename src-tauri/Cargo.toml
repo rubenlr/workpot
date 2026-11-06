@@ -32,6 +32,25 @@ tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-ap
 workpot-core = { path = "../crates/workpot-core", version = "0.0.8" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "objc2-core-foundation",
+  "NSButton",
+  "NSControl",
+  "NSMenu",
+  "NSMenuItem",
+  "NSResponder",
+  "NSStatusBarButton",
+  "NSStatusItem",
+  "NSView",
+  "NSWindow",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "objc2-core-foundation",
+  "NSGeometry",
+] }
 window-vibrancy = "0.8"
 
 [dev-dependencies]
