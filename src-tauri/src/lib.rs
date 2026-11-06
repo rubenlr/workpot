@@ -2,6 +2,17 @@ mod commands;
 mod launch;
 mod tray;
 
+/// Hooks for the opt-in AppKit regression test (`tests/tray_menu_gui.rs`); not app API.
+#[cfg(target_os = "macos")]
+#[doc(hidden)]
+pub use tray::gui_test_support;
+
+/// The app's Tauri context. Generated in exactly one place: `generate_context!` embeds
+/// `Info.plist` under a fixed symbol, so a second expansion (e.g. in a test) fails to link.
+pub(crate) fn app_context() -> tauri::Context<tauri::Wry> {
+    tauri::generate_context!()
+}
+
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, WindowEvent};
 use workpot_core::AppState;
@@ -142,7 +153,7 @@ pub fn run() {
             commands::set_branch_hidden,
             commands::show_repo_context_menu,
         ])
-        .build(tauri::generate_context!());
+        .build(app_context());
 
     match app {
         Ok(app) => app.run(|_app_handle, _event| {}),

@@ -55,6 +55,10 @@ fmt-check:
 
 # CI test-macos job — cargo/vitest/coverage/bundle only (`fmt-check` covers format/lint/svelte-check).
 # macOS only — ends with `tauri:build` (tray bundle smoke). Linux: `cargo test` + `pnpm test` only.
+# Opt-in AppKit tray regression test (puts a real icon in the menu bar briefly; macOS only)
+test-gui:
+    WORKPOT_GUI_TESTS=1 cargo test -p workpot-tray --test tray_menu_gui
+
 test:
     {{cargo}} fetch
     {{pnpm}} install --frozen-lockfile

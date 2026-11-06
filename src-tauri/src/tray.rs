@@ -347,12 +347,33 @@ fn toggle_panel_on_tray_click(app: &tauri::AppHandle, rect: tauri::Rect) {
     let just_hid_on_blur = app
         .try_state::<PanelBlurHide>()
         .is_some_and(|state| state.take_recent(Instant::now()));
-    if panel.is_visible().unwrap_or(false) {
-        hide_panel(app, &panel);
-    } else if just_hid_on_blur {
-        log::debug!("tray click: panel just hid on focus loss; leaving it closed");
-    } else {
-        show_panel(app, Some(rect));
+    let visible = panel.is_visible().unwrap_or_else(|e| {
+        log::warn!("panel is_visible failed: {e}");
+        false
+    });
+    match panel_toggle_action(visible, just_hid_on_blur) {
+        PanelToggleAction::Hide => hide_panel(app, &panel),
+        PanelToggleAction::KeepClosed => {
+            log::debug!("tray click: panel just hid on focus loss; leaving it closed");
+        }
+        PanelToggleAction::Show => show_panel(app, Some(rect)),
+    }
+}
+
+/// What a panel-toggling tray click does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PanelToggleAction {
+    Hide,
+    Show,
+    /// The click itself blurred (and so hid) the open panel: closing was the intent.
+    KeepClosed,
+}
+
+fn panel_toggle_action(visible: bool, just_hid_on_blur: bool) -> PanelToggleAction {
+    match (visible, just_hid_on_blur) {
+        (true, _) => PanelToggleAction::Hide,
+        (false, true) => PanelToggleAction::KeepClosed,
+        (false, false) => PanelToggleAction::Show,
     }
 }
 
@@ -447,21 +468,35 @@ struct TrayContextMenu(Menu<tauri::Wry>);
 #[cfg(target_os = "macos")]
 const TRAY_MENU_GAP: f64 = 4.0;
 
-/// Pop the tray menu up under the status bar button. The menu is attached only to obtain its
-/// `NSMenu`, then detached before popping up, so left-clicks keep reaching `on_tray_icon_event`.
-/// (`performClick:` on the button does not open the menu on macOS 27 outside a real mouse-down.)
+/// Pop the tray menu up under the status bar button (right-click).
 /// `popUpMenuPositioningItem:atLocation:inView:` blocks until the menu closes.
 #[cfg(target_os = "macos")]
 fn show_tray_context_menu(tray: &tauri::tray::TrayIcon) {
-    let Some(menu) = tray.app_handle().try_state::<TrayContextMenu>() else {
-        log::warn!("tray context menu: menu state not registered");
-        return;
-    };
-    if let Err(e) = tray.set_menu(Some(menu.0.clone())) {
-        log::warn!("tray context menu: attach failed: {e}");
-        return;
+    if let Err(e) = open_tray_menu_with(tray, |ns_menu, location| {
+        ns_menu.popUpMenuPositioningItem_atLocation_inView(None, location, None);
+    }) {
+        log::warn!("tray context menu: {e}");
     }
-    match tray.with_inner_tray_icon(|inner| {
+}
+
+/// Right-click menu flow with the pop-up step injected (the GUI regression test replaces the
+/// blocking pop-up). The menu is attached only to obtain its `NSMenu`, then detached before
+/// `popup` runs, so left-clicks keep reaching `on_tray_icon_event`: with a menu attached to the
+/// status item, macOS 27 opens it on left-click too. (`performClick:` on the button does not
+/// open the menu on macOS 27 outside a real mouse-down, hence the explicit pop-up.)
+#[cfg(target_os = "macos")]
+fn open_tray_menu_with<F, T>(tray: &tauri::tray::TrayIcon, popup: F) -> Result<T, String>
+where
+    F: FnOnce(&objc2_app_kit::NSMenu, objc2_foundation::NSPoint) -> T + Send + 'static,
+    T: Send + 'static,
+{
+    let menu = tray
+        .app_handle()
+        .try_state::<TrayContextMenu>()
+        .ok_or("menu state not registered")?;
+    tray.set_menu(Some(menu.0.clone()))
+        .map_err(|e| format!("attach failed: {e}"))?;
+    let shown = tray.with_inner_tray_icon(move |inner| {
         use objc2::MainThreadMarker;
         use objc2_foundation::NSPoint;
         let mtm = MainThreadMarker::new().ok_or("not on the main thread")?;
@@ -476,16 +511,100 @@ fn show_tray_context_menu(tray: &tauri::tray::TrayIcon) {
         let frame = window.frame();
         let location = NSPoint::new(frame.origin.x, frame.origin.y - TRAY_MENU_GAP);
         button.highlight(true);
-        ns_menu.popUpMenuPositioningItem_atLocation_inView(None, location, None);
+        let value = popup(&ns_menu, location);
         button.highlight(false);
-        Ok::<(), &'static str>(())
-    }) {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => log::warn!("tray context menu: {e}"),
-        Err(e) => log::warn!("tray context menu: main-thread dispatch failed: {e}"),
-    }
+        Ok::<T, &'static str>(value)
+    });
+    // Always detach, even when the pop-up step failed, so tray-icon's state matches AppKit's.
     if let Err(e) = tray.set_menu(None::<Menu<tauri::Wry>>) {
         log::warn!("tray context menu: detach failed: {e}");
+    }
+    shown
+        .map_err(|e| format!("main-thread dispatch failed: {e}"))?
+        .map_err(String::from)
+}
+
+/// Hooks for the opt-in AppKit regression test (`src-tauri/tests/tray_menu_gui.rs`,
+/// `just test-gui`). Not part of the app's API.
+#[cfg(target_os = "macos")]
+pub mod gui_test_support {
+    /// What the right-click flow would have shown, captured instead of popping up.
+    #[derive(Debug, Clone)]
+    pub struct MenuProbe {
+        /// Item titles in order; separators are `"---"`.
+        pub item_titles: Vec<String>,
+        /// Top-left corner the menu is placed at (screen coordinates, origin bottom-left).
+        pub location: (f64, f64),
+    }
+
+    /// Screen frame of the status item's window as `(x, y, width, height)`.
+    pub type StatusItemFrame = (f64, f64, f64, f64);
+
+    /// The app's Tauri context without any configured windows (only the tray is under test).
+    pub fn tray_only_context() -> tauri::Context<tauri::Wry> {
+        let mut context = crate::app_context();
+        context.config_mut().app.windows.clear();
+        context
+    }
+
+    pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+        super::setup_tray(app)
+    }
+
+    fn tray(app: &tauri::AppHandle) -> Result<tauri::tray::TrayIcon, String> {
+        app.tray_by_id(crate::commands::TRAY_ID)
+            .ok_or_else(|| "tray icon not registered".to_string())
+    }
+
+    /// Whether the status item has a menu attached. Outside an open right-click menu it must
+    /// not: an attached menu swallows left-clicks on macOS 27.
+    pub fn status_item_menu_attached(app: &tauri::AppHandle) -> Result<bool, String> {
+        tray(app)?
+            .with_inner_tray_icon(|inner| {
+                let mtm = objc2::MainThreadMarker::new().ok_or("not on the main thread")?;
+                let item = inner.ns_status_item().ok_or("status item unavailable")?;
+                Ok::<bool, &'static str>(item.menu(mtm).is_some())
+            })
+            .map_err(|e| e.to_string())?
+            .map_err(String::from)
+    }
+
+    pub fn status_item_frame(app: &tauri::AppHandle) -> Result<StatusItemFrame, String> {
+        tray(app)?
+            .with_inner_tray_icon(|inner| {
+                let mtm = objc2::MainThreadMarker::new().ok_or("not on the main thread")?;
+                let item = inner.ns_status_item().ok_or("status item unavailable")?;
+                let button = item.button(mtm).ok_or("status bar button unavailable")?;
+                let frame = button
+                    .window()
+                    .ok_or("status bar window unavailable")?
+                    .frame();
+                Ok::<StatusItemFrame, &'static str>((
+                    frame.origin.x,
+                    frame.origin.y,
+                    frame.size.width,
+                    frame.size.height,
+                ))
+            })
+            .map_err(|e| e.to_string())?
+            .map_err(String::from)
+    }
+
+    /// Run the real right-click flow with the blocking pop-up replaced by a probe.
+    pub fn simulate_right_click_menu(app: &tauri::AppHandle) -> Result<MenuProbe, String> {
+        super::open_tray_menu_with(&tray(app)?, |ns_menu, location| MenuProbe {
+            item_titles: (0..ns_menu.numberOfItems())
+                .filter_map(|i| ns_menu.itemAtIndex(i))
+                .map(|item| {
+                    if item.isSeparatorItem() {
+                        "---".to_string()
+                    } else {
+                        item.title().to_string()
+                    }
+                })
+                .collect(),
+            location: (location.x, location.y),
+        })
     }
 }
 
@@ -559,6 +678,106 @@ mod tests {
         state.record(at);
         assert!(state.take_recent(at + Duration::from_millis(10)));
         assert!(!state.take_recent(at + Duration::from_millis(20)));
+    }
+
+    #[test]
+    fn panel_toggle_action_covers_every_state() {
+        use PanelToggleAction::{Hide, KeepClosed, Show};
+        assert_eq!(panel_toggle_action(true, false), Hide);
+        assert_eq!(panel_toggle_action(true, true), Hide);
+        assert_eq!(panel_toggle_action(false, true), KeepClosed);
+        assert_eq!(panel_toggle_action(false, false), Show);
+    }
+
+    /// Minimal model of the panel driven by the same pieces as the app: the blur-hide
+    /// state (`hide_panel_on_blur`) and the click decision (`toggle_panel_on_tray_click`).
+    struct PanelSim {
+        visible: bool,
+        blur: PanelBlurHide,
+    }
+
+    impl PanelSim {
+        fn new() -> Self {
+            Self {
+                visible: false,
+                blur: PanelBlurHide::default(),
+            }
+        }
+
+        /// Panel lost focus (clicked elsewhere, or the click on the tray icon itself).
+        fn blur(&mut self, at: Instant) {
+            if self.visible {
+                self.blur.record(at);
+                self.visible = false;
+            }
+        }
+
+        fn tray_left_click(&mut self, at: Instant) -> PanelToggleAction {
+            let just_hid = self.blur.take_recent(at);
+            let action = panel_toggle_action(self.visible, just_hid);
+            match action {
+                PanelToggleAction::Hide => self.visible = false,
+                PanelToggleAction::Show => self.visible = true,
+                PanelToggleAction::KeepClosed => {}
+            }
+            action
+        }
+    }
+
+    /// Regression: the tray click blurs the open panel ~5-20 ms before the click event is
+    /// delivered (observed in dev logs); it must close the panel, not reopen it.
+    #[test]
+    fn tray_click_on_open_panel_closes_it_despite_preceding_blur() {
+        let t0 = Instant::now();
+        let ms = |n| t0 + Duration::from_millis(n);
+        let mut panel = PanelSim::new();
+
+        // Open, then click the icon again: blur at 1000 ms, click delivered 5 ms later.
+        assert_eq!(panel.tray_left_click(ms(0)), PanelToggleAction::Show);
+        panel.blur(ms(1_000));
+        assert_eq!(
+            panel.tray_left_click(ms(1_005)),
+            PanelToggleAction::KeepClosed
+        );
+        assert!(!panel.visible);
+
+        // Same with the slowest delivery seen in the logs (20 ms).
+        assert_eq!(panel.tray_left_click(ms(2_000)), PanelToggleAction::Show);
+        panel.blur(ms(3_000));
+        assert_eq!(
+            panel.tray_left_click(ms(3_020)),
+            PanelToggleAction::KeepClosed
+        );
+        assert!(!panel.visible);
+    }
+
+    #[test]
+    fn tray_click_after_keep_closed_opens_panel_again() {
+        let t0 = Instant::now();
+        let ms = |n| t0 + Duration::from_millis(n);
+        let mut panel = PanelSim::new();
+
+        panel.tray_left_click(ms(0));
+        panel.blur(ms(1_000));
+        assert_eq!(
+            panel.tray_left_click(ms(1_010)),
+            PanelToggleAction::KeepClosed
+        );
+        // Blur state was consumed: even a quick next click opens the panel.
+        assert_eq!(panel.tray_left_click(ms(1_100)), PanelToggleAction::Show);
+        assert!(panel.visible);
+    }
+
+    #[test]
+    fn tray_click_long_after_clicking_elsewhere_opens_panel() {
+        let t0 = Instant::now();
+        let ms = |n| t0 + Duration::from_millis(n);
+        let mut panel = PanelSim::new();
+
+        panel.tray_left_click(ms(0));
+        panel.blur(ms(1_000)); // user clicked another app
+        assert_eq!(panel.tray_left_click(ms(3_000)), PanelToggleAction::Show);
+        assert!(panel.visible);
     }
 
     #[test]

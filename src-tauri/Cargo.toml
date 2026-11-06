@@ -50,8 +50,15 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
   "std",
   "objc2-core-foundation",
   "NSGeometry",
+  "NSString",
 ] }
 window-vibrancy = "0.8"
+
+# Opt-in AppKit regression test: needs the main thread (no libtest harness) and a real menu
+# bar. Skips unless WORKPOT_GUI_TESTS=1 (`just test-gui`).
+[[test]]
+name = "tray_menu_gui"
+harness = false
 
 [dev-dependencies]
 tempfile = "3"

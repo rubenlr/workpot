@@ -128,6 +128,7 @@ No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skill
 | Rust LCOV (local)          | `just coverage` (requires `just coverage-tools` once)                                                                                           |
 | Pre-commit (changed files) | `hk run pre-commit` — related Vitest + workspace cargo test                                                                                     |
 | Pre-push                   | `hk run pre-push` — full Vitest + cargo test                                                                                                    |
+| Tray AppKit (opt-in)       | `just test-gui` — real `NSStatusItem` checks (`src-tauri/tests/tray_menu_gui.rs`); skipped unless `WORKPOT_GUI_TESTS=1`; run after tray/macOS/tray-icon changes |
 
 ### Philosophy
 
