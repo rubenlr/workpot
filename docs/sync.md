@@ -206,7 +206,7 @@ Each successful (and many failed) local catalog sync runs leave an audit trail i
 
 ### Database wipe (schema bootstrap)
 
-Schema changes apply automatically on start through the versioned migration chain (`user_version`, one `M::up` per step; add a new `NNN_*.sql` and bump `LATEST_SCHEMA_VERSION` for each change). A catalog this build cannot migrate in place (e.g. the pre-`locations` `repos` schema, or a corrupt stamp) is rebuilt: the DB file is first copied to `workpot.db.pre-migration-v<N>.bak`, then recreated empty, so run `workpot sync` afterwards to repopulate it. A catalog written by a *newer* build is never touched; the app refuses to start instead.
+Schema changes apply automatically on start through the versioned migration chain (`user_version`, one `M::up` per step; add a new `NNN_*.sql` and bump `LATEST_SCHEMA_VERSION` for each change). A catalog this build cannot migrate in place (e.g. the pre-`locations` `repos` schema, or a corrupt stamp) is rebuilt: the DB file is first copied to `workpot.db.pre-migration-v<N>.bak`, then recreated empty, so run `workpot sync` afterwards to repopulate it. A catalog written by a _newer_ build is never touched; the app refuses to start instead.
 
 To wipe the local DB manually (quit the tray first):
 
